@@ -1,0 +1,12 @@
+# Local environment and research cache
+.env
+.env.*
+!.env.example
+/.cache/
+
+# Local system and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
