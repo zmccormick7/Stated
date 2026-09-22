@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 import json
 import re
@@ -10,7 +11,7 @@ import unicodedata
 from uuid import uuid4
 
 
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 
 
 @dataclass(frozen=True)
@@ -80,7 +81,7 @@ class RecordStore:
             if self._schema_version() == _SCHEMA_VERSION:
                 return
             # executescript would commit before running; keep schema creation atomic.
-            for name in ("schema.sql", "links.sql", "search.sql"):
+            for name in ("schema.sql", "links.sql", "search.sql", "sources.sql"):
                 statement = ""
                 for line in Path(__file__).with_name(name).read_text().splitlines(keepends=True):
                     statement += line
@@ -138,16 +139,51 @@ class RecordStore:
     def create(self, kind: str, *, text: str, author_id: str,
                attributes: dict[str, object] | None = None) -> Record:
         encoded = self._encode(attributes)
-        record_id = str(uuid4())
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            self._db.execute(
-                """INSERT INTO records (id, kind, text, attributes, author_id, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (record_id, kind, text, encoded, author_id, datetime.now(UTC).isoformat()),
-            )
-            record = self.read(record_id)
+            record = self._insert_record(kind, text, encoded, author_id)
         return record
+
+    def ingest_source(self, *, description: str, document_text: str, author_id: str,
+                      attributes: dict[str, object] | None = None) -> Record:
+        """Atomically create a Source record and its fixed canonical UTF-8 text."""
+        if not isinstance(document_text, str) or not document_text:
+            raise ValueError("document_text must be a nonempty string")
+        encoded = self._encode(attributes)
+        content = document_text.encode("utf-8")
+        digest = sha256(content).hexdigest()
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            source = self._insert_record("Source", description, encoded, author_id)
+            self._db.execute(
+                "INSERT INTO source_content (source_key, text_utf8, text_sha256) VALUES (?, ?, ?)",
+                (self._record_key(source.id), content, digest),
+            )
+        return source
+
+    def read_source_text(self, source_id: str, *, start_byte: int = 0,
+                         end_byte: int | None = None) -> str:
+        """Read canonical text or a half-open UTF-8 byte range, without normalization."""
+        if type(start_byte) is not int or (end_byte is not None and type(end_byte) is not int):
+            raise ValueError("byte offsets must be integers")
+        row = self._db.execute(
+            """SELECT s.source_key FROM source_content s
+               JOIN records r ON r.record_key = s.source_key WHERE r.id = ?""",
+            (source_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(source_id)
+        with self._db.blobopen("source_content", "text_utf8", row[0], readonly=True) as content:
+            end_byte = len(content) if end_byte is None else end_byte
+            if not 0 <= start_byte <= end_byte <= len(content):
+                raise ValueError("byte range is outside source text")
+            for offset in (start_byte, end_byte):
+                if offset < len(content):
+                    content.seek(offset)
+                    if content.read(1)[0] & 0xC0 == 0x80:
+                        raise ValueError("byte offsets must be UTF-8 character boundaries")
+            content.seek(start_byte)
+            return content.read(end_byte - start_byte).decode("utf-8")
 
     def update(self, record_id: str, *, text: str, author_id: str,
                attributes: dict[str, object] | None = None) -> Record:
@@ -221,6 +257,15 @@ class RecordStore:
         if row is None:
             raise KeyError(record_id)
         return row[0]
+
+    def _insert_record(self, kind: str, text: str, encoded: str, author_id: str) -> Record:
+        record_id = str(uuid4())
+        self._db.execute(
+            """INSERT INTO records (id, kind, text, attributes, author_id, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (record_id, kind, text, encoded, author_id, datetime.now(UTC).isoformat()),
+        )
+        return self.read(record_id)
 
     def _link_values(self, from_id: str, to_id: str, relation: str,
                      explanation: str, author_id: str) -> tuple:

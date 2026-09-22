@@ -1,6 +1,6 @@
 # PremiseDB database: proposed v0 design
 
-**Status: current-state design.** Records and links store current contents and one database-assigned UTC `updated_at` timestamp. Updates replace earlier values; there are no history tables, revision counters, endpoint pins, audit trails or historical reads. The implementation supports record/link operations, lexical record search and bounded directional lookups; the richer retrieval interface below remains proposed. SQLite and Faiss remain selected, with no performance claims. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
+**Status: current-state design.** Records and links store current contents and one database-assigned UTC `updated_at` timestamp. Updates replace earlier values; there are no history tables, revision counters, endpoint pins, audit trails or historical reads. The implementation supports record/link operations, lexical record search, bounded directional lookups, text-only source ingestion and exact source-text reads. The richer retrieval interface below remains proposed. SQLite and Faiss remain selected, with no performance claims. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
 
 ## 1. What the database owns
 
@@ -41,13 +41,15 @@ Proposed concurrency scenario: 100 active agents each retrieving once per 10 sec
 
 **One authoritative SQLite database, immutable source artifacts on disk, and derived Faiss indexes.** PremiseDB's custom layer supplies the graph operations and retrieval planner.
 
+The first ingestion slice stores caller-supplied canonical UTF-8 text and its SHA-256 in SQLite, atomically with the Source record. Original-file storage and the staged artifact pipeline below remain planned. Measure text-storage behavior at the representative workload before introducing a separate text store.
+
 SQLite and Faiss are embedded libraries, not hosted services. They are the two core storage/search dependencies. Require a SQLite build with FTS5 enabled for lexical search; FTS5 supplies BM25 ranking within SQLite. Model providers are a separate configuration concern. [SQLite FTS5](https://sqlite.org/fts5.html).
 
 | Component | Contents and responsibility |
 | --- | --- |
 | `premisedb.sqlite` | Current records and links, source manifests, passages, embedding payloads, exact indexes and pending processing work. |
 | SQLite FTS5 tables | Rebuildable lexical indexes for research records and passages; updated in the same transaction as their indexed content. |
-| `objects/` | Immutable, content-addressed originals and canonical extracted-text artifacts. SQLite references published objects. |
+| `objects/` | Planned immutable, content-addressed original artifacts. Canonical extracted text currently stays in SQLite. |
 | `indexes/` | Faiss generations and their manifests, rebuilt from retained embedding payloads. Separate document and research-record candidate pools. |
 
 Proposed per-workspace layout:
@@ -139,6 +141,8 @@ Variable ownership lives in the Variable's typed attributes and an indexed proje
 
 Each Source identifies a captured document and its canonical text. Store artifact/text hashes and extraction configuration to identify the cited material. Keep cited text fixed: a materially different document or text rendition is a separate Source when existing citations must remain usable. This is evidence identity, not a chain of edits to a research record.
 
+The implemented `ingest_source` creates a Source description and a separate fixed text body in one transaction. `read_source_text` resolves full text or validated UTF-8 byte ranges. The description participates in record search; the body is not indexed yet. No parsing, normalization, automatic provenance inference or deduplication is performed.
+
 A text citation is `(source_id, start_byte, end_byte)`, using a half-open UTF-8 range in that Source's canonical text. Validate boundaries and optionally retain a quoted-text hash. Pages, section paths and table/cell references help navigation; they supplement the canonical locator. Non-text evidence uses an explicit artifact/page/region locator rather than fabricated text offsets.
 
 Search passages are derived partitions of a Source, identified by `(source_id, ordinal)` within its current chunk set. Rechunking replaces that derived set; citations use canonical text ranges rather than chunk ordinals. Materialized passage text may duplicate canonical text for efficient search; include that copy in disk sizing.
@@ -187,7 +191,7 @@ This is a logical table layout, not final migration SQL. Public IDs map to compa
 | `links` | Stable identity, current endpoints, relation, explanation, last editor and `updated_at`; proposed citation/provenance fields. |
 | `entity_identifiers`, `entity_aliases` | Exact normalized identity lookup; ambiguous aliases return multiple candidates. |
 | `record_entities`, `model_variables` | Exact, rebuildable membership projections from explicit subject links and Variable ownership. |
-| `source_content`, `passages` | Captured artifact/text references, ingestion state and current ordered passage locators. |
+| `source_content`, `passages` | Implemented: fixed canonical UTF-8 body and SHA-256 per Source. Planned: original-artifact references, ingestion state and ordered passage locators. |
 | `document_context`, `sections`, `section_context` | Current document/section titles and summaries, source-aligned section ranges, authorship and `updated_at`. |
 | `record_context` | Current business background for searchable research records, separate from the record's own claim text. |
 | `context_inputs`, `context_scopes` | Input IDs/fingerprints and watched research scopes for current context, with reverse dependency lookups. |
