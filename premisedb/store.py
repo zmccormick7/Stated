@@ -4,11 +4,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 import json
+import re
 import sqlite3
+import unicodedata
 from uuid import uuid4
 
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 
 @dataclass(frozen=True)
@@ -77,8 +79,16 @@ class RecordStore:
             self._db.execute("BEGIN IMMEDIATE")
             if self._schema_version() == _SCHEMA_VERSION:
                 return
-            self._db.execute(Path(__file__).with_name("schema.sql").read_text())
-            self._db.execute(Path(__file__).with_name("links.sql").read_text())
+            # executescript would commit before running; keep schema creation atomic.
+            for name in ("schema.sql", "links.sql", "search.sql"):
+                statement = ""
+                for line in Path(__file__).with_name(name).read_text().splitlines(keepends=True):
+                    statement += line
+                    if sqlite3.complete_statement(statement):
+                        self._db.execute(statement)
+                        statement = ""
+                if statement.strip():
+                    raise ValueError(f"Incomplete schema statement in {name}")
             for direction, column in (("out", "from_key"), ("in", "to_key")):
                 self._db.execute(f"CREATE INDEX links_{direction} ON links ({column}, relation, link_key)")
                 self._db.execute(f"CREATE INDEX links_{direction}_all ON links ({column}, link_key)")
@@ -101,9 +111,29 @@ class RecordStore:
         ).fetchone()
         if row is None:
             raise KeyError(record_id)
-        values = dict(row)
-        values["attributes"] = json.loads(values["attributes"])
-        return Record(**values)
+        return self._decode_record(row)
+
+    def search_records(self, query: str, *, kind: str | None = None,
+                       limit: int = 10) -> tuple[Record, ...]:
+        """Match any plain-text query word; return current records in BM25 order."""
+        if not isinstance(query, str):
+            raise ValueError("query must be a string")
+        if kind is not None and kind not in ("Entity", "Source", "Finding", "Question", "Model", "Variable"):
+            raise ValueError("kind must be a record kind or None")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer from 1 to 1000")
+        words = dict.fromkeys(re.findall(r"[^\W_]+", unicodedata.normalize("NFC", query)))
+        if not words:
+            return ()
+        expression = " OR ".join(f'"{word}"' for word in words)
+        rows = self._db.execute(
+            """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.updated_at
+               FROM records_fts JOIN records r ON r.record_key = records_fts.rowid
+               WHERE records_fts MATCH ? AND (? IS NULL OR r.kind = ?)
+               ORDER BY bm25(records_fts), r.record_key LIMIT ?""",
+            (expression, kind, kind, limit),
+        ).fetchall()
+        return tuple(self._decode_record(row) for row in rows)
 
     def create(self, kind: str, *, text: str, author_id: str,
                attributes: dict[str, object] | None = None) -> Record:
@@ -196,6 +226,12 @@ class RecordStore:
                      explanation: str, author_id: str) -> tuple:
         return (self._record_key(from_id), self._record_key(to_id), relation,
                 explanation, author_id, datetime.now(UTC).isoformat())
+
+    @staticmethod
+    def _decode_record(row: sqlite3.Row) -> Record:
+        values = dict(row)
+        values["attributes"] = json.loads(values["attributes"])
+        return Record(**values)
 
     @staticmethod
     def _encode(attributes: dict[str, object] | None) -> str:
