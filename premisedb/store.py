@@ -1,4 +1,4 @@
-"""Single-record operations; each store owns one thread-affine connection."""
+"""Current records; each store owns one thread-affine connection."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -12,19 +12,10 @@ from uuid import uuid4
 class Record:
     id: str
     kind: str
-    revision: int
     text: str
     attributes: dict[str, object]
     author_id: str
-    recorded_at: str
-
-
-class RevisionConflict(Exception):
-    def __init__(self, record_id: str, expected: int, current: int):
-        self.record_id = record_id
-        self.expected = expected
-        self.current = current
-        super().__init__(f"{record_id}: expected revision {expected}, current is {current}")
+    updated_at: str
 
 
 class RecordStore:
@@ -35,16 +26,38 @@ class RecordStore:
         self._db.row_factory = sqlite3.Row
         try:
             version = self._db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 3):
                 raise ValueError(f"Unsupported schema version: {version}")
-            self._db.execute("PRAGMA foreign_keys = ON")
             self._db.execute("PRAGMA journal_mode = WAL")
             self._db.execute("PRAGMA synchronous = FULL")
-            if version == 0:
-                self._db.executescript(Path(__file__).with_name("schema.sql").read_text())
+            if version < 3:
+                self._db.execute("PRAGMA foreign_keys = OFF")
+                self._initialize()
+            self._db.execute("PRAGMA foreign_keys = ON")
         except BaseException:
             self._db.close()
             raise
+
+    def _initialize(self) -> None:
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            version = self._db.execute("PRAGMA user_version").fetchone()[0]
+            if version == 3:
+                return
+            if version == 1:
+                self._db.execute("ALTER TABLE records RENAME TO old_records")
+            self._db.execute(Path(__file__).with_name("schema.sql").read_text())
+            if version == 1:
+                self._db.execute("""
+                    INSERT INTO records
+                    SELECT r.record_key, r.id, r.kind, v.text, v.attributes,
+                           v.author_id, v.recorded_at
+                    FROM old_records r JOIN record_revisions v
+                    ON v.record_key = r.record_key AND v.revision = r.current_revision
+                """)
+                self._db.execute("DROP TABLE record_revisions")
+                self._db.execute("DROP TABLE old_records")
+            self._db.execute("PRAGMA user_version = 3")
 
     def close(self) -> None:
         self._db.close()
@@ -55,70 +68,47 @@ class RecordStore:
     def __exit__(self, *_):
         self.close()
 
-    def read(self, record_id: str, revision: int | None = None) -> Record:
-        """Read current or exact historical contents; missing references raise KeyError."""
+    def read(self, record_id: str) -> Record:
+        """Read current contents; a missing record raises KeyError."""
         row = self._db.execute(
-            """SELECT r.id, r.kind, v.revision, v.text, v.attributes,
-                      v.author_id, v.recorded_at
-               FROM records r JOIN record_revisions v ON v.record_key = r.record_key
-               WHERE r.id = ? AND v.revision = COALESCE(?, r.current_revision)""",
-            (record_id, revision),
+            "SELECT id, kind, text, attributes, author_id, updated_at FROM records WHERE id = ?",
+            (record_id,),
         ).fetchone()
         if row is None:
-            raise KeyError((record_id, revision))
+            raise KeyError(record_id)
         values = dict(row)
         values["attributes"] = json.loads(values["attributes"])
         return Record(**values)
 
     def create(self, kind: str, *, text: str, author_id: str,
                attributes: dict[str, object] | None = None) -> Record:
-        """Create a stable identity and its first revision in one transaction."""
         encoded = self._encode(attributes)
         record_id = str(uuid4())
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            key = self._db.execute(
-                "INSERT INTO records (id, kind, current_revision) VALUES (?, ?, 1)",
-                (record_id, kind),
-            ).lastrowid
-            self._append(key, 1, text, encoded, author_id)
-            record = self.read(record_id, 1)
+            self._db.execute(
+                """INSERT INTO records (id, kind, text, attributes, author_id, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (record_id, kind, text, encoded, author_id, datetime.now(UTC).isoformat()),
+            )
+            record = self.read(record_id)
         return record
 
-    def revise(self, record_id: str, *, expected_revision: int, text: str,
-               author_id: str, attributes: dict[str, object] | None = None) -> Record:
-        """Replace text and attributes; omitted attributes means an empty object."""
-        if type(expected_revision) is not int or expected_revision < 1:
-            raise ValueError("expected_revision must be a positive integer")
+    def update(self, record_id: str, *, text: str, author_id: str,
+               attributes: dict[str, object] | None = None) -> Record:
+        """Replace contents in place; omitted attributes becomes an empty object."""
         encoded = self._encode(attributes)
         with self._db:
-            # Acquire the writer lock before checking the revision.
             self._db.execute("BEGIN IMMEDIATE")
-            row = self._db.execute(
-                "SELECT record_key, current_revision FROM records WHERE id = ?",
-                (record_id,),
-            ).fetchone()
-            if row is None:
-                raise KeyError(record_id)
-            if row["current_revision"] != expected_revision:
-                raise RevisionConflict(record_id, expected_revision, row["current_revision"])
-            revision = expected_revision + 1
-            self._append(row["record_key"], revision, text, encoded, author_id)
-            self._db.execute(
-                "UPDATE records SET current_revision = ? WHERE record_key = ?",
-                (revision, row["record_key"]),
+            result = self._db.execute(
+                """UPDATE records SET text = ?, attributes = ?, author_id = ?, updated_at = ?
+                   WHERE id = ?""",
+                (text, encoded, author_id, datetime.now(UTC).isoformat(), record_id),
             )
-            record = self.read(record_id, revision)
+            if result.rowcount == 0:
+                raise KeyError(record_id)
+            record = self.read(record_id)
         return record
-
-    def _append(self, key: int, revision: int, text: str,
-                attributes: str, author_id: str) -> None:
-        self._db.execute(
-            """INSERT INTO record_revisions
-               (record_key, revision, text, attributes, author_id, recorded_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (key, revision, text, attributes, author_id, datetime.now(UTC).isoformat()),
-        )
 
     @staticmethod
     def _encode(attributes: dict[str, object] | None) -> str:
