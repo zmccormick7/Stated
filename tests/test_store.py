@@ -52,6 +52,7 @@ class RecordStoreTests(unittest.TestCase):
         conflicts = [r for r in results if isinstance(r, RevisionConflict)]
         self.assertEqual(len(conflicts), 1)
         self.assertEqual((conflicts[0].expected, conflicts[0].current), (1, 2))
+        self.assertEqual(conflicts[0].target_id, original.id)
         winner = next(r for r in results if not isinstance(r, RevisionConflict))
         self.assertEqual(self.store.read(original.id), winner)
         self.assertEqual(self.store.read(original.id, 1), original)

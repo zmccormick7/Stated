@@ -1,6 +1,6 @@
 # PremiseDB database: proposed v0 design
 
-**Status: target design; implementation is proceeding in small reviewed commits.** The first slice implements record identity, immutable revisions and conflict detection. The rest of this specification remains proposed, with no performance claims. SQLite and Faiss are the selected storage/search engines. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
+**Status: target design; implementation is proceeding in small reviewed commits.** Implemented: versioned records and links, endpoint revision pins, conflict detection and bounded current incoming/outgoing link lookups. The rest of this specification remains proposed, with no performance claims. SQLite and Faiss are the selected storage/search engines. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
 
 ## 1. What the database owns
 

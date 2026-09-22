@@ -10,7 +10,7 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: first implementation slice.** A Python record store supports creation, versioned reads and revisions with conflict detection. The graph, retrieval pipeline, installer and agent integrations below remain planned.
+> **Status: early implementation.** The Python store supports versioned records and links, conflict detection, and bounded incoming/outgoing link lookups. Ranked retrieval, source citations, the installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
@@ -33,9 +33,29 @@ with RecordStore("research.sqlite") as db:
 
 Run tests from the repository root with `python -m unittest discover -s tests -v`.
 
-Each record has a stable ID and kind; each revision stores text, JSON attributes, author and a database-assigned UTC timestamp. Revisions replace text and attributes in full; omitted attributes become `{}`. Missing references raise `KeyError`; stale edits raise `RevisionConflict` with the expected and current revision. Invalid SQL-constrained fields raise `sqlite3.IntegrityError`. Returned metadata is a detached copy; changing it does not change stored history.
+Each record has a stable ID and kind; each revision stores text, JSON attributes, author and a database-assigned UTC timestamp. Revisions replace text and attributes in full; omitted attributes become `{}`. Missing references raise `KeyError`; stale edits raise `RevisionConflict` with `target_id`, `expected` and `current` (the earlier `record_id` attribute is now `target_id` for both records and links). Invalid SQL-constrained fields raise `sqlite3.IntegrityError`. Returned metadata is a detached copy; changing it does not change stored history.
 
-The two tables separate identity/current revision from immutable contents. Each write checks and appends inside one `BEGIN IMMEDIATE` transaction. Use one store per thread on a local filesystem. This slice has no batch contributions, domain-specific validation, effective dates or global commit sequence yet; its API and schema are experimental.
+Records and links each separate identity/current revision from immutable contents. Each write checks and appends inside one `BEGIN IMMEDIATE` transaction. Use one store per thread on a local filesystem. This slice has no batch contributions, domain-specific validation, effective dates or global commit sequence yet; its API and schema are experimental.
+
+## Connect existing records
+
+```python
+with RecordStore("research.sqlite") as db:
+    finding = db.create("Finding", text="Ramp requires utility approval", author_id="alice")
+    company = db.create("Entity", text="Supplier A", author_id="alice")
+    link = db.create_link(finding.id, company.id, "about", author_id="alice",
+                          explanation="The finding concerns Supplier A's ramp")
+    incoming = db.connections(company.id, direction="in", relation="about")
+    assert incoming.links == (link,) and not incoming.has_more
+```
+
+`read_link(id, revision=None)` reads the current or an exact historical link. `revise_link` requires `expected_revision` and replaces its endpoints, relation, explanation and optional endpoint pins. Link revisions preserve author and UTC timestamp; stale edits raise `RevisionConflict`. Incoming lookup preserves the stored direction: it does not turn `A depends_on B` into `B depends_on A`.
+
+Optional `from_revision` and `to_revision` pin exact record revisions; omitted pins refer to record identity. `supported_by` requires both pins. Pins remain unchanged when a record is revised; inspect them with `read(endpoint_id, revision=pin)`. Automatic stale-support annotations and source-content citations remain planned.
+
+`connections` returns current links in creation order, with an optional exact relation filter. The default limit is 100, the maximum is 1,000, and `has_more` reports omitted links. This primitive has no pagination, recursive traversal or historical graph snapshots yet. Empty results differ from an unknown record, which raises `KeyError`. Relation labels are extensible; duplicate links are allowed and no economic relationship is inferred automatically.
+
+Opening a version-1 database applies the version-2 link migration without rewriting its records. Indexes on current link endpoints support both lookup directions; retargeting a link updates these projections in the same transaction as its new revision.
 
 ## What can you do with PremiseDB?
 
