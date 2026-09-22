@@ -10,11 +10,32 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: design stage.** This README describes the product we intend to build. The repository currently contains the product direction, contributor guidance and design proposals; there is no implementation, installer or agent integration yet.
+> **Status: first implementation slice.** A Python record store supports creation, versioned reads and revisions with conflict detection. The graph, retrieval pipeline, installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
 Document retrieval will incorporate dsRAG's **Contextual Chunk Headers** to give each chunk its document and section context, and **Relevant Segment Extraction** to return useful variable-length evidence spans. The graph connects that evidence to accumulated research and model assumptions.
+
+## Try the record store
+
+From this checkout, use Python 3.12+ linked against SQLite 3.51.3+ (which includes the [WAL-reset fix](https://sqlite.org/wal.html#walresetbug)). There are no third-party runtime dependencies in this slice.
+
+```python
+from premisedb import RecordStore
+
+with RecordStore("research.sqlite") as db:
+    first = db.create("Finding", text="Ramp expected in June", author_id="alice")
+    second = db.revise(first.id, expected_revision=first.revision,
+                       text="Ramp delayed to September", author_id="bob")
+    assert db.read(first.id) == second
+    assert db.read(first.id, revision=1) == first
+```
+
+Run tests from the repository root with `python -m unittest discover -s tests -v`.
+
+Each record has a stable ID and kind; each revision stores text, JSON attributes, author and a database-assigned UTC timestamp. Revisions replace text and attributes in full; omitted attributes become `{}`. Missing references raise `KeyError`; stale edits raise `RevisionConflict` with the expected and current revision. Invalid SQL-constrained fields raise `sqlite3.IntegrityError`. Returned metadata is a detached copy; changing it does not change stored history.
+
+The two tables separate identity/current revision from immutable contents. Each write checks and appends inside one `BEGIN IMMEDIATE` transaction. Use one store per thread on a local filesystem. This slice has no batch contributions, domain-specific validation, effective dates or global commit sequence yet; its API and schema are experimental.
 
 ## What can you do with PremiseDB?
 
@@ -117,6 +138,6 @@ Our intended starting point is an example workspace you can explore immediately 
 
 Extend the skills for your sector. Add workflows for company coverage, meeting preparation or thesis review. Connect the graph to your existing research process.
 
-Repository contributors and agents should use this README as the product direction and [AGENTS.md](AGENTS.md) for implementation guidance. SQLite and Faiss are the selected storage/search engines; runtime, model providers and integration details remain open.
+Repository contributors and agents should use this README as the product direction and [AGENTS.md](AGENTS.md) for implementation guidance. Python is the implementation language; SQLite and Faiss are the selected storage/search engines. Model providers and integration details remain open.
 
 **Your agents do the research. PremiseDB makes their accumulated knowledge available to whatever comes next.**

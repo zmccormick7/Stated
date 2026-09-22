@@ -1,6 +1,6 @@
 # PremiseDB database: proposed v0 design
 
-**Status: design specification, not an implementation or a performance claim.** SQLite and Faiss are the selected storage/search engines. This draft incorporates the agreed research ontology and workload; detailed schema, retrieval defaults and operating parameters below remain proposals to validate. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
+**Status: target design; implementation is proceeding in small reviewed commits.** The first slice implements record identity, immutable revisions and conflict detection. The rest of this specification remains proposed, with no performance claims. SQLite and Faiss are the selected storage/search engines. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
 
 ## 1. What the database owns
 
@@ -78,7 +78,7 @@ SQLite WAL permits concurrent readers with one writer. A shared desk uses a sing
 
 **SQLite is selected**, including full vectors in a separate BLOB table. Measure batched candidate-vector fetches, ingestion and graph-write interference before loading the full corpus. Revisit another store only if these measurements expose a specific bottleneck. Do not add LMDB speculatively or introduce two independent authoritative stores with best-effort dual writes.
 
-This proposal does not commit to a runtime, transport, general backend abstraction or distributed database. These can be chosen after the vertical slice establishes the contracts.
+The first implementation uses Python and direct `sqlite3` calls. Transport remains open; no general backend abstraction or distributed database is planned for the initial slice.
 
 ## 4. Logical data model
 
