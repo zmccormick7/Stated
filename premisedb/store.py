@@ -1,4 +1,4 @@
-"""Current records; each store owns one thread-affine connection."""
+"""Current records and links; each store owns one thread-affine connection."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -18,6 +18,31 @@ class Record:
     updated_at: str
 
 
+@dataclass(frozen=True)
+class Link:
+    id: str
+    from_id: str
+    to_id: str
+    relation: str
+    explanation: str
+    author_id: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class Connections:
+    links: tuple[Link, ...]
+    has_more: bool
+
+
+_LINK_SELECT = """
+    SELECT l.id, f.id AS from_id, t.id AS to_id, l.relation,
+           l.explanation, l.author_id, l.updated_at
+    FROM links l JOIN records f ON f.record_key = l.from_key
+    JOIN records t ON t.record_key = l.to_key
+"""
+
+
 class RecordStore:
     def __init__(self, path: str | Path):
         if sqlite3.sqlite_version_info < (3, 51, 3):
@@ -26,11 +51,11 @@ class RecordStore:
         self._db.row_factory = sqlite3.Row
         try:
             version = self._db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 3):
+            if version not in (0, 1, 2, 3, 4):
                 raise ValueError(f"Unsupported schema version: {version}")
             self._db.execute("PRAGMA journal_mode = WAL")
             self._db.execute("PRAGMA synchronous = FULL")
-            if version < 3:
+            if version < 4:
                 self._db.execute("PRAGMA foreign_keys = OFF")
                 self._initialize()
             self._db.execute("PRAGMA foreign_keys = ON")
@@ -42,12 +67,23 @@ class RecordStore:
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             version = self._db.execute("PRAGMA user_version").fetchone()[0]
-            if version == 3:
+            if version == 4:
                 return
-            if version == 1:
+            if version == 2:
+                self._db.execute("""
+                    CREATE TEMP TABLE links_to_keep AS
+                    SELECT l.link_key, l.id, v.from_key, v.to_key, v.relation,
+                           v.explanation, v.author_id, v.recorded_at
+                    FROM links l JOIN link_revisions v
+                    ON v.link_key = l.link_key AND v.revision = l.current_revision
+                """)
+                self._db.execute("DROP TABLE link_revisions")
+                self._db.execute("DROP TABLE links")
+            if version in (1, 2):
                 self._db.execute("ALTER TABLE records RENAME TO old_records")
-            self._db.execute(Path(__file__).with_name("schema.sql").read_text())
-            if version == 1:
+            if version < 3:
+                self._db.execute(Path(__file__).with_name("schema.sql").read_text())
+            if version in (1, 2):
                 self._db.execute("""
                     INSERT INTO records
                     SELECT r.record_key, r.id, r.kind, v.text, v.attributes,
@@ -57,7 +93,14 @@ class RecordStore:
                 """)
                 self._db.execute("DROP TABLE record_revisions")
                 self._db.execute("DROP TABLE old_records")
-            self._db.execute("PRAGMA user_version = 3")
+            self._db.execute(Path(__file__).with_name("links.sql").read_text())
+            for direction, column in (("out", "from_key"), ("in", "to_key")):
+                self._db.execute(f"CREATE INDEX links_{direction} ON links ({column}, relation, link_key)")
+                self._db.execute(f"CREATE INDEX links_{direction}_all ON links ({column}, link_key)")
+            if version == 2:
+                self._db.execute("INSERT INTO links SELECT * FROM links_to_keep")
+                self._db.execute("DROP TABLE links_to_keep")
+            self._db.execute("PRAGMA user_version = 4")
 
     def close(self) -> None:
         self._db.close()
@@ -109,6 +152,68 @@ class RecordStore:
                 raise KeyError(record_id)
             record = self.read(record_id)
         return record
+
+    def read_link(self, link_id: str) -> Link:
+        row = self._db.execute(_LINK_SELECT + " WHERE l.id = ?", (link_id,)).fetchone()
+        if row is None:
+            raise KeyError(link_id)
+        return Link(**dict(row))
+
+    def create_link(self, from_id: str, to_id: str, relation: str, *, author_id: str,
+                    explanation: str = "") -> Link:
+        link_id = str(uuid4())
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            self._db.execute(
+                """INSERT INTO links (from_key, to_key, relation, explanation,
+                   author_id, updated_at, id) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (*self._link_values(from_id, to_id, relation, explanation, author_id), link_id),
+            )
+            link = self.read_link(link_id)
+        return link
+
+    def update_link(self, link_id: str, *, from_id: str, to_id: str, relation: str,
+                    author_id: str, explanation: str = "") -> Link:
+        """Replace current link contents and refresh its last-edited timestamp."""
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            result = self._db.execute(
+                """UPDATE links SET from_key = ?, to_key = ?, relation = ?, explanation = ?,
+                   author_id = ?, updated_at = ? WHERE id = ?""",
+                (*self._link_values(from_id, to_id, relation, explanation, author_id), link_id),
+            )
+            if result.rowcount == 0:
+                raise KeyError(link_id)
+            link = self.read_link(link_id)
+        return link
+
+    def connections(self, record_id: str, *, direction: str = "out",
+                    relation: str | None = None, limit: int = 100) -> Connections:
+        """Current one-hop links, ordered by creation; has_more reports truncation."""
+        if direction not in ("out", "in"):
+            raise ValueError("direction must be 'out' or 'in'")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer from 1 to 1000")
+        column = "from_key" if direction == "out" else "to_key"
+        parameters: list[object] = [self._record_key(record_id)]
+        sql = _LINK_SELECT + f" WHERE l.{column} = ?"
+        if relation is not None:
+            sql += " AND l.relation = ?"
+            parameters.append(relation)
+        rows = self._db.execute(sql + " ORDER BY l.link_key LIMIT ?",
+                                (*parameters, limit + 1)).fetchall()
+        return Connections(tuple(Link(**dict(row)) for row in rows[:limit]), len(rows) > limit)
+
+    def _record_key(self, record_id: str) -> int:
+        row = self._db.execute("SELECT record_key FROM records WHERE id = ?", (record_id,)).fetchone()
+        if row is None:
+            raise KeyError(record_id)
+        return row[0]
+
+    def _link_values(self, from_id: str, to_id: str, relation: str,
+                     explanation: str, author_id: str) -> tuple:
+        return (self._record_key(from_id), self._record_key(to_id), relation,
+                explanation, author_id, datetime.now(UTC).isoformat())
 
     @staticmethod
     def _encode(attributes: dict[str, object] | None) -> str:

@@ -10,7 +10,7 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: early implementation.** A Python store supports creating, reading and updating current records with a last-edited timestamp. The graph, retrieval pipeline, installer and agent integrations below remain planned.
+> **Status: early implementation.** The Python store supports current records and links with last-edited timestamps and bounded incoming/outgoing lookups. Ranked retrieval, source citations, the installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
@@ -34,7 +34,22 @@ Run tests from the repository root with `python -m unittest discover -s tests -v
 
 Each record has a stable ID and kind, current text, JSON attributes, the last editor's `author_id`, and a database-assigned UTC `updated_at` timestamp. Updates replace text and attributes in full; omitted attributes become `{}`. Missing references raise `KeyError`. Invalid SQL-constrained fields raise `sqlite3.IntegrityError`. Returned metadata is a detached copy; changing it does not update the database.
 
-One table stores current records. Writes are atomic, and the last committed update wins. There are no revision counters, stale-edit checks or historical reads. Opening a version-1 database keeps each record's latest contents and removes its history tables. Schema format numbers only identify file layouts. Use one store per thread on a local filesystem; the API and schema are experimental.
+One table stores current records and another stores current links. Writes are atomic, and the last committed update wins. There are no revision counters, stale-edit checks or historical reads. Opening a legacy version-1 or version-2 database keeps the latest contents and removes history tables and pins. Schema format numbers only identify file layouts. Use one store per thread on a local filesystem; the API and schema are experimental.
+
+## Connect existing records
+
+```python
+with RecordStore("research.sqlite") as db:
+    finding = db.create("Finding", text="Ramp requires utility approval", author_id="alice")
+    company = db.create("Entity", text="Supplier A", author_id="alice")
+    link = db.create_link(finding.id, company.id, "about", author_id="alice")
+    incoming = db.connections(company.id, direction="in", relation="about")
+    assert incoming.links == (link,) and not incoming.has_more
+```
+
+`read_link(id)` returns current contents. `update_link` replaces its endpoints, relation and explanation in place, records the last editor and refreshes `updated_at`. Links always refer to current records. Agents reassess support when underlying understanding changes; the database does not preserve earlier assumptions or automatically determine whether a relationship is still valid.
+
+`connections` returns links in creation order, with an optional exact relation filter. Its default limit is 100, its maximum is 1,000, and `has_more` reports omitted links. Incoming lookups preserve the stored direction. Missing IDs raise `KeyError`; duplicate links and custom relation labels are allowed. Pagination, recursive traversal and link deletion are not implemented yet.
 
 ## What can you do with PremiseDB?
 

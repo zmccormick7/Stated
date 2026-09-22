@@ -83,6 +83,6 @@ class RecordStoreTests(unittest.TestCase):
         with closing(sqlite3.connect(path)) as sql:
             self.assertEqual(sql.execute("SELECT record_key FROM records").fetchone()[0], 7)
             tables = {row[0] for row in sql.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-            self.assertEqual(tables, {"records", "sqlite_sequence"})
+            self.assertEqual(tables, {"records", "links", "sqlite_sequence"})
         with RecordStore(path) as reopened:
             self.assertEqual(reopened.read("existing").text, "Another edit")

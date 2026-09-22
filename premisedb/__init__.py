@@ -1,3 +1,3 @@
-from .store import Record, RecordStore
+from .store import Connections, Link, Record, RecordStore
 
-__all__ = ["Record", "RecordStore"]
+__all__ = ["Connections", "Link", "Record", "RecordStore"]
