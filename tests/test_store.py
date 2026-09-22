@@ -4,6 +4,7 @@ from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from premisedb import RecordStore
 
@@ -59,30 +60,34 @@ class RecordStoreTests(unittest.TestCase):
             with self.subTest(attributes=attributes), self.assertRaises(ValueError):
                 self.store.create("Finding", text="x", author_id="alice", attributes=attributes)
 
-    def test_migration_keeps_latest_contents_and_removes_history(self):
-        path = self.path.with_name("legacy.sqlite")
-        with closing(sqlite3.connect(path, isolation_level=None)) as sql:
-            sql.executescript("""
-                CREATE TABLE records (record_key INTEGER PRIMARY KEY, id TEXT, kind TEXT,
-                    current_revision INTEGER, FOREIGN KEY (record_key, current_revision)
-                    REFERENCES record_revisions (record_key, revision));
-                CREATE TABLE record_revisions (record_key INTEGER REFERENCES records,
-                    revision INTEGER, text TEXT, attributes TEXT, author_id TEXT,
-                    recorded_at TEXT, PRIMARY KEY (record_key, revision));
-                INSERT INTO records VALUES (7, 'existing', 'Finding', 2);
-                INSERT INTO record_revisions VALUES
-                    (7, 1, 'Old claim', '{}', 'alice', '2026-09-21T00:00:00+00:00'),
-                    (7, 2, 'Current claim', '{}', 'bob', '2026-09-22T00:00:00+00:00');
-                PRAGMA user_version = 1;
-            """)
-        with RecordStore(path) as migrated:
-            current = migrated.read("existing")
-            self.assertEqual((current.text, current.author_id, current.updated_at),
-                             ("Current claim", "bob", "2026-09-22T00:00:00+00:00"))
-            migrated.update(current.id, text="Another edit", author_id="carol")
+    def test_incompatible_schema_is_rejected_without_changing_file(self):
+        for version in (1, 2, 3, 5):
+            with self.subTest(version=version):
+                path = self.path.with_name(f"schema-{version}.sqlite")
+                with closing(sqlite3.connect(path, isolation_level=None)) as sql:
+                    sql.execute("CREATE TABLE existing_data (text TEXT)")
+                    sql.execute("INSERT INTO existing_data VALUES ('Keep this')")
+                    sql.execute(f"PRAGMA user_version = {version}")
+                original = path.read_bytes()
+                with self.assertRaisesRegex(ValueError, "Incompatible schema version.*create a new database"):
+                    RecordStore(path)
+                self.assertEqual(path.read_bytes(), original)
+
+    def test_failed_initialization_rolls_back_and_can_be_retried(self):
+        path = self.path.with_name("new.sqlite")
+        read_text = Path.read_text
+
+        def fail_on_links(file):
+            if file.name == "links.sql":
+                raise OSError("unreadable schema")
+            return read_text(file)
+
+        with patch.object(Path, "read_text", fail_on_links):
+            with self.assertRaises(OSError):
+                RecordStore(path)
         with closing(sqlite3.connect(path)) as sql:
-            self.assertEqual(sql.execute("SELECT record_key FROM records").fetchone()[0], 7)
-            tables = {row[0] for row in sql.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-            self.assertEqual(tables, {"records", "links", "sqlite_sequence"})
-        with RecordStore(path) as reopened:
-            self.assertEqual(reopened.read("existing").text, "Another edit")
+            self.assertEqual(sql.execute("PRAGMA user_version").fetchone()[0], 0)
+            self.assertEqual(sql.execute("SELECT name FROM sqlite_master").fetchall(), [])
+        with RecordStore(path) as retried:
+            record = retried.create("Entity", text="Company", author_id="alice")
+            retried.create_link(record.id, record.id, "related_to", author_id="alice")

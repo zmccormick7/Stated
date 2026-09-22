@@ -8,6 +8,9 @@ import sqlite3
 from uuid import uuid4
 
 
+_SCHEMA_VERSION = 4
+
+
 @dataclass(frozen=True)
 class Record:
     id: str
@@ -50,57 +53,36 @@ class RecordStore:
         self._db = sqlite3.connect(path, isolation_level=None, timeout=5.0)
         self._db.row_factory = sqlite3.Row
         try:
-            version = self._db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3, 4):
-                raise ValueError(f"Unsupported schema version: {version}")
+            version = self._schema_version()
             self._db.execute("PRAGMA journal_mode = WAL")
             self._db.execute("PRAGMA synchronous = FULL")
-            if version < 4:
-                self._db.execute("PRAGMA foreign_keys = OFF")
-                self._initialize()
             self._db.execute("PRAGMA foreign_keys = ON")
+            if version == 0:
+                self._initialize()
         except BaseException:
             self._db.close()
             raise
 
+    def _schema_version(self) -> int:
+        version = self._db.execute("PRAGMA user_version").fetchone()[0]
+        if version not in (0, _SCHEMA_VERSION):
+            raise ValueError(
+                f"Incompatible schema version {version}; expected {_SCHEMA_VERSION}. "
+                "Migrations are not supported; create a new database."
+            )
+        return version
+
     def _initialize(self) -> None:
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            version = self._db.execute("PRAGMA user_version").fetchone()[0]
-            if version == 4:
+            if self._schema_version() == _SCHEMA_VERSION:
                 return
-            if version == 2:
-                self._db.execute("""
-                    CREATE TEMP TABLE links_to_keep AS
-                    SELECT l.link_key, l.id, v.from_key, v.to_key, v.relation,
-                           v.explanation, v.author_id, v.recorded_at
-                    FROM links l JOIN link_revisions v
-                    ON v.link_key = l.link_key AND v.revision = l.current_revision
-                """)
-                self._db.execute("DROP TABLE link_revisions")
-                self._db.execute("DROP TABLE links")
-            if version in (1, 2):
-                self._db.execute("ALTER TABLE records RENAME TO old_records")
-            if version < 3:
-                self._db.execute(Path(__file__).with_name("schema.sql").read_text())
-            if version in (1, 2):
-                self._db.execute("""
-                    INSERT INTO records
-                    SELECT r.record_key, r.id, r.kind, v.text, v.attributes,
-                           v.author_id, v.recorded_at
-                    FROM old_records r JOIN record_revisions v
-                    ON v.record_key = r.record_key AND v.revision = r.current_revision
-                """)
-                self._db.execute("DROP TABLE record_revisions")
-                self._db.execute("DROP TABLE old_records")
+            self._db.execute(Path(__file__).with_name("schema.sql").read_text())
             self._db.execute(Path(__file__).with_name("links.sql").read_text())
             for direction, column in (("out", "from_key"), ("in", "to_key")):
                 self._db.execute(f"CREATE INDEX links_{direction} ON links ({column}, relation, link_key)")
                 self._db.execute(f"CREATE INDEX links_{direction}_all ON links ({column}, link_key)")
-            if version == 2:
-                self._db.execute("INSERT INTO links SELECT * FROM links_to_keep")
-                self._db.execute("DROP TABLE links_to_keep")
-            self._db.execute("PRAGMA user_version = 4")
+            self._db.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
 
     def close(self) -> None:
         self._db.close()

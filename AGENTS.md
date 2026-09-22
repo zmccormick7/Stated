@@ -12,6 +12,7 @@ Read [README.md](README.md) before planning or implementing changes. PremiseDB i
 ## Scope
 
 - This repository starts from a clean foundation. Earlier prototypes impose no architecture, compatibility or migration requirements on new work.
+- During early development, reject incompatible database schema formats with a clear error. Do not add migrations; developers recreate prototype databases when the schema changes.
 - Do not add a frontend unless the user requests one.
 - PremiseDB may call configured local or hosted models for document processing, contextual headers, embeddings and retrieval scoring. Keep providers replaceable and accept caller-supplied outputs where useful. The earlier manual-only prototype workflow is not a permanent product constraint. Existing agent harnesses conduct investigations; do not build an agent orchestrator into PremiseDB.
 - Include dsRAG's Contextual Chunk Headers and Relevant Segment Extraction in the document-retrieval foundation. Preserve source text and citations separately from model-generated context.
