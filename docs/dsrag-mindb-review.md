@@ -9,11 +9,11 @@ Pinned versions:
 
 ## The useful combination
 
-minDB gives us a way to find vector candidates with a relatively small in-memory index. dsRAG gives us a way to turn search candidates into useful evidence rather than isolated chunks. PremiseDB can combine these ideas with a graph that preserves how research changes and why one piece of understanding matters to another.
+minDB gives us a way to find vector candidates with a relatively small in-memory index. dsRAG gives us a way to turn search candidates into useful evidence rather than isolated chunks. PremiseDB can combine these ideas with a graph that stores current research and why one piece of understanding matters to another.
 
 **Adopt Contextual Chunk Headers and Relevant Segment Extraction as core document-retrieval components.** The project author's experience with these techniques on financial documents, including FinanceBench, is the reason to carry them into the first PremiseDB implementation. Their role is concrete: improve chunk representations before search, then extract useful variable-length segments after scoring. Graph context selection builds on those components.
 
-The important new work is selecting connected research context and maintaining consistency between evidence, graph revisions and search indexes. Neither project already supplies that layer.
+The important new work is selecting connected research context and maintaining consistency between evidence, current graph contents and search indexes. Neither project already supplies that layer.
 
 ## dsRAG: search units and returned context can differ
 
@@ -27,9 +27,9 @@ The query pipeline retrieves and reranks chunks, then performs Relevant Segment 
 
 dsRAG prepends document and section context to chunks used for embedding and reranking. Its chunking code also preserves section, line and page information and handles visual elements separately. These are useful boundaries between content, search representation and source navigation. [Context headers](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/auto_context.py#L136), [chunking](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/dsparse/sectioning_and_chunking/chunking.py#L5).
 
-**Retain:** use document title and summary plus section title and summary to build Contextual Chunk Headers. Embed and text-rerank the header together with the original chunk. Store shared document/section context explicitly, including revisions and provenance. Finding search representations can use similar enrichment, but that extension does not replace CCH for source documents.
+**Retain:** use document title and summary plus section title and summary to build Contextual Chunk Headers. Embed and text-rerank the header together with the original chunk. Store shared document/section context explicitly, including last-edited timestamps and provenance. Finding search representations can use similar enrichment, but that extension does not replace CCH for source documents.
 
-**Adapt:** keep raw evidence separate from enrichment. Generated or agent-authored summaries and contextual labels must never become purported source quotations. Store their provenance and include their revision in the search representation's identity. PremiseDB can generate section structure and context using configured models, or accept existing outputs from the caller.
+**Adapt:** keep raw evidence separate from enrichment. Generated or agent-authored summaries and contextual labels must never become purported source quotations. Store their provenance and include a fingerprint of their current contents in the search representation's identity. PremiseDB can generate section structure and context using configured models, or accept existing outputs from the caller.
 
 ### Reuse components selectively
 
@@ -61,7 +61,7 @@ minDB tracks the population present during training to decide when retraining is
 
 **Retain:** explicit index health and retraining rather than assuming a trained index stays representative forever.
 
-**Adapt:** use durable change sequences and index generations, with replay after a crash. Distinguish three things: whether a committed item has been indexed, whether the training distribution still represents the corpus, and measured retrieval recall. A training coverage ratio is not a recall measurement.
+**Adapt:** track pending item IDs and publish replaceable index files, rebuilding from current stored payloads after a crash. Distinguish three things: whether a committed item has been indexed, whether the training distribution still represents the corpus, and measured retrieval recall. A training coverage ratio is not a recall measurement.
 
 Metadata filtering is explicitly future work in the reviewed README, and the query method has no filter parameter. PremiseDB needs filters during candidate generation where feasible, exact eligibility checks before return, and a way to report when filtering exhausted the search budget. A naive global top-k followed by filtering will often underfill narrow company or date queries. [minDB metadata scope](https://github.com/D-Star-AI/minDB/blob/249688c225c53f2335734f0eb243a69b5f2ff6ee/README.md#metadata).
 
@@ -74,7 +74,7 @@ Metadata filtering is explicitly future work in the reviewed README, and the que
 | Vector search | Implement minDB's compressed-candidate/full-vector-refinement pattern using Faiss. |
 | Training | Start with sampling and bounded batches; evaluate minDB's two-level method before adopting its additional complexity. |
 | Persistence | Use one authoritative SQLite database, including disk-backed full vectors. Measure it under load before considering another store. |
-| Graph retrieval | Build the new part: bounded, relation-aware context selection with evidence paths, revision checks and explicit omissions. |
+| Graph retrieval | Build the new part: bounded, relation-aware context selection with evidence paths, current-state checks and explicit omissions. |
 | Model calls | PremiseDB invokes configured context, embedding and reranking providers as part of ingestion and retrieval. Caller-provided outputs are supported alternatives. |
 
 SQLite is the preferred starting point, not a claim that it outperforms LMDB. We can reuse minDB's retrieval architecture independently of its storage backend. LMDB's named databases can share a transaction, but adopting it would also mean maintaining more secondary-index machinery ourselves. That is an alternative to revisit only for a measured limitation. [LMDB transaction structure](https://lmdb.readthedocs.io/en/release/#named-databases).
