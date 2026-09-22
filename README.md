@@ -10,7 +10,7 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: early implementation.** The Python store supports current records and links with last-edited timestamps and bounded incoming/outgoing lookups. Ranked retrieval, source citations, the installer and agent integrations below remain planned.
+> **Status: early implementation.** The Python store supports current records and links with last-edited timestamps, lexical record search and bounded incoming/outgoing lookups. Document retrieval, semantic search, automatic graph context, source citations, the installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
@@ -18,7 +18,7 @@ Document retrieval will incorporate dsRAG's **Contextual Chunk Headers** to give
 
 ## Try the record store
 
-From this checkout, use Python 3.12+ linked against SQLite 3.51.3+ (which includes the [WAL-reset fix](https://sqlite.org/wal.html#walresetbug)). There are no third-party runtime dependencies in this slice.
+From this checkout, use Python 3.12+ linked against SQLite 3.51.3+ with FTS5 enabled (including the [WAL-reset fix](https://sqlite.org/wal.html#walresetbug)). There are no third-party runtime dependencies in this slice.
 
 ```python
 from premisedb import RecordStore
@@ -50,6 +50,21 @@ with RecordStore("research.sqlite") as db:
 `read_link(id)` returns current contents. `update_link` replaces its endpoints, relation and explanation in place, records the last editor and refreshes `updated_at`. Links always refer to current records. Agents reassess support when underlying understanding changes; the database does not preserve earlier assumptions or automatically determine whether a relationship is still valid.
 
 `connections` returns links in creation order, with an optional exact relation filter. Its default limit is 100, its maximum is 1,000, and `has_more` reports omitted links. Incoming lookups preserve the stored direction. Missing IDs raise `KeyError`; duplicate links and custom relation labels are allowed. Pagination, recursive traversal and link deletion are not implemented yet.
+
+## Search for a starting point
+
+```python
+with RecordStore("research.sqlite") as db:
+    results = db.search_records("utility approval", kind="Finding", limit=10)
+    for record in results:
+        print(record.text, db.connections(record.id).links)
+```
+
+`search_records` returns a tuple of current `Record` objects, searching only their `text`. The query is plain text: punctuation separates words, any query word can match, and quotes or boolean words have no query-language meaning. Empty or punctuation-only queries return an empty tuple. FTS5 supplies case-insensitive token matching and [BM25 ranking](https://sqlite.org/fts5.html#the_bm25_function); ties use record creation order.
+
+The optional `kind` filter applies before the result limit. The default limit is 10 and the maximum is 1,000; results have no pagination or truncation flag yet. Invalid kinds, limits or non-string queries raise `ValueError`. SQLite triggers keep the index synchronized in the same transaction as each record write, so updated text replaces earlier searchable text immediately after commit.
+
+This uses schema format 5. Databases created by the earlier record/link-only implementation must be recreated; no migration is performed.
 
 ## What can you do with PremiseDB?
 
