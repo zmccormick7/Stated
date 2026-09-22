@@ -5,7 +5,7 @@
 Read [README.md](README.md) before planning or implementing changes. PremiseDB is a shared, evolving knowledge graph for fundamental investment research. Its purpose is to let agents build on understanding accumulated across investigations.
 
 - Support both one carefully guided agent and many independent agents contributing to the same graph. Knowledge belongs to the shared workspace, not a conversation or a particular harness.
-- Organize the interface around **Recall, Contribute and Revise**: retrieve relevant understanding, add findings and connections, and correct earlier understanding while preserving its history.
+- Organize the interface around **Recall, Contribute and Revise**: retrieve relevant understanding, add findings and connections, and update current understanding.
 - Keep the core usable through existing agent harnesses, including Codex, Claude Code and custom workflows. Skills should teach agents to use the common operations.
 - A useful first demonstration is a fresh agent connecting findings from independent investigations without access to their conversation histories.
 
@@ -20,10 +20,10 @@ Read [README.md](README.md) before planning or implementing changes. PremiseDB i
 
 ## Knowledge and shared writes
 
-- Preserve evidence, source locators, authorship, scope and relevant dates. Distinguish when a finding applies from when the graph learned it; unknown values stay unknown.
+- Preserve evidence, source locators, authorship and scope. Records and links store only current contents and a database-assigned UTC `updated_at` timestamp. Domain dates belong in source metadata; unknown values stay unknown.
 - Keep disclosed facts, interpretations, scenario assumptions and open questions distinguishable. Inferences need a traceable basis; do not invent evidence or imply expert review that did not happen.
-- Preserve revisions and explicit disagreements. New evidence must not silently erase earlier understanding or make prior research appear to have known more than it did.
-- Treat stable entity identity and concurrent contributions as core design requirements. Shared writes must avoid lost updates and make conflicting revisions visible.
+- Do not add history tables, revision counters, endpoint pins, audit trails or historical reads. Keep disagreements as separate current Findings when useful.
+- Keep stable identities. Updates replace current contents atomically; the last committed update wins. There is no stale-edit detection or automatic historical reconstruction.
 - Let agents follow relationships, supporting evidence and unresolved questions. Useful knowledge must not require a numerical model or deterministic scenario calculation.
 
 ## Development

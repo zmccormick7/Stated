@@ -10,7 +10,7 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: first implementation slice.** A Python record store supports creation, versioned reads and revisions with conflict detection. The graph, retrieval pipeline, installer and agent integrations below remain planned.
+> **Status: early implementation.** A Python store supports creating, reading and updating current records with a last-edited timestamp. The graph, retrieval pipeline, installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
@@ -25,17 +25,16 @@ from premisedb import RecordStore
 
 with RecordStore("research.sqlite") as db:
     first = db.create("Finding", text="Ramp expected in June", author_id="alice")
-    second = db.revise(first.id, expected_revision=first.revision,
-                       text="Ramp delayed to September", author_id="bob")
+    second = db.update(first.id, text="Ramp delayed to September", author_id="bob")
     assert db.read(first.id) == second
-    assert db.read(first.id, revision=1) == first
+    print(second.updated_at)
 ```
 
 Run tests from the repository root with `python -m unittest discover -s tests -v`.
 
-Each record has a stable ID and kind; each revision stores text, JSON attributes, author and a database-assigned UTC timestamp. Revisions replace text and attributes in full; omitted attributes become `{}`. Missing references raise `KeyError`; stale edits raise `RevisionConflict` with the expected and current revision. Invalid SQL-constrained fields raise `sqlite3.IntegrityError`. Returned metadata is a detached copy; changing it does not change stored history.
+Each record has a stable ID and kind, current text, JSON attributes, the last editor's `author_id`, and a database-assigned UTC `updated_at` timestamp. Updates replace text and attributes in full; omitted attributes become `{}`. Missing references raise `KeyError`. Invalid SQL-constrained fields raise `sqlite3.IntegrityError`. Returned metadata is a detached copy; changing it does not update the database.
 
-The two tables separate identity/current revision from immutable contents. Each write checks and appends inside one `BEGIN IMMEDIATE` transaction. Use one store per thread on a local filesystem. This slice has no batch contributions, domain-specific validation, effective dates or global commit sequence yet; its API and schema are experimental.
+One table stores current records. Writes are atomic, and the last committed update wins. There are no revision counters, stale-edit checks or historical reads. Opening a version-1 database keeps each record's latest contents and removes its history tables. Schema format numbers only identify file layouts. Use one store per thread on a local filesystem; the API and schema are experimental.
 
 ## What can you do with PremiseDB?
 
@@ -94,7 +93,7 @@ The proposed model has six record types:
 | Record type | What it represents | Examples |
 | --- | --- | --- |
 | **Entity** | Something research refers to repeatedly, with a stable identity across investigations. | A company, product, facility, commodity or regulation. |
-| **Source** | Material used as evidence, with enough provenance to identify the version and locate the relevant passage. | A filing, transcript, analyst note or interview record. |
+| **Source** | Material used as evidence, with enough provenance to identify the document and locate the relevant passage. | A filing, transcript, analyst note or interview record. |
 | **Finding** | A statement or conclusion from an investigation, with its supporting evidence or reasoning. | A supply relationship, business mechanism, estimate or scenario assumption. |
 | **Question** | An unresolved issue worth investigating, connected to the understanding it could change. | Whether a customer can postpone contractual deliveries. |
 | **Model** | A financial model whose implementation can live in an external tool. | An Excel forecast or a Python valuation model. |
@@ -106,7 +105,7 @@ These are lightweight labels on a common record structure: a stable ID, a type, 
 
 **Questions preserve useful uncertainty.** Identifying which unknown could change a conclusion is valuable research. A question gives later agents somewhere to contribute partial answers, attach evidence and connect a finding that resolves it. Several investigations can share the same question.
 
-**Models connect numbers to understanding.** A Variable can link a modeled assumption to the Findings supporting it and the Questions that could change it. Calculations remain in the user's modeling tool. Evidence links preserve which version of an assumption they supported; changing its value does not silently transfer that support. Model runs are outside the current ontology.
+**Models connect numbers to understanding.** A Variable can link a modeled assumption to the Findings supporting it and the Questions that could change it. Calculations remain in the user's modeling tool. Links point to current records; agents reassess their meaning when assumptions change. Model runs and past assumption values are outside the current ontology.
 
 For example, in a hypothetical investigation:
 
@@ -118,7 +117,7 @@ For example, in a hypothetical investigation:
 
 A later agent researching the contracts can answer Q1 and revisit F2. A source that challenges F1 can prompt a review of the findings that depend on it.
 
-Records preserve authorship, relevant dates and scope. When a finding applied is distinct from when PremiseDB learned it. Corrections retain prior versions, and disagreements can remain explicit. Later investigations can inspect that history and build on the revised understanding.
+Records store current understanding, its last editor and a last-edited timestamp. Updates replace previous contents. Disagreements can remain explicit as separate Findings connected to one another. Later investigations build on the current graph.
 
 ## Bring your own agents
 
@@ -126,7 +125,7 @@ The common interface we are building lets agents:
 
 - **Recall** relevant knowledge and follow its connections.
 - **Contribute** findings, evidence and questions.
-- **Revise** existing understanding while preserving its history.
+- **Revise** existing understanding in place.
 
 The planned skills will guide interactive research in Codex and Claude Code. Custom agent workflows will use the same operations against a shared workspace.
 
