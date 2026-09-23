@@ -14,7 +14,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 8
+_SCHEMA_VERSION = 9
 
 
 @dataclass(frozen=True)
@@ -53,11 +53,26 @@ class Passage:
 
 
 @dataclass(frozen=True)
+class DocumentContext:
+    source_id: str
+    title: str
+    summary: str
+    author_id: str
+    updated_at: str
+    provenance: dict[str, object]
+
+    @property
+    def header(self) -> str:
+        return f"{self.title}\n{self.summary}"
+
+
+@dataclass(frozen=True)
 class SourceSegment:
     source_id: str
     start_byte: int
     end_byte: int
     text: str
+    document_context: DocumentContext | None = None
 
 
 _LINK_SELECT = """
@@ -150,7 +165,7 @@ class RecordStore:
 
     def search_documents(self, query: str, *, source_ids: Iterable[str] | None = None,
                          limit: int = 10) -> tuple[SourceSegment, ...]:
-        """Rank passage bodies by BM25 and return exact canonical source ranges."""
+        """Rank passage headers/bodies; return exact source text with separate context."""
         expression = self._search_expression(query)
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise ValueError("limit must be an integer from 1 to 1000")
@@ -165,18 +180,53 @@ class RecordStore:
         if not expression or source_keys == "[]":
             return ()
         rows = self._db.execute(
-            """SELECT r.id AS source_id, p.start_byte, p.end_byte
+            """SELECT r.id AS source_id, p.start_byte, p.end_byte,
+                      c.title, c.summary, c.author_id, c.updated_at, c.provenance
                FROM passages_fts JOIN passages p ON p.passage_key = passages_fts.rowid
                JOIN records r ON r.record_key = p.source_key
+               LEFT JOIN document_context c ON c.source_key = p.source_key
                WHERE passages_fts MATCH ?
                  AND (? IS NULL OR p.source_key IN (SELECT value FROM json_each(?)))
-               ORDER BY bm25(passages_fts), p.source_key, p.ordinal LIMIT ?""",
+               ORDER BY bm25(passages_fts, 0.5, 1.0), p.source_key, p.ordinal LIMIT ?""",
             (expression, source_keys, source_keys, limit),
         ).fetchall()
-        # Canonical text is fixed, so these ranges survive concurrent rechunking.
-        return tuple(SourceSegment(**dict(row), text=self.read_source_text(
-            row["source_id"], start_byte=row["start_byte"], end_byte=row["end_byte"],
-        )) for row in rows)
+        # Context was captured with the hits; fixed source ranges survive rechunking.
+        return tuple(SourceSegment(
+            row["source_id"], row["start_byte"], row["end_byte"],
+            self.read_source_text(row["source_id"], start_byte=row["start_byte"],
+                                  end_byte=row["end_byte"]),
+            self._decode_document_context(row["source_id"], row),
+        ) for row in rows)
+
+    def set_document_context(self, source_id: str, *, title: str, summary: str,
+                             author_id: str, provenance: dict[str, object] | None = None) -> DocumentContext:
+        """Replace document-level enrichment and refresh its passage index atomically."""
+        if not isinstance(title, str) or not isinstance(summary, str):
+            raise ValueError("title and summary must be strings")
+        encoded = self._encode(provenance)
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            self._db.execute(
+                """INSERT INTO document_context
+                   (source_key, title, summary, author_id, updated_at, provenance)
+                   VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(source_key) DO UPDATE SET
+                   title = excluded.title, summary = excluded.summary,
+                   author_id = excluded.author_id, updated_at = excluded.updated_at,
+                   provenance = excluded.provenance""",
+                (self._source_key(source_id), title, summary, author_id,
+                 datetime.now(UTC).isoformat(), encoded),
+            )
+            context = self.read_document_context(source_id)
+            assert context is not None
+        return context
+
+    def read_document_context(self, source_id: str) -> DocumentContext | None:
+        """Read current enrichment; an ingested Source without context returns None."""
+        row = self._db.execute(
+            "SELECT title, summary, author_id, updated_at, provenance FROM document_context WHERE source_key = ?",
+            (self._source_key(source_id),),
+        ).fetchone()
+        return self._decode_document_context(source_id, row)
 
     def create(self, kind: str, *, text: str, author_id: str,
                attributes: dict[str, object] | None = None) -> Record:
@@ -363,6 +413,13 @@ class RecordStore:
                      explanation: str, author_id: str) -> tuple:
         return (self._record_key(from_id), self._record_key(to_id), relation,
                 explanation, author_id, datetime.now(UTC).isoformat())
+
+    @staticmethod
+    def _decode_document_context(source_id: str, row: sqlite3.Row | None) -> DocumentContext | None:
+        if row is None or row["title"] is None:
+            return None
+        return DocumentContext(source_id, row["title"], row["summary"], row["author_id"],
+                               row["updated_at"], json.loads(row["provenance"]))
 
     @staticmethod
     def _search_expression(query: str) -> str:
