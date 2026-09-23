@@ -1,6 +1,7 @@
 """Current records and links; each store owns one thread-affine connection."""
 
 from dataclasses import dataclass
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -10,8 +11,10 @@ import sqlite3
 import unicodedata
 from uuid import uuid4
 
+from .chunking import split_ranges
 
-_SCHEMA_VERSION = 6
+
+_SCHEMA_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,14 @@ class Link:
 class Connections:
     links: tuple[Link, ...]
     has_more: bool
+
+
+@dataclass(frozen=True)
+class Passage:
+    source_id: str
+    ordinal: int
+    start_byte: int
+    end_byte: int
 
 
 _LINK_SELECT = """
@@ -162,14 +173,8 @@ class RecordStore:
         """Read canonical text or a half-open UTF-8 byte range, without normalization."""
         if type(start_byte) is not int or (end_byte is not None and type(end_byte) is not int):
             raise ValueError("byte offsets must be integers")
-        row = self._db.execute(
-            """SELECT s.source_key FROM source_content s
-               JOIN records r ON r.record_key = s.source_key WHERE r.id = ?""",
-            (source_id,),
-        ).fetchone()
-        if row is None:
-            raise KeyError(source_id)
-        with self._db.blobopen("source_content", "text_utf8", row[0], readonly=True) as content:
+        source_key = self._source_key(source_id)
+        with self._db.blobopen("source_content", "text_utf8", source_key, readonly=True) as content:
             end_byte = len(content) if end_byte is None else end_byte
             if not 0 <= start_byte <= end_byte <= len(content):
                 raise ValueError("byte range is outside source text")
@@ -180,6 +185,52 @@ class RecordStore:
                         raise ValueError("byte offsets must be UTF-8 character boundaries")
             content.seek(start_byte)
             return content.read(end_byte - start_byte).decode("utf-8")
+
+    def chunk_source(self, source_id: str, *, max_chars: int = 2000) -> int:
+        """Replace the source's passages using the default splitter; return their count."""
+        ranges = split_ranges(self.read_source_text(source_id), max_chars=max_chars)
+        return self.set_passages(source_id, ranges)
+
+    def set_passages(self, source_id: str, ranges: Iterable[tuple[int, int]]) -> int:
+        """Replace passages with a complete, nonoverlapping partition of source bytes."""
+        source_key = self._source_key(source_id)
+        ranges = tuple((start, end) for start, end in ranges)
+        previous_end = 0
+        with self._db.blobopen("source_content", "text_utf8", source_key, readonly=True) as content:
+            for start, end in ranges:
+                if type(start) is not int or type(end) is not int:
+                    raise ValueError("passage offsets must be integers")
+                if not previous_end == start < end <= len(content):
+                    raise ValueError("passages must be ordered, contiguous, nonempty byte ranges")
+                if end < len(content):
+                    content.seek(end)
+                    if content.read(1)[0] & 0xC0 == 0x80:
+                        raise ValueError("passage boundaries must be UTF-8 character boundaries")
+                previous_end = end
+            if previous_end != len(content):
+                raise ValueError("passages must cover the entire source text")
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            self._db.execute("DELETE FROM passages WHERE source_key = ?", (source_key,))
+            self._db.executemany(
+                "INSERT INTO passages (source_key, ordinal, start_byte, end_byte) VALUES (?, ?, ?, ?)",
+                ((source_key, ordinal, start, end) for ordinal, (start, end) in enumerate(ranges)),
+            )
+        return len(ranges)
+
+    def read_passages(self, source_id: str, *, start_ordinal: int = 0,
+                      limit: int = 100) -> tuple[Passage, ...]:
+        """Read current passage locators in source order, starting at an inclusive ordinal."""
+        if type(start_ordinal) is not int or start_ordinal < 0:
+            raise ValueError("start_ordinal must be a nonnegative integer")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer from 1 to 1000")
+        rows = self._db.execute(
+            """SELECT ordinal, start_byte, end_byte FROM passages
+               WHERE source_key = ? AND ordinal >= ? ORDER BY ordinal LIMIT ?""",
+            (self._source_key(source_id), start_ordinal, limit),
+        ).fetchall()
+        return tuple(Passage(source_id, **dict(row)) for row in rows)
 
     def update(self, record_id: str, *, text: str, author_id: str,
                attributes: dict[str, object] | None = None) -> Record:
@@ -252,6 +303,16 @@ class RecordStore:
         row = self._db.execute("SELECT record_key FROM records WHERE id = ?", (record_id,)).fetchone()
         if row is None:
             raise KeyError(record_id)
+        return row[0]
+
+    def _source_key(self, source_id: str) -> int:
+        row = self._db.execute(
+            """SELECT s.source_key FROM source_content s
+               JOIN records r ON r.record_key = s.source_key WHERE r.id = ?""",
+            (source_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(source_id)
         return row[0]
 
     def _insert_record(self, kind: str, text: str, encoded: str, author_id: str) -> Record:

@@ -10,7 +10,7 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: early implementation.** The Python store supports current records and links, lexical record search, bounded connection lookups, text-only source ingestion and exact source-text reads. Parsing, passage retrieval, semantic search, automatic graph context, citation links, the installer and agent integrations below remain planned.
+> **Status: early implementation.** The Python store supports current records and links, lexical record search, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, passage search, semantic search, automatic graph context, citation links, the installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
@@ -66,7 +66,7 @@ with RecordStore("research.sqlite") as db:
 
 The optional `kind` filter applies before the result limit. The default limit is 10 and the maximum is 1,000; results have no pagination or truncation flag yet. Invalid kinds, limits or non-string queries raise `ValueError`. SQLite triggers keep the index synchronized in the same transaction as each record write, so updated text replaces earlier searchable text immediately after commit.
 
-This uses schema format 6. Databases created by earlier implementations must be recreated; no migration is performed.
+This uses schema format 7. Databases created by earlier implementations must be recreated; no migration is performed.
 
 ## Ingest source text
 
@@ -86,7 +86,24 @@ with RecordStore("research.sqlite") as db:
 
 The body and its SHA-256 are stored in SQLite for this first ingestion slice. Text is preserved exactly, including whitespace, line endings and Unicode normalization. `read_source_text(id)` returns the full text; optional offsets select a half-open UTF-8 byte range `[start_byte, end_byte)`, fetching only that range. Invalid ranges or offsets inside a character raise `ValueError`. Missing IDs and records without ingested text raise `KeyError`.
 
-Source descriptions and metadata remain editable. Captured text stays fixed so future citation offsets keep their meaning; ingest a separate Source for different text. This is evidence identity, not record edit history. Parsing, original-file storage, chunking, CCH, RSE and passage search will be added in later increments. Ingestion currently holds one document's text in memory and makes no model calls.
+Source descriptions and metadata remain editable. Captured text stays fixed so future citation offsets keep their meaning; ingest a separate Source for different text. This is evidence identity, not record edit history. Parsing, original-file storage, CCH, RSE and passage search will be added in later increments. Ingestion currently holds one document's text in memory and makes no model calls.
+
+## Split a source into passages
+
+```python
+with RecordStore("research.sqlite") as db:
+    count = db.chunk_source(source.id, max_chars=2000)
+    for passage in db.read_passages(source.id, limit=100):
+        text = db.read_source_text(passage.source_id,
+                                   start_byte=passage.start_byte, end_byte=passage.end_byte)
+        print(passage.ordinal, text)
+```
+
+The dependency-free splitter caps each passage at `max_chars` Unicode characters (default 2,000), with zero overlap. Before a cut, it prefers the last paragraph break in the latter half of the window, then a line break, then whitespace; otherwise it cuts at the character limit. The final remainder stays intact. Whitespace and original text are preserved exactly. This is a character budget, not a token budget, and the splitter does not detect semantic sections or understand tables.
+
+`chunk_source` replaces the current passage set atomically and returns its count. It processes one document in memory. `read_passages` returns `Passage` locators containing `source_id`, zero-based `ordinal`, `start_byte` and `end_byte`, in source order. Its default limit is 100 and maximum is 1,000; use `start_ordinal=last.ordinal + 1` to continue. These reads use the current set, so concurrent rechunking can change later pages. An ingested but unchunked source returns an empty tuple; missing ingested text raises `KeyError`.
+
+Alternative chunkers can call `set_passages(source_id, ranges)` with UTF-8 byte ranges covering the entire document, in order, without gaps, overlap or empty passages. Boundaries must fall between UTF-8 characters. The built-in `premisedb.chunking.split_ranges` is a pure function independent of SQLite. Passage rows store only locators; document text stays in `source_content`. Rechunking changes passage positions, so evidence references must use Source IDs and byte ranges rather than ordinals. Passage indexing and document/section context for CCH remain later increments.
 
 ## What can you do with PremiseDB?
 
