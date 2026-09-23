@@ -17,6 +17,7 @@ Read [README.md](README.md) before planning or implementing changes. PremiseDB i
 - PremiseDB may call configured local or hosted models for document processing, contextual headers, embeddings and retrieval scoring. Keep providers replaceable and accept caller-supplied outputs where useful. The earlier manual-only prototype workflow is not a permanent product constraint. Existing agent harnesses conduct investigations; do not build an agent orchestrator into PremiseDB.
 - Include dsRAG's Contextual Chunk Headers and Relevant Segment Extraction in the document-retrieval foundation. Preserve source text and citations separately from model-generated context.
 - Use Python and explicit SQL. Use SQLite, including FTS5, for authoritative storage and lexical search, and Faiss for derived vector indexes. Do not add another database or search service without a demonstrated need. Transport remains open; the illustrative README command is not an implemented installer.
+- Keep all table, index and trigger definitions together in `premisedb/schema.sql`.
 - Keep the initial implementation small and coherent. Financial calculators, broad data integrations and deployment infrastructure are outside the initial scope.
 
 ## Knowledge and shared writes

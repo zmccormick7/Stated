@@ -61,7 +61,7 @@ class RecordStoreTests(unittest.TestCase):
                 self.store.create("Finding", text="x", author_id="alice", attributes=attributes)
 
     def test_incompatible_schema_is_rejected_without_changing_file(self):
-        for version in (1, 2, 3, 4, 6):
+        for version in (1, 2, 3, 4, 5, 7):
             with self.subTest(version=version):
                 path = self.path.with_name(f"schema-{version}.sqlite")
                 with closing(sqlite3.connect(path, isolation_level=None)) as sql:
@@ -78,8 +78,7 @@ class RecordStoreTests(unittest.TestCase):
         read_text = Path.read_text
 
         def fail_after_schema(file):
-            sql = read_text(file)
-            return sql + "\nINVALID SQL;\n" if file.name == "search.sql" else sql
+            return read_text(file) + "\nINVALID SQL;\n"
 
         with patch.object(Path, "read_text", fail_after_schema):
             with self.assertRaises(sqlite3.OperationalError):
