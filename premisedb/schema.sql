@@ -57,9 +57,29 @@ CREATE TRIGGER source_content_fixed BEFORE UPDATE ON source_content BEGIN
 END;
 
 CREATE TABLE passages (
+    passage_key INTEGER PRIMARY KEY AUTOINCREMENT,
     source_key INTEGER NOT NULL REFERENCES source_content (source_key),
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     start_byte INTEGER NOT NULL CHECK (start_byte >= 0),
     end_byte INTEGER NOT NULL CHECK (end_byte > start_byte),
-    PRIMARY KEY (source_key, ordinal)
-) WITHOUT ROWID;
+    UNIQUE (source_key, ordinal)
+);
+
+-- Index terms without storing another copy of the document text.
+CREATE VIRTUAL TABLE passages_fts USING fts5(text, content='', contentless_delete=1);
+CREATE TRIGGER passages_fts_insert AFTER INSERT ON passages BEGIN
+    INSERT INTO passages_fts(rowid, text)
+        SELECT new.passage_key,
+               CAST(substr(text_utf8, new.start_byte + 1, new.end_byte - new.start_byte) AS TEXT)
+        FROM source_content WHERE source_key = new.source_key;
+END;
+CREATE TRIGGER passages_fts_update AFTER UPDATE ON passages BEGIN
+    DELETE FROM passages_fts WHERE rowid = old.passage_key;
+    INSERT INTO passages_fts(rowid, text)
+        SELECT new.passage_key,
+               CAST(substr(text_utf8, new.start_byte + 1, new.end_byte - new.start_byte) AS TEXT)
+        FROM source_content WHERE source_key = new.source_key;
+END;
+CREATE TRIGGER passages_fts_delete AFTER DELETE ON passages BEGIN
+    DELETE FROM passages_fts WHERE rowid = old.passage_key;
+END;
