@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 include = ["premisedb*"]
 
 [tool.setuptools.package-data]
-premisedb = ["schema.sql", "calibrations.json"]
+premisedb = ["schema.sql"]
 
 [project.optional-dependencies]
-evaluation = ["scikit-learn>=1.6,<2", "tiktoken>=0.12,<1"]
+evaluation = ["scipy>=1.14,<2", "tiktoken>=0.12,<1"]

@@ -1,10 +1,9 @@
-from dataclasses import replace
 from math import exp
 import unittest
 from unittest.mock import patch
 
-from premisedb import (DocumentContext, RecordStore, Reranker, ScoreCalibration, SourceSegment,
-                      calibration_for, extract_segments, retrieve)
+from premisedb import (DocumentContext, OpenRouterReranker, RecordStore, Reranker, SourceSegment,
+                      extract_segments, retrieve)
 
 
 class FixtureReranker(Reranker):
@@ -27,7 +26,6 @@ class RetrievalTests(unittest.TestCase):
             offset = end
         self.db.set_passages(self.source.id, ranges)
         self.seeds = self.db.search_documents("needle")
-        self.profile = ScoreCalibration("fixture", "fixture", 1, 0)
 
     def test_only_search_hits_are_scored_and_unreturned_bridge_is_penalized(self):
         other = self.db.ingest_source(description="Other", document_text="needle other", author_id="agent")
@@ -43,13 +41,13 @@ class RetrievalTests(unittest.TestCase):
 
         with patch.object(reranker, "_score", side_effect=inspect):
             result = retrieve(self.db, "needle", source_ids=[self.source.id], reranker=reranker,
-                              calibration=self.profile, count_tokens=len)
+                              count_tokens=len)
         excerpt, = result.excerpts
         self.assertEqual(excerpt.segment.text, "".join(self.parts[:3]))
         self.assertEqual(excerpt.token_count, len(excerpt.render()))
         self.assertAlmostEqual(excerpt.value, 0.9 - 0.18 - 0.18 + exp(-1 / 30) * 0.9 - 0.18)
         self.assertEqual([s.score for s in result.scored_passages], [0.9, 0.9])
-        self.assertEqual(result.calibration, self.profile)
+        self.assertEqual(result.transformed_scores, (0.9, 0.9))
 
     def test_span_limit_bounds_gap_reads_without_a_neighbor_radius(self):
         text = "needle A\n" + "gap\n" * 6 + "needle B\n" + "outside\n"
@@ -60,7 +58,7 @@ class RetrievalTests(unittest.TestCase):
             offset += len(part)
         self.db.set_passages(source.id, ranges)
         options = dict(source_ids=[source.id], reranker=FixtureReranker(), count_tokens=len,
-                       calibration=self.profile, irrelevant_chunk_penalty=0.05)
+                       irrelevant_chunk_penalty=0.05)
         with patch.object(self.db, "read_source_text", wraps=self.db.read_source_text) as read:
             result = retrieve(self.db, "needle", max_segment_passages=8, **options)
             self.assertEqual(read.call_count, 8)  # Two hits and six intervening passages; no exterior reads.
@@ -73,7 +71,7 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual([e.segment.text for e in result.excerpts], ["needle A\n", "needle B\n"])
 
     def test_gap_token_cost_and_penalty_can_prevent_a_join(self):
-        options = dict(reranker=FixtureReranker(), calibration=self.profile, count_tokens=len)
+        options = dict(reranker=FixtureReranker(), count_tokens=len)
         for limits in ({"max_segment_tokens": 10}, {"max_total_tokens": 18},
                        {"irrelevant_chunk_penalty": 0.5, "minimum_value": 0.1}):
             with self.subTest(limits=limits):
@@ -93,7 +91,7 @@ class RetrievalTests(unittest.TestCase):
         with patch.object(self.db, "search_documents", return_value=self.seeds), \
                 patch.object(self.db, "read_source_text", side_effect=edit_then_read):
             result = retrieve(self.db, "needle", reranker=FixtureReranker(),
-                              calibration=self.profile, count_tokens=len)
+                              count_tokens=len)
         excerpt, = result.excerpts
         self.assertEqual(excerpt.segment.text, "".join(self.parts[:3]))
         self.assertEqual(excerpt.segment.document_context, context)
@@ -103,12 +101,11 @@ class RetrievalTests(unittest.TestCase):
 
     def test_invalid_options_empty_scope_and_stale_anchors_make_no_paid_calls(self):
         reranker = FixtureReranker()
-        options = dict(reranker=reranker, calibration=self.profile, count_tokens=len)
+        options = dict(reranker=reranker, count_tokens=len)
         with patch.object(reranker, "_score") as score:
             result = retrieve(self.db, "needle", source_ids=[], **options)
             self.assertEqual(result.excerpts, ())
-            for invalid in ({"max_total_tokens": 0}, {"max_segment_passages": 0},
-                            {"calibration": replace(self.profile, model="other")}, {"count_tokens": None}):
+            for invalid in ({"max_total_tokens": 0}, {"max_segment_passages": 0}, {"count_tokens": None}):
                 with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                     retrieve(self.db, "needle", **{**options, **invalid})
             read = self.db._rse_intervening_passages
@@ -122,39 +119,30 @@ class RetrievalTests(unittest.TestCase):
                     retrieve(self.db, "needle", **options)
             score.assert_not_called()
 
-    def test_pipeline_accepts_an_explicit_profile_for_each_supported_model(self):
-        reranker = FixtureReranker()
-        for model in ("typesafe/jev-1.13", "cohere/rerank-4-pro", "voyageai/rerank-2.5"):
-            reranker.model = model
-            with patch.object(reranker, "_score", return_value=[0.99, 0.99]):
-                result = retrieve(self.db, "needle", reranker=reranker, count_tokens=len,
-                                  calibration=calibration_for(model))
-            self.assertEqual(result.calibration, calibration_for(model))
-            self.assertTrue(result.excerpts)
-            self.assertEqual(len(result.scored_passages), 2)
+    def test_pipeline_transforms_hits_once_keeps_raw_scores_and_penalizes_gap(self):
+        for model in OpenRouterReranker.MODELS:
+            reranker = OpenRouterReranker(model, api_key="test")
+            scores = tuple(reranker.transform(s) for s in (0.9, 0.8))
+            with patch.object(reranker, "_score", return_value=[0.9, 0.8]), \
+                    patch.object(reranker, "transform", wraps=reranker.transform) as transform:
+                result = retrieve(self.db, "needle", reranker=reranker, count_tokens=len)
+            self.assertEqual([call.args[0] for call in transform.call_args_list], [0.9, 0.8])
+            self.assertEqual(result.transformed_scores, scores)
+            self.assertEqual([s.score for s in result.scored_passages], [0.9, 0.8])
+            excerpt, = result.excerpts
+            self.assertEqual(excerpt.segment.text, "".join(self.parts[:3]))
+            self.assertAlmostEqual(excerpt.value, scores[0] + exp(-1 / 30) * scores[1] - 3 * 0.18)
 
-    def test_default_keeps_raw_scores_and_calibration_is_explicit(self):
+    def test_balanced_minimum_and_selection_overrides_are_independent_of_transform(self):
         reranker = FixtureReranker()
-        reranker.model = "cohere/rerank-4-pro"
         options = dict(reranker=reranker, count_tokens=len, candidate_limit=1)
-        result = retrieve(self.db, "needle", **options)
-        self.assertIsNone(result.calibration)
-        excerpt, = result.excerpts
-        self.assertAlmostEqual(excerpt.value, 0.9 - 0.18)
-        mapped = retrieve(self.db, "needle", calibration=calibration_for(reranker.model), **options)
-        self.assertEqual(mapped.excerpts, ())
-        self.assertEqual(mapped.scored_passages, result.scored_passages)
-
-    def test_balanced_minimum_applies_after_calibration_and_overrides_are_explicit(self):
-        reranker = FixtureReranker()
-        options = dict(reranker=reranker, calibration=self.profile, count_tokens=len, candidate_limit=1)
         with patch.object(reranker, "_score", return_value=[0.6]):
             self.assertEqual(retrieve(self.db, "needle", **options).excerpts, ())  # 0.6 - 0.18 < 0.5
             excerpt, = retrieve(self.db, "needle", minimum_value=0.4, **options).excerpts
             self.assertAlmostEqual(excerpt.value, 0.42)
             # A different score mapping changes evidence utility, never the minimum.
-            low = replace(self.profile, intercept=-5)
-            result = retrieve(self.db, "needle", **{**options, "calibration": low})
+            with patch.object(reranker, "transform", return_value=0.1):
+                result = retrieve(self.db, "needle", **options)
             self.assertEqual(result.excerpts, ())
 
 
