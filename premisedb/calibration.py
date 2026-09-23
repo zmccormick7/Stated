@@ -1,4 +1,4 @@
-"""Model-bound sigmoid calibrations fitted on labeled financial passages."""
+"""Model-bound score transformations; RSE selection settings are separate."""
 
 from dataclasses import dataclass
 import json
@@ -19,17 +19,15 @@ class ScoreCalibration:
     model: str
     slope: float
     intercept: float
-    irrelevant_chunk_penalty: float = 0.001
-    minimum_value: float = 0.01
 
     def __post_init__(self):
         if any(not isinstance(value, str) or not value.strip() for value in (self.name, self.model)):
             raise ValueError("Calibration requires a name and model")
-        for value in (self.slope, self.intercept, self.irrelevant_chunk_penalty, self.minimum_value):
+        for value in (self.slope, self.intercept):
             if type(value) not in (int, float) or not isfinite(value):
                 raise ValueError("Calibration parameters must be finite numbers")
-        if self.slope <= 0 or self.irrelevant_chunk_penalty <= 0 or self.minimum_value <= 0:
-            raise ValueError("Slope, penalty and minimum value must be positive")
+        if self.slope <= 0:
+            raise ValueError("Slope must be positive")
 
     def apply(self, scores) -> tuple[float, ...]:
         result = []

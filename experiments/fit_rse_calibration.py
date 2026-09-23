@@ -26,9 +26,9 @@ def evaluate(cases, count_tokens, profile=None):
         pool = segments(case)
         intervening = segments(case, 'unscored_segments')
         scores = profile.apply(case['scores']) if profile else case['scores']
-        options = {} if not profile else dict(irrelevant_chunk_penalty=profile.irrelevant_chunk_penalty, minimum_value=profile.minimum_value)
+        # Compare raw and mapped scores under the same dsRAG balanced scoring defaults.
         excerpts = extract_segments(pool + intervening, tuple(scores) + (None,) * len(intervening),
-                                    count_tokens=count_tokens, **options)
+                                    count_tokens=count_tokens)
         found = sum(label and any(item.segment.source_id == chunk.source_id and item.segment.start_byte <= chunk.start_byte and chunk.end_byte <= item.segment.end_byte for item in excerpts)
                     for chunk, label in zip(pool + intervening, case['labels'] + case.get('unscored_labels', [])))
         complete += found == case['required_support']
@@ -54,9 +54,8 @@ def fit_and_evaluate(training, validation, test, count_tokens):
         x = np.array([[score_logit(score)] for case in cases for score in case["scores"]])
         y = np.array([label for case in cases for label in case["labels"]], dtype=int)
         fitted = LogisticRegression(C=1.0, solver="lbfgs", max_iter=1000).fit(x, y)
-        # Selection settings were chosen on validation cases, then frozen for the test set.
         profile = ScoreCalibration("finqa-support-v1", model, float(fitted.coef_[0, 0]),
-                                   float(fitted.intercept_[0]), 0.001, 0.01)
+                                   float(fitted.intercept_[0]))
         profiles[model] = asdict(profile)
         report[model] = {split: {"raw": evaluate(rows, count_tokens),
                                 "calibrated": evaluate(rows, count_tokens, profile)}

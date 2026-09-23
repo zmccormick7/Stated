@@ -20,7 +20,7 @@ class CalibrationTests(unittest.TestCase):
     def test_invalid_profiles_and_scores_fail_and_extreme_sigmoids_are_stable(self):
         profile = ScoreCalibration("fixture", "fixture", 1, 0)
         for changes in ({"name": ""}, {"model": ""}, {"slope": 0}, {"slope": -1},
-                        {"slope": True}, {"intercept": float("nan")}, {"minimum_value": -1}):
+                        {"slope": True}, {"intercept": float("nan")}, {"intercept": float("inf")}):
             with self.assertRaises(ValueError):
                 replace(profile, **changes)
         for score in (True, -1, 2, float("nan"), float("inf"), "0.9"):

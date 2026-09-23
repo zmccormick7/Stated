@@ -2,17 +2,19 @@
 
 The selector follows dsRAG at commit `5215e9791133fc1ad383af043fb2fde0e7d4e4d4`. Across 500 randomized single-query cases (seed 2314), intervals matched its original `get_best_segments` function exactly and utilities agreed within 1e-12. After removing neighbor expansion, a further 500 randomized integrated retrieval cases matched the reference: only supplied search hits were scored, and intervening passages received the negative penalty. Fixtures use one-character passages and a one-character-per-token counter so budgets equal dsRAG's passage counts. Separate tests cover real BPE tokenization, non-additive and decreasing token counts, repeated headers, gaps beyond the former neighbor radius, passage/token limits, source scope, stale anchors and preserved canonical citations through context changes/rechunking.
 
-## Current pipeline: candidate-only replay
+## Current pipeline: balanced scoring defaults
 
-The runtime now reranks only BM25 hits. To check the change without more API calls, we regenerated the original 20 final-test searches (up to 20 hits per question), kept their previously collected raw scores, discarded all neighbor scores, and supplied intervening passages as unscored. The bundled calibration coefficients and selection settings were unchanged. This replay has 353 scored passages and 24 annotated supports; it is not a fresh provider run or an independent test set.
+The runtime reranks only BM25 hits and uses raw scores unless a caller explicitly supplies a transformation. RSE's scoring defaults match dsRAG's `balanced` preset: penalty 0.18, minimum segment value 0.5, rank decay 30 and length adjustment enabled. Both raw and transformed scores use these same defaults; score profiles no longer contain selection settings. Token budgets and passage/excerpt caps remain PremiseDB adaptations.
 
-| Provider | Questions retaining all support, raw → calibrated | Support passages retained, out of 24 | Mean output tokens |
+We replayed the original 20 final-test searches (up to 20 hits per question), kept their previously collected raw scores, discarded all neighbor scores, and supplied intervening passages as unscored. This replay has 353 scored passages and 24 annotated supports; it is not a fresh provider run or an independent test set. Both columns below use the balanced scoring defaults, isolating the effect of the unchanged score transformations.
+
+| Provider | Questions retaining all support, raw → transformed | Support passages retained, out of 24 | Mean output tokens |
 | --- | ---: | ---: | ---: |
-| Jev 1.13 | 18 → 19 | 21 → 22 | 249 → 368 |
-| Cohere Rerank 4 Pro | 20 → 19 | 24 → 22 | 677 → 594 |
-| Voyage rerank-2.5 | 20 → 20 | 24 → 24 | 512 → 696 |
+| Jev 1.13 | 19 → 14 | 22 → 15 | 259 → 104 |
+| Cohere Rerank 4 Pro | 20 → 8 | 24 → 9 | 717 → 80 |
+| Voyage rerank-2.5 | 20 → 13 | 24 → 13 | 581 → 111 |
 
-This verifies selection using cached scores; it does not prove that a provider would return identical scores for a smaller batch. The original calibration was fitted on a different candidate distribution. No coefficients or thresholds were retuned for this correction.
+The fitted mappings suppress support under these thresholds, so they are now opt-in experiments, not automatic provider defaults. Lower support-label prediction error did not translate into better RSE evidence selection. The original calibration was fitted on a different candidate distribution. No coefficients were refitted and no RSE thresholds were tuned for this correction; we restored dsRAG's scoring defaults. This verifies selection using cached scores, not that a provider would return identical scores for a smaller batch.
 
 ## Original calibration experiment (expanded candidates)
 
@@ -22,7 +24,7 @@ The training pool contains 411 passages, including 21 annotated supports. Valida
 
 For each provider independently, L2-regularized logistic regression (`C=1`, `lbfgs`, maximum 1,000 iterations) fits `sigmoid(slope * logit(score) + intercept)`. Raw scores are clipped to `[1e-6, 1-1e-6]` before logits. Fitting uses only training labels; production inference uses the saved two coefficients and the standard library. Observed tools: scikit-learn 1.9.1 and tiktoken 0.14.0.
 
-Selection uses penalty 0.001 and minimum utility 0.01 on calibrated scores. These recall-oriented settings were chosen using validation results and frozen before collecting the final test set. Other settings are the same in both comparisons: rank decay 30, length adjustment enabled, at most five excerpts, 32 passages per excerpt, 2,000 tokens per excerpt and 6,000 total tokens using `cl100k_base`. Headers are included. The raw baseline uses the original 0.2 penalty and 0.5 minimum. This compares complete scoring/selection configurations, not an isolated effect of the sigmoid.
+The original experiment used penalty 0.001 and minimum utility 0.01 on calibrated scores. Those permissive settings were chosen using validation results and frozen before collecting the final test set; they have since been removed from the runtime and profile files. Other settings were the same in both comparisons: rank decay 30, length adjustment enabled, at most five excerpts, 32 passages per excerpt, 2,000 tokens per excerpt and 6,000 total tokens using `cl100k_base`. Headers were included. The raw baseline used a 0.2 penalty and 0.5 minimum. These historical results compare complete scoring/selection configurations, not an isolated effect of the sigmoid.
 
 ### Original final test: 20 additional questions
 
@@ -34,7 +36,7 @@ Brier score is mean squared error against the support label; lower is better. Th
 | Cohere Rerank 4 Pro | 0.3173 → 0.0260 | 20 → 19 | 24 → 22 | 767 → 644 |
 | Voyage rerank-2.5 | 0.1320 → 0.0226 | 20 → 20 | 24 → 24 | 595 → 738 |
 
-Calibration improves score error for all three models here. Retrieval still has a coverage/length tradeoff: Jev retains more support with more text; Cohere returns less text but drops support on one question; Voyage preserves support while returning more text. These small, source-scoped checks do not establish equal-budget superiority or validate full-corpus retrieval, the production splitter, richer document summaries or other evidence-labeling policies. The bundled profiles are starting points to replace or refit for another workload.
+Calibration improved score error for all three models here. With the now-removed permissive settings, Jev retained more support with more text; Cohere returned less text but dropped support on one question; Voyage preserved support while returning more text. These historical checks do not validate the current defaults or establish equal-budget superiority, full-corpus retrieval, the production splitter, richer document summaries or other evidence-labeling policies.
 
 All 60 questions across three providers cost $0.183054262: 1,329 Jev requests and 60 batch requests each for Cohere and Voyage. Responses identified `typesafe/jev-1.13-20260917`, `rerank-v4.0-pro` and `rerank-2.5`. No credentials or downloaded source material are committed.
 
@@ -50,7 +52,7 @@ python -m experiments.collect_rse_scores .cache/finqa-test.json .cache/test.json
 python -m experiments.fit_rse_calibration .cache/train.json .cache/validation.json .cache/test.json .cache/fitted
 ```
 
-The collector now scores only search hits and records intervening passages separately with no scores. The evaluator penalizes those passages during selection and includes them when measuring returned support. The commands above produce a new candidate-only experiment, not the original calibration data. The collector refuses to overwrite a saved run. Fit output includes `calibrations.json` and `report.json`; inspect them before replacing bundled profiles. Partial collections are rejected by the fitter. API responses may vary between runs.
+The collector scores only search hits and records intervening passages separately with no scores. The evaluator penalizes those passages during selection and includes them when measuring returned support. It uses the same balanced scoring defaults for raw and transformed scores. The commands above produce a new candidate-only experiment, not the original calibration data. The collector refuses to overwrite a saved run. Fit output includes score-only `calibrations.json` and `report.json`; inspect them before replacing bundled profiles. Partial collections are rejected by the fitter. API responses may vary between runs.
 
 For the historical collection procedure, use [the experiment at commit e3c08b5](https://github.com/Implied-Capital/PremiseDB/blob/e3c08b5e3af869ccb8b70f7b44a5d53fadcd7f92/experiments/collect_rse_scores.py). The local runs used for the unchanged committed coefficients have these SHA-256 digests:
 

@@ -27,7 +27,7 @@ class RetrievalTests(unittest.TestCase):
             offset = end
         self.db.set_passages(self.source.id, ranges)
         self.seeds = self.db.search_documents("needle")
-        self.profile = ScoreCalibration("fixture", "fixture", 1, 0, 0.2, 0.1)
+        self.profile = ScoreCalibration("fixture", "fixture", 1, 0)
 
     def test_only_search_hits_are_scored_and_unreturned_bridge_is_penalized(self):
         other = self.db.ingest_source(description="Other", document_text="needle other", author_id="agent")
@@ -47,7 +47,7 @@ class RetrievalTests(unittest.TestCase):
         excerpt, = result.excerpts
         self.assertEqual(excerpt.segment.text, "".join(self.parts[:3]))
         self.assertEqual(excerpt.token_count, len(excerpt.render()))
-        self.assertAlmostEqual(excerpt.value, 0.9 - 0.2 - 0.2 + exp(-1 / 30) * 0.9 - 0.2)
+        self.assertAlmostEqual(excerpt.value, 0.9 - 0.18 - 0.18 + exp(-1 / 30) * 0.9 - 0.18)
         self.assertEqual([s.score for s in result.scored_passages], [0.9, 0.9])
         self.assertEqual(result.calibration, self.profile)
 
@@ -60,7 +60,7 @@ class RetrievalTests(unittest.TestCase):
             offset += len(part)
         self.db.set_passages(source.id, ranges)
         options = dict(source_ids=[source.id], reranker=FixtureReranker(), count_tokens=len,
-                       calibration=replace(self.profile, irrelevant_chunk_penalty=0.05))
+                       calibration=self.profile, irrelevant_chunk_penalty=0.05)
         with patch.object(self.db, "read_source_text", wraps=self.db.read_source_text) as read:
             result = retrieve(self.db, "needle", max_segment_passages=8, **options)
             self.assertEqual(read.call_count, 8)  # Two hits and six intervening passages; no exterior reads.
@@ -75,7 +75,7 @@ class RetrievalTests(unittest.TestCase):
     def test_gap_token_cost_and_penalty_can_prevent_a_join(self):
         options = dict(reranker=FixtureReranker(), calibration=self.profile, count_tokens=len)
         for limits in ({"max_segment_tokens": 10}, {"max_total_tokens": 18},
-                       {"irrelevant_chunk_penalty": 0.5}):
+                       {"irrelevant_chunk_penalty": 0.5, "minimum_value": 0.1}):
             with self.subTest(limits=limits):
                 result = retrieve(self.db, "needle", **options, **limits)
                 self.assertEqual([e.segment.text for e in result.excerpts], [self.parts[0], self.parts[2]])
@@ -122,14 +122,40 @@ class RetrievalTests(unittest.TestCase):
                     retrieve(self.db, "needle", **options)
             score.assert_not_called()
 
-    def test_pipeline_selects_the_matching_default_for_each_supported_model(self):
+    def test_pipeline_accepts_an_explicit_profile_for_each_supported_model(self):
         reranker = FixtureReranker()
         for model in ("typesafe/jev-1.13", "cohere/rerank-4-pro", "voyageai/rerank-2.5"):
             reranker.model = model
-            result = retrieve(self.db, "needle", reranker=reranker, count_tokens=len)
+            with patch.object(reranker, "_score", return_value=[0.99, 0.99]):
+                result = retrieve(self.db, "needle", reranker=reranker, count_tokens=len,
+                                  calibration=calibration_for(model))
             self.assertEqual(result.calibration, calibration_for(model))
             self.assertTrue(result.excerpts)
             self.assertEqual(len(result.scored_passages), 2)
+
+    def test_default_keeps_raw_scores_and_calibration_is_explicit(self):
+        reranker = FixtureReranker()
+        reranker.model = "cohere/rerank-4-pro"
+        options = dict(reranker=reranker, count_tokens=len, candidate_limit=1)
+        result = retrieve(self.db, "needle", **options)
+        self.assertIsNone(result.calibration)
+        excerpt, = result.excerpts
+        self.assertAlmostEqual(excerpt.value, 0.9 - 0.18)
+        mapped = retrieve(self.db, "needle", calibration=calibration_for(reranker.model), **options)
+        self.assertEqual(mapped.excerpts, ())
+        self.assertEqual(mapped.scored_passages, result.scored_passages)
+
+    def test_balanced_minimum_applies_after_calibration_and_overrides_are_explicit(self):
+        reranker = FixtureReranker()
+        options = dict(reranker=reranker, calibration=self.profile, count_tokens=len, candidate_limit=1)
+        with patch.object(reranker, "_score", return_value=[0.6]):
+            self.assertEqual(retrieve(self.db, "needle", **options).excerpts, ())  # 0.6 - 0.18 < 0.5
+            excerpt, = retrieve(self.db, "needle", minimum_value=0.4, **options).excerpts
+            self.assertAlmostEqual(excerpt.value, 0.42)
+            # A different score mapping changes evidence utility, never the minimum.
+            low = replace(self.profile, intercept=-5)
+            result = retrieve(self.db, "needle", **{**options, "calibration": low})
+            self.assertEqual(result.excerpts, ())
 
 
 class TokenBudgetTests(unittest.TestCase):

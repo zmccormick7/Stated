@@ -27,8 +27,8 @@ class RSETests(unittest.TestCase):
                 result, = select(chunks, [0, 0.95, bridge_score, 0.9, 0])
                 self.assertEqual(result.segment.text, "Revenue grew.Footnote.Margin rose.")
                 self.assertEqual((result.segment.start_byte, result.segment.end_byte), (6, 40))
-                bridge_value = -0.2 if bridge_score is None else exp(-2 / 30) * bridge_score - 0.2
-                self.assertAlmostEqual(result.value, 0.95 - 0.2 + bridge_value + exp(-1 / 30) * 0.9 - 0.2)
+                bridge_value = -0.18 if bridge_score is None else exp(-2 / 30) * bridge_score - 0.18
+                self.assertAlmostEqual(result.value, 0.95 - 0.18 + bridge_value + exp(-1 / 30) * 0.9 - 0.18)
 
     def test_long_unhelpful_gap_produces_disjoint_excerpts(self):
         chunks = passages(["Useful A"] + ["Noise"] * 10 + ["Useful B"])
@@ -41,7 +41,7 @@ class RSETests(unittest.TestCase):
         first, second, third = passages(["A", "B", "C"])
         result, = select([third, first, second], [0.9, 0.8, 0.85])
         self.assertEqual(result.segment.text, "ABC")
-        self.assertAlmostEqual(result.value, 0.9 + exp(-1 / 30) * 0.85 + exp(-2 / 30) * 0.8 - 0.6)
+        self.assertAlmostEqual(result.value, 0.9 + exp(-1 / 30) * 0.85 + exp(-2 / 30) * 0.8 - 0.54)
 
     def test_sources_gaps_and_context_changes_are_boundaries(self):
         context = DocumentContext("source", "Old title", "", "agent", "", {})
@@ -77,12 +77,12 @@ class RSETests(unittest.TestCase):
 
     def test_length_adjustment_and_inclusive_minimum(self):
         chunks = passages(["a" * 1400])
-        adjusted, = select(chunks, [0.9], minimum_value=1.4)
-        self.assertAlmostEqual(adjusted.value, 1.4)
-        self.assertEqual(select(chunks, [0.9], minimum_value=1.4,
+        adjusted, = select(chunks, [0.9], minimum_value=1.44)
+        self.assertAlmostEqual(adjusted.value, 1.44)
+        self.assertEqual(select(chunks, [0.9], minimum_value=1.44,
                                          chunk_length_adjustment=False), ())
-        plain, = select(chunks, [0.9], minimum_value=0.7, chunk_length_adjustment=False)
-        self.assertAlmostEqual(plain.value, 0.7)
+        plain, = select(chunks, [0.9], minimum_value=0.72, chunk_length_adjustment=False)
+        self.assertAlmostEqual(plain.value, 0.72)
 
     def test_search_to_extraction_preserves_canonical_text_after_rechunking(self):
         with RecordStore(":memory:") as db:

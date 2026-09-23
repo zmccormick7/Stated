@@ -23,11 +23,12 @@ def extract_segments(segments: Sequence[SourceSegment], scores: Sequence[float |
                      count_tokens: Callable[[str], int],
                      max_segment_tokens: int = 2000, max_total_tokens: int = 6000,
                      max_segments: int = 5, max_segment_passages: int = 32,
-                     irrelevant_chunk_penalty: float = 0.2,
+                     irrelevant_chunk_penalty: float = 0.18,
                      minimum_value: float = 0.5, decay_rate: float = 30,
                      chunk_length_adjustment: bool = True) -> tuple[ExtractedSegment, ...]:
     """Greedily select contiguous evidence spans from aligned passages and scores.
 
+    Scoring defaults follow dsRAG's balanced preset; budgets use tokens.
     None scores penalize supplied but unscored passages. Missing byte ranges are
     hard boundaries. Budgets use the supplied tokenizer, including a header and
     two separating newlines per returned span. No storage or model calls occur.

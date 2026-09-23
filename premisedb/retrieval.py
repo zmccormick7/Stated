@@ -1,9 +1,9 @@
-"""Search → calibrated candidate scoring → RSE with penalties for unreturned passages."""
+"""Search → candidate scoring → RSE with penalties for unreturned passages."""
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from .calibration import ScoreCalibration, calibration_for
+from .calibration import ScoreCalibration
 from .reranking import Reranker, ScoredSegment
 from .rse import ExtractedSegment, extract_segments
 from .store import RecordStore
@@ -13,7 +13,7 @@ from .store import RecordStore
 class RetrievalResult:
     excerpts: tuple[ExtractedSegment, ...]
     scored_passages: tuple[ScoredSegment, ...]  # Raw provider scores, in search order.
-    calibration: ScoreCalibration
+    calibration: ScoreCalibration | None
 
 
 def retrieve(db: RecordStore, query: str, *, reranker: Reranker,
@@ -21,19 +21,16 @@ def retrieve(db: RecordStore, query: str, *, reranker: Reranker,
              candidate_limit: int = 50,
              calibration: ScoreCalibration | None = None, **selection) -> RetrievalResult:
     """Score only search hits; unreturned intervening passages receive the RSE penalty."""
-    model = getattr(reranker, "model", None)
-    calibration = calibration or calibration_for(model)
-    if calibration.model != model:
+    if calibration is not None and calibration.model != getattr(reranker, "model", None):
         raise ValueError("Calibration model must match the reranker model")
-    options = {"irrelevant_chunk_penalty": calibration.irrelevant_chunk_penalty,
-               "minimum_value": calibration.minimum_value, **selection}
     # Reject invalid budgets before performing paid calls, including on empty searches.
-    extract_segments((), (), count_tokens=count_tokens, **options)
+    extract_segments((), (), count_tokens=count_tokens, **selection)
     candidates = db.search_documents(query, source_ids=source_ids, limit=candidate_limit)
-    intervening = db._rse_intervening_passages(candidates, options.get("max_segment_passages", 32))
+    intervening = db._rse_intervening_passages(candidates, selection.get("max_segment_passages", 32))
     raw = reranker.score(query, candidates) if candidates else ()
+    scores = calibration.apply(raw) if calibration is not None else raw
     excerpts = extract_segments(candidates + intervening,
-                                calibration.apply(raw) + (None,) * len(intervening),
-                                count_tokens=count_tokens, **options)
+                                scores + (None,) * len(intervening),
+                                count_tokens=count_tokens, **selection)
     return RetrievalResult(excerpts, tuple(ScoredSegment(s, score) for s, score in zip(candidates, raw)),
                            calibration)
