@@ -10,11 +10,11 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, configurable reranking through OpenRouter, bounded neighbor fetching, model-specific score calibration, token-budgeted RSE, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, vector search, automatic graph context, citation links, the installer and agent integrations below remain planned.
+> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, configurable reranking through OpenRouter, model-specific score calibration, token-budgeted RSE, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, vector search, automatic graph context, citation links, the installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
-Document retrieval incorporates dsRAG's **Contextual Chunk Headers** through caller-supplied document context, and **Relevant Segment Extraction** through an explicit segment-selection step. The retrieval pipeline combines search, neighbor expansion, calibrated reranking and segment extraction; section context remains planned. The graph connects evidence to accumulated research and model assumptions.
+Document retrieval incorporates dsRAG's **Contextual Chunk Headers** through caller-supplied document context, and **Relevant Segment Extraction** through an explicit segment-selection step. The retrieval pipeline combines search, calibrated reranking and segment extraction; section context remains planned. The graph connects evidence to accumulated research and model assumptions.
 
 ## Try the record store
 
@@ -198,18 +198,20 @@ reranker = OpenRouterReranker(model="voyageai/rerank-2.5")
 with RecordStore("research.sqlite") as db:
     result = retrieve(
         db, "What could delay construction?", reranker=reranker,
-        count_tokens=count_tokens, candidate_limit=50, neighbor_radius=2,
-        max_passages=250, max_segment_tokens=2000, max_total_tokens=6000,
+        count_tokens=count_tokens, candidate_limit=50,
+        max_segment_tokens=2000, max_total_tokens=6000,
     )
 for excerpt in result.excerpts:
     print(excerpt.segment.source_id, excerpt.segment.start_byte, excerpt.segment.end_byte)
     print(excerpt.token_count, excerpt.render())
-print(result.calibration.name, result.neighbors_truncated)
+print(result.calibration.name)
 ```
 
-`retrieve` searches with BM25, expands around the matching passages, scores **every fetched passage**, applies the selected model's calibration, and runs RSE. Optional `source_ids` constrain search and expansion stays within those Sources. Model calls occur after the database reads, outside SQLite transactions. The result exposes `excerpts`, `scored_passages` with raw scores in expansion order, the actual `calibration` object, and `neighbors_truncated`. Provider failures remain errors; missing scores are not silently replaced. The search limit bounds seed recall, and a false truncation flag only means the requested neighbor windows fit.
+`retrieve` searches with BM25, scores **only those search hits**, applies the selected model's calibration, and runs RSE. Optional `source_ids` constrain search. The result exposes `excerpts`, `scored_passages` with raw scores in search order, and the actual `calibration` object. Provider failures and incomplete candidate scores remain errors. The candidate limit bounds retrieval recall.
 
-`expand_passages(seeds, radius=2, limit=250)` is also available on the store. It retains all distinct seeds first, then the nearest neighbors, breaking ties by seed order and source position. Overlapping windows are deduplicated before text reads. Radius must be 0–10 and the passage limit 1–1,000; a limit below the number of distinct seeds is rejected. The return value contains `segments` and `has_more`. A single SQL query captures current locators and document context; it refreshes seed context before scoring. Rechunking that removes an exact seed anchor raises `ValueError` asking the caller to repeat search. Once captured, byte ranges and context remain valid snapshots through later model calls and database edits.
+As in dsRAG, an unreturned passage between hits receives the negative `irrelevant_chunk_penalty`. RSE can bridge it when the summed utility justifies the span. For example, hits at positions 10 and 13 can form one excerpt by paying two penalties for positions 11 and 12. Those intervening passages are never sent to the reranker.
+
+The store reads intervening text for exact token accounting and excerpt assembly, only between hits close enough to fit `max_segment_passages`. No exterior neighbors are read. Gap locators are captured together before body reads and model calls; search-time document context is preserved. Rechunking that removes a hit's exact passage anchor before that capture raises `ValueError` asking the caller to repeat search. Captured byte ranges survive later rechunking. No database transaction spans a model call.
 
 ### Token budgets
 
@@ -221,7 +223,7 @@ The selector counts complete spans instead of adding per-passage counts, since t
 
 `calibration_for(model)` supplies a named `ScoreCalibration` for Jev, Cohere or Voyage. Each applies `sigmoid(slope * logit(raw_score) + intercept)` using separately fitted coefficients; scores are clipped to `[1e-6, 1 - 1e-6]` before taking logits. Raw provider scores remain accessible. Calibration and selection parameters live in ordinary Python objects, and `calibration=` can override the default. Its `model` must match `reranker.model`; custom rerankers must identify their model and supply a matching calibration. Unknown models never silently receive another model's profile.
 
-The bundled `finqa-support-v1` profiles were fitted on 20 financial questions, with selection settings chosen on 20 validation questions and checked on 20 additional test questions. They estimate the dataset's **annotated supporting-passage** label, not truth or universal financial relevance. Sparse labels may omit useful context. Score error improved for all three models on the test set, but excerpt coverage and length still trade off; Cohere lost support on one test question while returning less text. See [calibration results and reproduction instructions](docs/rse-validation.md) before applying these starting profiles to a different corpus, candidate mix, document context or provider version.
+The bundled `finqa-support-v1` profiles were fitted on 20 financial questions, with selection settings chosen on 20 validation questions and checked on 20 additional test questions. They estimate the dataset's **annotated supporting-passage** label, not truth or universal financial relevance. Sparse labels may omit useful context. That original experiment used neighbor-expanded candidate pools, which the retrieval pipeline no longer uses; the coefficients are unchanged. See [calibration provenance and candidate-only replay results](docs/rse-validation.md) for the distinction and limitations before applying these starting profiles to another workload.
 
 The [dsRAG-derived selector](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py) gives each passage `exp(-rank / decay_rate) * score - irrelevant_chunk_penalty`, with zero-based relevance ranks and stable input-order ties. By default, it multiplies this utility by `max(1, passage_characters / 700)`; `chunk_length_adjustment=False` disables this dsRAG heuristic. This utility weighting is separate from token accounting. It greedily selects the best nonoverlapping intervals, allowing weak intervening material when nearby evidence outweighs its cost. Endpoints must have nonnegative utility. Equal values favor the first encountered Source, then the earliest start and end. `excerpt.value` is summed utility and can exceed 1; it is not a probability.
 
@@ -241,7 +243,7 @@ excerpts = extract_segments(
 )
 ```
 
-`extract_segments` remains a pure, single-query function accepting aligned `SourceSegment` passages and scores. Unlike `retrieve`, it does not fetch neighbors or calibrate scores itself. A supplied but unscored passage takes `None` and receives only the negative penalty. Its standalone penalty/minimum defaults remain 0.2/0.5 for the original reference configuration; use the profile's values with calibrated scores. Returned `ExtractedSegment` objects contain `segment`, `value` and `token_count`.
+`extract_segments` remains a pure, single-query function accepting aligned `SourceSegment` passages and scores. It performs no database reads or calibration. When using it directly, supply intervening passages with `None` scores to allow bridging; each receives only the negative penalty. `retrieve` supplies these automatically. The example above can combine only contiguous candidates because no intervening passages were supplied. Its standalone penalty/minimum defaults remain 0.2/0.5 for the original reference configuration; use the profile's values with calibrated scores. Returned `ExtractedSegment` objects contain `segment`, `value` and `token_count`.
 
 Passages from one Source must not overlap or repeat, and text must match declared UTF-8 byte lengths. Missing ranges and different context snapshots are hard boundaries; separate excerpts are never stitched into a purported continuous quotation. Multiple-query allocation and automatic connected-research retrieval remain planned.
 

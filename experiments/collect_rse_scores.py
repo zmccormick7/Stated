@@ -45,13 +45,14 @@ def prepare(selected):
             db.set_document_context(source.id, title=row['id'], summary='', author_id='calibration-check')
             query = row['qa']['question']
             candidates = db.search_documents(query, source_ids=[source.id], limit=20)
-            pool = db.expand_passages(candidates, radius=2, limit=100)
+            intervening = db._rse_intervening_passages(candidates, 32)
             gold = {'table' if label.startswith('table_') else label for label in row['qa']['gold_inds']}
             by_range = dict(zip(ranges, labels))
-            prepared.append({'id': row['id'], 'query': query, 'segments': pool.segments,
-                             'labels': [by_range[(s.start_byte, s.end_byte)] in gold for s in pool.segments],
-                             'required_support': len(gold), 'seed_count': len(candidates),
-                             'neighbors_truncated': pool.has_more})
+            prepared.append({'id': row['id'], 'query': query, 'segments': candidates,
+                             'labels': [by_range[(s.start_byte, s.end_byte)] in gold for s in candidates],
+                             'unscored_segments': intervening,
+                             'unscored_labels': [by_range[(s.start_byte, s.end_byte)] in gold for s in intervening],
+                             'required_support': len(gold)})
     return prepared
 
 
@@ -69,6 +70,7 @@ def collect(prepared, output, key):
             with patch.object(provider, '_post', side_effect=capture):
                 scores = provider.score(case['query'], case['segments'])
             return {**case, 'segments': [asdict(s) for s in case['segments']], 'scores': scores,
+                    'unscored_segments': [asdict(s) for s in case['unscored_segments']],
                     'seconds': perf_counter() - started,
                     'cost_usd': sum(r['usage']['cost'] for r in responses),
                     'responses': responses}

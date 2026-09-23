@@ -16,19 +16,21 @@ from premisedb.calibration import score_logit
 from experiments.collect_rse_scores import DATA_SHA
 
 
-def segments(case):
-    return tuple(SourceSegment(**{**s, 'document_context': DocumentContext(**s['document_context']) if s['document_context'] else None}) for s in case['segments'])
+def segments(case, field='segments'):
+    return tuple(SourceSegment(**{**s, 'document_context': DocumentContext(**s['document_context']) if s['document_context'] else None}) for s in case.get(field, []))
 
 def evaluate(cases, count_tokens, profile=None):
     complete, covered, size, empty = 0, 0, 0, 0
     predictions, labels = [], []
     for case in cases:
         pool = segments(case)
+        intervening = segments(case, 'unscored_segments')
         scores = profile.apply(case['scores']) if profile else case['scores']
         options = {} if not profile else dict(irrelevant_chunk_penalty=profile.irrelevant_chunk_penalty, minimum_value=profile.minimum_value)
-        excerpts = extract_segments(pool, scores, count_tokens=count_tokens, **options)
+        excerpts = extract_segments(pool + intervening, tuple(scores) + (None,) * len(intervening),
+                                    count_tokens=count_tokens, **options)
         found = sum(label and any(item.segment.source_id == chunk.source_id and item.segment.start_byte <= chunk.start_byte and chunk.end_byte <= item.segment.end_byte for item in excerpts)
-                    for chunk, label in zip(pool, case['labels']))
+                    for chunk, label in zip(pool + intervening, case['labels'] + case.get('unscored_labels', [])))
         complete += found == case['required_support']
         covered += found
         size += sum(item.token_count for item in excerpts)
@@ -82,6 +84,8 @@ if __name__ == "__main__":
         for cases in run["models"].values():
             if len(cases) != 20 or any(not len(c["labels"]) == len(c["scores"]) == len(c["segments"]) for c in cases):
                 parser.error("Expected 20 complete cases with aligned scores, segments and labels")
+            if any(len(c.get("unscored_segments", [])) != len(c.get("unscored_labels", [])) for c in cases):
+                parser.error("Unscored passages and support labels must align")
             orders.append([c["id"] for c in cases])
         if any(order != orders[0] for order in orders):
             parser.error("Models must score the same questions in each run")
