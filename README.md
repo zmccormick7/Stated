@@ -10,11 +10,11 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, configurable reranking through OpenRouter, a single-query RSE selector, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, neighbor expansion, token budgets, vector search, automatic graph context, citation links, the installer and agent integrations below remain planned.
+> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, configurable reranking through OpenRouter, bounded neighbor fetching, model-specific score calibration, token-budgeted RSE, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, vector search, automatic graph context, citation links, the installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
-Document retrieval incorporates dsRAG's **Contextual Chunk Headers** through caller-supplied document context, and **Relevant Segment Extraction** through an explicit segment-selection step. Section context and an integrated retrieval pipeline remain planned. The graph connects evidence to accumulated research and model assumptions.
+Document retrieval incorporates dsRAG's **Contextual Chunk Headers** through caller-supplied document context, and **Relevant Segment Extraction** through an explicit segment-selection step. The retrieval pipeline combines search, neighbor expansion, calibrated reranking and segment extraction; section context remains planned. The graph connects evidence to accumulated research and model assumptions.
 
 ## Try the record store
 
@@ -172,7 +172,7 @@ Supported `model` values are `typesafe/jev-1.13`, `cohere/rerank-4-pro` and `voy
 
 Cohere and Voyage use one [native rerank request](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/rag) per query, with separate document-context and passage fields encoded as JSON strings. Jev uses one [Decisions request](https://openrouter.ai/docs/guides/community/jev) per candidate, asking whether the passage supplies relevant evidence, including partial or contradictory evidence. Its rubric treats the document header as context, not evidence. Jev concurrency is bounded by `max_workers` (default 4); `timeout` defaults to 30 seconds **per request**, not for the entire reranking operation. Provider input limits apply; this implementation does not truncate or split oversized requests. Failed calls and incomplete or invalid scores raise errors; there are no automatic retries or fallback providers.
 
-These scores share a numerical range, **not a calibrated probability scale**. Do not assume that a threshold such as 0.5 means the same thing across models. RSE now accepts these scores, but its selection parameters still need provider-specific evaluation and calibration. The initial adapter preserves the scoring inputs from our [Jev experiment](https://github.com/Implied-Capital/PremiseDB/pull/11) and the plain-query configuration of our [Cohere/Voyage comparison](https://github.com/Implied-Capital/PremiseDB/pull/12).
+These scores share a numerical range, **not a calibrated probability scale**. Do not assume that a threshold such as 0.5 means the same thing across models. The integrated retrieval path below applies a model-specific calibration fitted on financial support labels; these starting profiles remain specific to that workload. The initial adapter preserves the scoring inputs from our [Jev experiment](https://github.com/Implied-Capital/PremiseDB/pull/11) and the plain-query configuration of our [Cohere/Voyage comparison](https://github.com/Implied-Capital/PremiseDB/pull/12).
 
 To use a direct provider, a local model or caller-supplied scores, subclass `Reranker` and implement `_score(query, segments)`. It receives a nonblank query and a nonempty tuple of segments and must return one finite 0–1 score per segment in input order. The base class supplies validation and sorting:
 
@@ -186,30 +186,64 @@ class MyReranker(Reranker):
 
 This follows [dsRAG's abstract reranker interface](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py), with scoring separated from sorting so segment extraction can consume all candidate scores. Configuration lives in ordinary Python objects for now; no provider registry, serialization or database schema change is needed.
 
-## Extract relevant segments
+## Retrieve calibrated evidence
 
 ```python
-from premisedb import extract_segments
+import tiktoken  # Optional: pip install tiktoken; any token counter can be supplied.
+from premisedb import OpenRouterReranker, RecordStore, retrieve
 
-# Use the candidates and configured reranker from the preceding example.
-scores = reranker.score(query, candidates)
-excerpts = extract_segments(candidates, scores, max_segment_chars=8000, max_total_chars=20000)
-for excerpt in excerpts:
-    print(excerpt.value, excerpt.segment.start_byte, excerpt.segment.end_byte)
-    print(excerpt.segment.text)
+encoding = tiktoken.get_encoding("cl100k_base")
+count_tokens = lambda text: len(encoding.encode(text, disallowed_special=()))
+reranker = OpenRouterReranker(model="voyageai/rerank-2.5")
+with RecordStore("research.sqlite") as db:
+    result = retrieve(
+        db, "What could delay construction?", reranker=reranker,
+        count_tokens=count_tokens, candidate_limit=50, neighbor_radius=2,
+        max_passages=250, max_segment_tokens=2000, max_total_tokens=6000,
+    )
+for excerpt in result.excerpts:
+    print(excerpt.segment.source_id, excerpt.segment.start_byte, excerpt.segment.end_byte)
+    print(excerpt.token_count, excerpt.render())
+print(result.calibration.name, result.neighbors_truncated)
 ```
 
-`extract_segments` is a pure, single-query selector. Supply `SourceSegment` passages and aligned 0–1 scores from the same query, in any order. It returns a tuple of `ExtractedSegment(segment, value)` objects in greedy selection order. It combines adjacent supplied passages into exact, continuous excerpts and can include weak intervening passages when their penalty is outweighed by useful evidence on both sides. Distant evidence stays in separate excerpts; selected byte ranges never overlap.
+`retrieve` searches with BM25, expands around the matching passages, scores **every fetched passage**, applies the selected model's calibration, and runs RSE. Optional `source_ids` constrain search and expansion stays within those Sources. Model calls occur after the database reads, outside SQLite transactions. The result exposes `excerpts`, `scored_passages` with raw scores in expansion order, the actual `calibration` object, and `neighbors_truncated`. Provider failures remain errors; missing scores are not silently replaced. The search limit bounds seed recall, and a false truncation flag only means the requested neighbor windows fit.
 
-The [dsRAG-derived algorithm](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py) assigns each scored passage `exp(-rank / decay_rate) * score - irrelevant_chunk_penalty`, with zero-based relevance rank and stable input-order ties. By default, it multiplies that value by `max(1, passage_characters / 700)`, matching dsRAG's length adjustment; set `chunk_length_adjustment=False` to disable it. A supplied but unscored passage takes `None` and receives only `-irrelevant_chunk_penalty`. No score is invented for it.
+`expand_passages(seeds, radius=2, limit=250)` is also available on the store. It retains all distinct seeds first, then the nearest neighbors, breaking ties by seed order and source position. Overlapping windows are deduplicated before text reads. Radius must be 0–10 and the passage limit 1–1,000; a limit below the number of distinct seeds is rejected. The return value contains `segments` and `has_more`. A single SQL query captures current locators and document context; it refreshes seed context before scoring. Rechunking that removes an exact seed anchor raises `ValueError` asking the caller to repeat search. Once captured, byte ranges and context remain valid snapshots through later model calls and database edits.
 
-The selector repeatedly takes the highest-value available interval whose endpoints have nonnegative utility and whose summed utility reaches `minimum_value`. Previously selected passages are excluded. Equal interval values favor the first encountered Source, then the earliest start and end. This is greedy selection, not a globally optimal allocation of the total budget. The returned `value` is summed utility and can exceed 1; it is not a relevance probability.
+### Token budgets
 
-Defaults are `irrelevant_chunk_penalty=0.2`, `minimum_value=0.5`, `decay_rate=30`, `max_segments=5`, `max_segment_chars=8000` and `max_total_chars=20000`. They are initial selection settings, **not calibrated presets for the three rerankers**. Higher penalties discourage bridging; a higher minimum rejects more excerpts. See the [reference comparison and financial replay](docs/rse-validation.md) for observed limitations with these defaults.
+Supply a deterministic `count_tokens(text)` for the model that will **consume** the excerpts; it need not be the reranker's tokenizer. There is no character-based estimate or required tokenizer dependency. The counter sees each complete rendered excerpt: document header, two separating newlines, then canonical text. `excerpt.render()` returns exactly that string, and `excerpt.token_count` records its cost. Each excerpt must fit `max_segment_tokens`; the sum of those counts must fit `max_total_tokens`. Repeated headers are charged each time. Reserve additional tokens for your own prompt, citation wrappers and separators between rendered excerpts.
 
-Budgets count Unicode **characters**, not bytes or tokens: each excerpt costs its text plus `document_context.header + "\n\n"` when context exists. The header stays separate from evidence text. Oversized individual passages are skipped, never cut; repeated headers are charged for every excerpt. Empty input, insufficient utility or insufficient budget returns `()`; fewer than `max_segments` does not prove that no other relevant evidence exists.
+The selector counts complete spans instead of adding per-passage counts, since tokenization can merge across boundaries. It also continues past an oversized prefix because appending text can reduce token counts. Counts are cached within an extraction call. Excerpts contain at most `max_segment_passages=32` passages, bounding interval work. Individual oversized passages are never cut, though a longer span can fit if its combined encoding is smaller. Empty input or insufficient evidence/budget returns no excerpts.
 
-Input passages from one Source must not overlap or repeat, and their text must match their declared UTF-8 byte lengths. Missing byte ranges and different document-context snapshots are hard boundaries. This function uses the supplied snapshot without rereading SQLite; source text and citations stay valid after rechunking. To bridge a gap outside the search results, the caller must supply its actual passages and either scores or `None`, using `read_passages` and `read_source_text`. Automatic neighbor fetching, multiple-query selection, token budgets and a combined search/rerank/RSE method remain future increments. The selector scans supplied intervals; keep its candidate pool bounded rather than passing the corpus.
+### Calibration and selection
+
+`calibration_for(model)` supplies a named `ScoreCalibration` for Jev, Cohere or Voyage. Each applies `sigmoid(slope * logit(raw_score) + intercept)` using separately fitted coefficients; scores are clipped to `[1e-6, 1 - 1e-6]` before taking logits. Raw provider scores remain accessible. Calibration and selection parameters live in ordinary Python objects, and `calibration=` can override the default. Its `model` must match `reranker.model`; custom rerankers must identify their model and supply a matching calibration. Unknown models never silently receive another model's profile.
+
+The bundled `finqa-support-v1` profiles were fitted on 20 financial questions, with selection settings chosen on 20 validation questions and checked on 20 additional test questions. They estimate the dataset's **annotated supporting-passage** label, not truth or universal financial relevance. Sparse labels may omit useful context. Score error improved for all three models on the test set, but excerpt coverage and length still trade off; Cohere lost support on one test question while returning less text. See [calibration results and reproduction instructions](docs/rse-validation.md) before applying these starting profiles to a different corpus, candidate mix, document context or provider version.
+
+The [dsRAG-derived selector](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py) gives each passage `exp(-rank / decay_rate) * score - irrelevant_chunk_penalty`, with zero-based relevance ranks and stable input-order ties. By default, it multiplies this utility by `max(1, passage_characters / 700)`; `chunk_length_adjustment=False` disables this dsRAG heuristic. This utility weighting is separate from token accounting. It greedily selects the best nonoverlapping intervals, allowing weak intervening material when nearby evidence outweighs its cost. Endpoints must have nonnegative utility. Equal values favor the first encountered Source, then the earliest start and end. `excerpt.value` is summed utility and can exceed 1; it is not a probability.
+
+The integrated path uses the profile's penalty and minimum utility (currently 0.001 and 0.01), with `decay_rate=30` and `max_segments=5`. These recall-oriented settings were fixed before the final test. Pass keyword overrides through `retrieve` to change selection without changing the fitted score mapping. An explicit caller-supplied `minimum_value` or `irrelevant_chunk_penalty` takes precedence.
+
+### Use the selector directly
+
+```python
+from premisedb import calibration_for, extract_segments
+
+scores = reranker.score(query, candidates)
+profile = calibration_for(reranker.model)
+excerpts = extract_segments(
+    candidates, profile.apply(scores), count_tokens=count_tokens,
+    irrelevant_chunk_penalty=profile.irrelevant_chunk_penalty,
+    minimum_value=profile.minimum_value,
+)
+```
+
+`extract_segments` remains a pure, single-query function accepting aligned `SourceSegment` passages and scores. Unlike `retrieve`, it does not fetch neighbors or calibrate scores itself. A supplied but unscored passage takes `None` and receives only the negative penalty. Its standalone penalty/minimum defaults remain 0.2/0.5 for the original reference configuration; use the profile's values with calibrated scores. Returned `ExtractedSegment` objects contain `segment`, `value` and `token_count`.
+
+Passages from one Source must not overlap or repeat, and text must match declared UTF-8 byte lengths. Missing ranges and different context snapshots are hard boundaries; separate excerpts are never stitched into a purported continuous quotation. Multiple-query allocation and automatic connected-research retrieval remain planned.
 
 ## What can you do with PremiseDB?
 

@@ -354,7 +354,7 @@ The internal query plan contains `query_id`, `parent_query_id`, text, originatin
 
 ### Relevant Segment Extraction contract
 
-The first implemented slice is the pure, single-query `extract_segments` selector described in the [README](../README.md#extract-relevant-segments). It uses supplied passages and scores, character budgets including headers, and explicit selection parameters. Automatic neighbor reads, token budgets, multi-query allocation and calibrated provider profiles below remain planned. [Initial validation](rse-validation.md) records reference checks and limitations with cached financial scores.
+The implemented single-query path combines BM25 seeds, bounded neighbor reads, model-specific calibration and token-budgeted `extract_segments`; see the [README](../README.md#retrieve-calibrated-evidence). Tokenization is caller-supplied, and model calls run outside database transactions. Multi-query allocation and automatic graph context below remain planned. [Validation](rse-validation.md) records reference checks, calibration results and observed limits.
 
 RSE takes ordered chunk references, per-query ranks/relevance scores, source boundaries and selection budgets. Start with dsRAG's relevance transform and greedy segment selection, retaining penalties for unhelpful intervening content, nonoverlap and coverage across supplied queries. Adapt storage access and budget accounting while preserving a reference configuration for comparison. This is an actual document retrieval component, independent of the graph selector. [dsRAG RSE implementation](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py#L3).
 
