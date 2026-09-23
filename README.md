@@ -1,356 +1,185 @@
 # PremiseDB
 
-**A shared knowledge graph that grows with every investment research investigation.**
+**A growing knowledge graph for investment research agents.**
 
-PremiseDB gives your agents a persistent understanding of the companies, markets and economic relationships they research.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
-Agents contribute findings, connect them to existing knowledge, and use those connections in subsequent investigations. Evidence, interpretations and unanswered questions accumulate in a graph that any connected agent can explore and extend.
+[Quickstart](#quickstart) · [Python API](docs/python-api.md) · [Design](docs/database-spec.md) · [Contribute](#contributing)
 
-The goal is to support one agent you guide carefully or a fleet researching independently.
+Give your agents a shared memory of **what they know, why they believe it, and what they still need to find out**.
 
-**Every investigation becomes a starting point for the next.**
+PremiseDB stores research as connected companies, sources, findings, questions and model assumptions. Agents can recall prior work, follow its connections and revise their understanding as new evidence arrives. What one agent learns becomes available to the next, across sessions and investigations.
 
-> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, configurable reranking through OpenRouter, dsRAG's Cohere/Voyage score transforms, token-budgeted RSE, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, vector search, automatic graph context, citation links, the installer and agent integrations below remain planned.
+An embedded Python library, backed by SQLite. No required third-party runtime dependencies. MIT licensed.
 
-The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
+> **Early MVP.** The graph store and document-retrieval pipeline work today through Python. Agent skills, MCP integration and vector search are on the roadmap. The API and database format are still evolving.
 
-Document retrieval incorporates dsRAG's **Contextual Chunk Headers** through caller-supplied document context, and **Relevant Segment Extraction** through an explicit segment-selection step. The retrieval pipeline combines search, reranking and segment extraction; section context remains planned. The graph connects evidence to accumulated research and model assumptions.
+## Follow the connections
 
-## Try the record store
+An agent researching a supplier's backlog learns that customers can postpone deliveries. It saves the evidence, the implication for revenue timing, and an unresolved question about customers' exposure to grid delays.
 
-From this checkout, use Python 3.12+ linked against SQLite 3.51.3+ with FTS5 enabled (including the [WAL-reset fix](https://sqlite.org/wal.html#walresetbug)). There are no third-party runtime dependencies in this slice.
+A later investigation can pick up that entire line of reasoning. A search for **backlog** becomes a path to **grid constraints**, **delivery terms** and **the assumptions in a revenue forecast**.
+
+```mermaid
+flowchart LR
+    V["Variable<br/>FY27 revenue timing"] -->|depends_on| F["Finding<br/>Backlog may shift across quarters"]
+    F -->|supported_by| S["Source<br/>Delivery rescheduling terms"]
+    F -->|raises| Q["Question<br/>Could grid delays trigger deferrals?"]
+```
+
+*A fictional research example. Agents author the findings and connections; PremiseDB stores them and makes them retrievable.*
+
+The same pattern supports company coverage, thesis reviews and financial model assumptions:
+
+| Research question | What the graph gives your agent a path to inspect |
+| --- | --- |
+| What do we already know about this company? | Earlier findings, their sources and unresolved questions. |
+| What could this disclosure change? | Connected conclusions and assumptions to reassess. |
+| What supports this forecast? | The research behind a model variable, including gaps in the evidence. |
+
+## Quickstart
+
+Requires **Python 3.12+**, linked against **SQLite 3.51.3+ with FTS5**. Check your Python's SQLite version with `python -c "import sqlite3; print(sqlite3.sqlite_version)"`.
+
+Install from source:
+
+```bash
+git clone https://github.com/Implied-Capital/PremiseDB.git
+cd PremiseDB
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
+
+This example runs locally without an API key. It uses fictional research to show the two sides of the workflow.
+
+**1. Save what an investigation learned.**
 
 ```python
 from premisedb import RecordStore
 
 with RecordStore("research.sqlite") as db:
-    first = db.create("Finding", text="Ramp expected in June", author_id="alice")
-    second = db.update(first.id, text="Ramp delayed to September", author_id="bob")
-    assert db.read(first.id) == second
-    print(second.updated_at)
-```
-
-Run tests from the repository root with `python -m unittest discover -s tests -v`.
-
-All table, index and trigger definitions live in [premisedb/schema.sql](premisedb/schema.sql).
-
-Each record has a stable ID and kind, current text, JSON attributes, the last editor's `author_id`, and a database-assigned UTC `updated_at` timestamp. Updates replace text and attributes in full; omitted attributes become `{}`. Missing references raise `KeyError`. Invalid SQL-constrained fields raise `sqlite3.IntegrityError`. Returned metadata is a detached copy; changing it does not update the database.
-
-One table stores current records and another stores current links. Writes are atomic, and the last committed update wins. There are no revision counters, stale-edit checks or historical reads. Schema format numbers only identify file layouts. During early development, incompatible formats raise `ValueError`; create a new database to use the current schema. No migrations are provided. Use one store per thread on a local filesystem; the API and schema are experimental.
-
-## Connect existing records
-
-```python
-with RecordStore("research.sqlite") as db:
-    finding = db.create("Finding", text="Ramp requires utility approval", author_id="alice")
-    company = db.create("Entity", text="Supplier A", author_id="alice")
-    link = db.create_link(finding.id, company.id, "about", author_id="alice")
-    incoming = db.connections(company.id, direction="in", relation="about")
-    assert incoming.links == (link,) and not incoming.has_more
-```
-
-`read_link(id)` returns current contents. `update_link` replaces its endpoints, relation and explanation in place, records the last editor and refreshes `updated_at`. Links always refer to current records. Agents reassess support when underlying understanding changes; the database does not preserve earlier assumptions or automatically determine whether a relationship is still valid.
-
-`connections` returns links in creation order, with an optional exact relation filter. Its default limit is 100, its maximum is 1,000, and `has_more` reports omitted links. Incoming lookups preserve the stored direction. Missing IDs raise `KeyError`; duplicate links and custom relation labels are allowed. Pagination, recursive traversal and link deletion are not implemented yet.
-
-## Search for a starting point
-
-```python
-with RecordStore("research.sqlite") as db:
-    results = db.search_records("utility approval", kind="Finding", limit=10)
-    for record in results:
-        print(record.text, db.connections(record.id).links)
-```
-
-`search_records` returns a tuple of current `Record` objects, searching only their `text`. The query is plain text: punctuation separates words, any query word can match, and quotes or boolean words have no query-language meaning. Empty or punctuation-only queries return an empty tuple. FTS5 supplies case-insensitive token matching and [BM25 ranking](https://sqlite.org/fts5.html#the_bm25_function); ties use record creation order.
-
-The optional `kind` filter applies before the result limit. The default limit is 10 and the maximum is 1,000; results have no pagination or truncation flag yet. Invalid kinds, limits or non-string queries raise `ValueError`. SQLite triggers keep the index synchronized in the same transaction as each record write, so updated text replaces earlier searchable text immediately after commit.
-
-This uses schema format 9. Databases created by earlier implementations must be recreated; no migration is performed.
-
-## Ingest source text
-
-```python
-with RecordStore("research.sqlite") as db:
     source = db.ingest_source(
-        description="Supplier A — Q2 filing",
-        document_text="Utility approval is required before construction.",
-        author_id="alice",
-        attributes={"origin": "supplier-a-q2.txt"},
+        description="PowerFrame delivery terms (fictional)",
+        document_text="Customers may reschedule deliveries with 90 days' notice.",
+        author_id="agent-a",
     )
-    assert source.kind == "Source"
-    assert db.read_source_text(source.id, start_byte=0, end_byte=7) == "Utility"
-```
-
-`ingest_source` accepts already extracted text and returns a new Source record. Its `text` is the short description searched by `search_records`; the document body stays in a separate `source_content` table. The Source, its search entry and its UTF-8 body commit together. Each call creates a new Source identity, even for identical text. Caller-supplied provenance belongs in `attributes`.
-
-The body and its SHA-256 are stored in SQLite for this first ingestion slice. Text is preserved exactly, including whitespace, line endings and Unicode normalization. `read_source_text(id)` returns the full text; optional offsets select a half-open UTF-8 byte range `[start_byte, end_byte)`, fetching only that range. Invalid ranges or offsets inside a character raise `ValueError`. Missing IDs and records without ingested text raise `KeyError`.
-
-Source descriptions and metadata remain editable. Captured text stays fixed so future citation offsets keep their meaning; ingest a separate Source for different text. This is evidence identity, not record edit history. Parsing, original-file storage and section context will be added in later increments. Ingestion currently holds one document's text in memory and makes no model calls.
-
-## Split a source into passages
-
-```python
-with RecordStore("research.sqlite") as db:
-    count = db.chunk_source(source.id, max_chars=2000)
-    for passage in db.read_passages(source.id, limit=100):
-        text = db.read_source_text(passage.source_id,
-                                   start_byte=passage.start_byte, end_byte=passage.end_byte)
-        print(passage.ordinal, text)
-```
-
-The dependency-free splitter caps each passage at `max_chars` Unicode characters (default 2,000), with zero overlap. Before a cut, it prefers the last paragraph break in the latter half of the window, then a line break, then whitespace; otherwise it cuts at the character limit. The final remainder stays intact. Whitespace and original text are preserved exactly. This is a character budget, not a token budget, and the splitter does not detect semantic sections or understand tables.
-
-`chunk_source` replaces the current passage set atomically and returns its count. It processes one document in memory. `read_passages` returns `Passage` locators containing `source_id`, zero-based `ordinal`, `start_byte` and `end_byte`, in source order. Its default limit is 100 and maximum is 1,000; use `start_ordinal=last.ordinal + 1` to continue. These reads use the current set, so concurrent rechunking can change later pages. An ingested but unchunked source returns an empty tuple; missing ingested text raises `KeyError`.
-
-Alternative chunkers can call `set_passages(source_id, ranges)` with UTF-8 byte ranges covering the entire document, in order, without gaps, overlap or empty passages. Boundaries must fall between UTF-8 characters. The built-in `premisedb.chunking.split_ranges` is a pure function independent of SQLite. Passage rows store only locators; document text stays in `source_content`. Rechunking changes passage positions, so evidence references must use Source IDs and byte ranges rather than ordinals. Section context remains a later increment.
-
-## Search document evidence
-
-```python
-with RecordStore("research.sqlite") as db:
-    segments = db.search_documents("utility approval", source_ids=[source.id], limit=5)
-    for segment in segments:
-        print(segment.source_id, segment.start_byte, segment.end_byte, segment.text)
-    assert segments[0].text == db.read_source_text(
-        source.id, start_byte=segments[0].start_byte, end_byte=segments[0].end_byte,
+    finding = db.create(
+        "Finding", text="PowerFrame's backlog may shift into later quarters.",
+        attributes={"basis": "inference"}, author_id="agent-a",
     )
-```
-
-Call `chunk_source` or `set_passages` first: ingestion alone does not make the document body searchable. `search_documents` returns a tuple of `SourceSegment` objects, each with a Source ID, half-open UTF-8 byte range, exact original text and optional `document_context`. Each search result covers one matching passage; the separate RSE selector can combine supplied adjacent passages into longer ranges with the same locator contract. Read the Source record separately for its description and metadata.
-
-Query words follow the same plain-text rules as `search_records`. BM25 ranks separate header and body fields, with initial weights of 0.5 and 1.0 respectively; these are starting defaults, not tuned relevance guarantees. Ties use Source creation order, then passage ordinal. Source descriptions, attributes and research records are not included in this search. Omit `source_ids` to search all indexed documents, or supply an iterable of IDs to restrict matches before applying `limit`. An empty iterable matches nothing; duplicates have no effect. BM25 statistics still use the full passage corpus. Multiple results can come from one Source.
-
-The default result limit is 10 and the maximum is 1,000. Invalid query, limit or filter types raise `ValueError`; filter IDs without ingested source text raise `KeyError`. Empty queries and scopes containing only unchunked documents return an empty tuple. Results have no pagination, truncation flag or total text budget yet.
-
-SQLite triggers synchronize the passage index within the passage write transaction, including rollback on failure. The [contentless-delete FTS5 index](https://sqlite.org/fts5.html#contentless_delete_tables) stores search terms without another copy of the source text. Search selects locators and document context together, then reads those ranges from fixed canonical text; the ranges remain valid if another connection rechunks the document meanwhile. Reranking and RSE are optional subsequent steps; automatic connected research remains planned.
-
-## Add document context
-
-```python
-with RecordStore("research.sqlite") as db:
-    context = db.set_document_context(
-        source.id,
-        title="Supplier A — Q2 filing",
-        summary="Filing excerpt describing utility approval required before construction.",
-        author_id="research-agent",
-        provenance={"method": "agent-authored"},
+    question = db.create(
+        "Question", text="Could grid delays cause customers to defer orders?",
+        author_id="agent-a",
     )
-    segment = db.search_documents("Supplier", source_ids=[source.id])[0]
-    assert segment.document_context == context
-    assert segment.text == db.read_source_text(source.id)
-    print(context.header)
+    db.create_link(finding.id, source.id, "supported_by", author_id="agent-a")
+    db.create_link(finding.id, question.id, "raises", author_id="agent-a")
 ```
 
-`set_document_context` stores a caller-supplied **document** title and summary once per ingested Source, separately from its record description and original text. It returns a `DocumentContext` with those fields, the Source ID, last editor, UTC `updated_at` and optional JSON provenance. Its `header` is the title, a newline and the summary. A title must be nonblank; an empty summary represents title-only context. This operation makes no model calls.
+**2. Start a fresh session and follow the research.**
 
-Context can be supplied before or after chunking. Writes replace current context and provenance in full; omitted provenance becomes `{}`. Triggers refresh every affected passage's search entry in the same transaction. Source text, citation ranges, passage boundaries and the Source record's timestamp stay unchanged. No earlier context is retained. Later chunks automatically use the current context.
-
-`read_document_context(source_id)` returns the current context, or `None` for an ingested Source without context. Missing IDs and records without ingested text raise `KeyError`. Non-string titles/summaries or invalid provenance raise `ValueError`; blank titles/authors violate SQL constraints and raise `sqlite3.IntegrityError`.
-
-Search returns context as a separate field, captured with the matching index entries. A concurrent edit cannot replace it midway through a result. Header-only queries can match every passage in a document; the header provides document context and is not a quotation from the returned passage. Section summaries, automatic generation and embeddings remain future increments.
-
-## Rerank document evidence
+Run this in another Python process, from the same directory. It needs only the database:
 
 ```python
-from premisedb import OpenRouterReranker, RecordStore
+from premisedb import RecordStore
 
-# Reads OPENROUTER_API_KEY from the environment; alternatively pass api_key=.
-reranker = OpenRouterReranker(model="voyageai/rerank-2.5")
-query = "What could delay construction?"
 with RecordStore("research.sqlite") as db:
-    candidates = db.search_documents(query, limit=50)
-
-results = reranker.rerank(query, candidates)
-for result in results:
-    print(result.score, result.segment.source_id, result.segment.text)
+    finding = db.search_records("PowerFrame backlog", kind="Finding", limit=1)[0]
+    print(finding.text)
+    for link in db.connections(finding.id).links:
+        print(f"{link.relation}: {db.read(link.to_id).text}")
 ```
 
-Supported `model` values are `typesafe/jev-1.13`, `cohere/rerank-4-pro` and `voyageai/rerank-2.5`. All three use your OpenRouter account. Set the environment variable in your calling process or supply the key explicitly; the library does not load `.env` files. Construction makes no requests; scoring sends the query, candidate text and document headers to the configured model.
-
-`score(query, segments)` returns a tuple of raw 0–1 scores in input order. `rerank(query, segments)` returns every candidate as a `ScoredSegment(segment, score)`, sorted by descending score with stable ties. Both accept a sequence of `SourceSegment` objects. Text, document context and byte locators remain attached to the original objects. Empty candidates return `()` without requests; blank queries are rejected. Neither method filters low scores, truncates results, writes scores to SQLite or holds a database transaction across model calls.
-
-Cohere and Voyage use one [native rerank request](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/rag) per query, with separate document-context and passage fields encoded as JSON strings. Jev uses one [Decisions request](https://openrouter.ai/docs/guides/community/jev) per candidate, asking whether the passage supplies relevant evidence, including partial or contradictory evidence. Its rubric treats the document header as context, not evidence. Jev concurrency is bounded by `max_workers` (default 4); `timeout` defaults to 30 seconds **per request**, not for the entire reranking operation. Provider input limits apply; this implementation does not truncate or split oversized requests. Failed calls and incomplete or invalid scores raise errors; there are no automatic retries or fallback providers.
-
-These scores share a numerical range, **not a calibrated probability scale**. Before RSE, `retrieve` applies the adapter's `transform(score)`: dsRAG's beta CDF for Cohere and Voyage, identity for Jev. Raw scores remain accessible. The adapter preserves the scoring inputs from our [Jev experiment](https://github.com/Implied-Capital/PremiseDB/pull/11) and the plain-query configuration of our [Cohere/Voyage comparison](https://github.com/Implied-Capital/PremiseDB/pull/12).
-
-To use a direct provider, a local model or caller-supplied scores, subclass `Reranker` and implement `_score(query, segments)`. It receives a nonblank query and a nonempty tuple of segments and must return one finite 0–1 score per segment in input order. The base class supplies validation and sorting:
-
-```python
-from premisedb import Reranker
-
-class MyReranker(Reranker):
-    def _score(self, query, segments):
-        return my_model.score(query, segments)  # Your implementation; same order.
-```
-
-This follows [dsRAG's abstract reranker interface](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py), with raw scoring, score transformation and sorting kept explicit. Custom adapters inherit an identity `transform(score)` and can override it to return a finite relevance value in [0, 1]. No provider registry, serialization or database schema change is needed.
-
-## Retrieve evidence
-
-```python
-import tiktoken  # Optional: pip install tiktoken; any token counter can be supplied.
-from premisedb import OpenRouterReranker, RecordStore, retrieve
-
-encoding = tiktoken.get_encoding("cl100k_base")
-count_tokens = lambda text: len(encoding.encode(text, disallowed_special=()))
-reranker = OpenRouterReranker(model="voyageai/rerank-2.5")
-with RecordStore("research.sqlite") as db:
-    result = retrieve(
-        db, "What could delay construction?", reranker=reranker,
-        count_tokens=count_tokens, candidate_limit=50,
-        max_segment_tokens=2000, max_total_tokens=6000,
-    )
-for excerpt in result.excerpts:
-    print(excerpt.segment.source_id, excerpt.segment.start_byte, excerpt.segment.end_byte)
-    print(excerpt.token_count, excerpt.render())
-print(result.transformed_scores)  # RSE relevance inputs, aligned with scored_passages.
-```
-
-`retrieve` searches with BM25, scores **only those search hits**, transforms their scores through the reranker adapter, and runs RSE. Optional `source_ids` constrain search. The result exposes `excerpts`, `scored_passages` with raw scores in search order, and aligned `transformed_scores` used by RSE. Provider failures and incomplete candidate scores remain errors. The candidate limit bounds retrieval recall.
-
-As in dsRAG, an unreturned passage between hits receives the negative `irrelevant_chunk_penalty`. RSE can bridge it when the summed utility justifies the span. For example, hits at positions 10 and 13 can form one excerpt by paying two penalties for positions 11 and 12. Those intervening passages are never sent to the reranker.
-
-The store reads intervening text for exact token accounting and excerpt assembly, only between hits close enough to fit `max_segment_passages`. No exterior neighbors are read. Gap locators are captured together before body reads and model calls; search-time document context is preserved. Rechunking that removes a hit's exact passage anchor before that capture raises `ValueError` asking the caller to repeat search. Captured byte ranges survive later rechunking. No database transaction spans a model call.
-
-### Token budgets
-
-Supply a deterministic `count_tokens(text)` for the model that will **consume** the excerpts; it need not be the reranker's tokenizer. There is no character-based estimate or required tokenizer dependency. The counter sees each complete rendered excerpt: document header, two separating newlines, then canonical text. `excerpt.render()` returns exactly that string, and `excerpt.token_count` records its cost. Each excerpt must fit `max_segment_tokens`; the sum of those counts must fit `max_total_tokens`. Repeated headers are charged each time. Reserve additional tokens for your own prompt, citation wrappers and separators between rendered excerpts.
-
-The selector counts complete spans instead of adding per-passage counts, since tokenization can merge across boundaries. It also continues past an oversized prefix because appending text can reduce token counts. Counts are cached within an extraction call. Excerpts contain at most `max_segment_passages=32` passages, bounding interval work. Individual oversized passages are never cut, though a longer span can fit if its combined encoding is smaller. Empty input or insufficient evidence/budget returns no excerpts.
-
-### Score transforms and selection
-
-The OpenRouter adapter uses [dsRAG's score transformations](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py):
-
-| Adapter model | Transform before RSE |
-| --- | --- |
-| `cohere/rerank-4-pro` | `beta.cdf(score, 0.4, 0.4)` |
-| `voyageai/rerank-2.5` | `beta.cdf(score, 0.5, 1.8)` |
-| `typesafe/jev-1.13` | Identity: scores are unchanged. |
-
-These monotone transformations reshape scores for RSE; they do not estimate benchmark-support probabilities. A small standard-library implementation evaluates the beta CDF using the [incomplete-beta continued fraction](https://dlmf.nist.gov/8.17.v); SciPy is only an optional test reference. dsRAG's adapters default to older Cohere v3 and Voyage rerank-2 models. We retain their parameters as a starting point for the newer models and report the observed results in [retrieval validation](docs/rse-validation.md). No fitted sigmoid profiles, calibration JSON or training procedure are shipped.
-
-The [dsRAG-derived selector](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py) gives each passage `exp(-rank / decay_rate) * score - irrelevant_chunk_penalty`, with zero-based relevance ranks and stable input-order ties. By default, it multiplies this utility by `max(1, passage_characters / 700)`; `chunk_length_adjustment=False` disables this dsRAG heuristic. This utility weighting is separate from token accounting. It greedily selects the best nonoverlapping intervals, allowing weak intervening material when nearby evidence outweighs its cost. Endpoints must have nonnegative utility. Equal values favor the first encountered Source, then the earliest start and end. `excerpt.value` is summed utility and can exceed 1; it is not a probability.
-
-Both `retrieve` and `extract_segments` use [dsRAG's balanced scoring defaults](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py#L152): `irrelevant_chunk_penalty=0.18`, `minimum_value=0.5`, `decay_rate=30` and `chunk_length_adjustment=True`. Pass explicit keyword overrides through `retrieve` to change selection. Score transforms never change these defaults. PremiseDB retains its token budgets, 32-passage span limit and five-excerpt limit; these are adaptations, not dsRAG's chunk-count budgets.
-
-### Use the selector directly
-
-```python
-from premisedb import extract_segments
-
-scores = tuple(reranker.transform(score) for score in reranker.score(query, candidates))
-excerpts = extract_segments(
-    candidates, scores, count_tokens=count_tokens,
-)
-```
-
-`extract_segments` remains a pure, single-query function accepting aligned `SourceSegment` passages and relevance scores. It performs no database reads or score transformations. Apply `reranker.transform` once before calling it directly, as above. Supply intervening passages with `None` scores to allow bridging; each receives only the negative penalty. `retrieve` supplies these automatically. The example above can combine only contiguous candidates because no intervening passages were supplied. Returned `ExtractedSegment` objects contain `segment`, `value` and `token_count`.
-
-Passages from one Source must not overlap or repeat, and text must match declared UTF-8 byte lengths. Missing ranges and different context snapshots are hard boundaries; separate excerpts are never stitched into a purported continuous quotation. Multiple-query allocation and automatic connected-research retrieval remain planned.
-
-## What can you do with PremiseDB?
-
-The experience we are building lets you ask your agent questions like:
-
-- **“Get me up to speed on this company.”** Bring together earlier research, business drivers, important relationships and unresolved issues.
-- **“Who else could this affect?”** Follow connections through customers, suppliers, products and constraints.
-- **“What supports this assumption?”** Trace a conclusion back through the reasoning and evidence behind it.
-- **“What does this disclosure change?”** Identify earlier claims and dependent conclusions that warrant revisiting.
-- **“What should we investigate next?”** Find gaps that matter to the question you’re trying to answer.
-
-As the graph develops, agents can connect findings across investigations—even when different agents performed the original research.
-
-## Intended developer experience
-
-Create a research workspace:
+Output:
 
 ```text
-npx premisedb init my-research
+PowerFrame's backlog may shift into later quarters.
+supported_by: PowerFrame delivery terms (fictional)
+raises: Could grid delays cause customers to defer orders?
 ```
 
-**This is a proposed command, not an implemented or published installer.** It is intended to prepare the workspace and add research skills for Codex and Claude Code.
+**The grid question contains neither “PowerFrame” nor “backlog.”** The connection makes it discoverable. The next agent can investigate it, add evidence and update the finding, without access to the original conversation.
 
-Open the workspace in your preferred agent and start researching:
+See the [Python API guide](docs/python-api.md) for updates, incoming connections, relation filters and document retrieval.
 
-> Research Micron’s exposure to AI infrastructure spending. Use the filings and notes in this folder. Build on any existing knowledge, preserve the supporting evidence, and record the important unresolved questions.
+## Research memory and document evidence
 
-Your agent consults the graph, performs the research using its available tools, and contributes what it learns.
+An investigation needs both the understanding accumulated by earlier agents and the source material to check it against. PremiseDB provides two complementary retrieval paths:
 
-Later, open a fresh session and ask:
-
-> A major customer is delaying deployment. Use our existing research to investigate what that could mean for Micron. Identify which relationships and assumptions matter before estimating an impact.
-
-The new session can retrieve the earlier findings, follow their connections and extend the investigation.
-
-PremiseDB works through the agent you already use. Your harness conducts the investigation, while PremiseDB can use configured models to prepare documents, generate contextual headers, embed content and rank evidence. Model providers are replaceable, and existing pipelines can supply their own outputs.
-
-## Research together, remember together
-
-Suppose three agents work on separate questions:
-
-- One investigates a supplier’s production capacity.
-- Another studies its customers’ expansion plans.
-- A third researches infrastructure constraints affecting those customers.
-
-Their findings enter the same graph, connected through shared entities and evidence.
-
-A subsequent agent investigating a production delay can draw on all three contributions. It can inspect where the findings agree, where they conflict and which connections remain uncertain.
-
-We are designing the same workflow for investigations performed sequentially over several months or concurrently across many agents. Concurrent operation and performance at that scale have not yet been implemented or demonstrated.
-
-## What the graph remembers
-
-The proposed model has six record types:
-
-| Record type | What it represents | Examples |
+| Path | Operations | Returns |
 | --- | --- | --- |
-| **Entity** | Something research refers to repeatedly, with a stable identity across investigations. | A company, product, facility, commodity or regulation. |
-| **Source** | Material used as evidence, with enough provenance to identify the document and locate the relevant passage. | A filing, transcript, analyst note or interview record. |
-| **Finding** | A statement or conclusion from an investigation, with its supporting evidence or reasoning. | A supply relationship, business mechanism, estimate or scenario assumption. |
-| **Question** | An unresolved issue worth investigating, connected to the understanding it could change. | Whether a customer can postpone contractual deliveries. |
-| **Model** | A financial model whose implementation can live in an external tool. | An Excel forecast or a Python valuation model. |
-| **Variable** | An identifiable input, intermediate value or output within a model, connected to its research basis. | A capacity assumption, utilization estimate or revenue forecast for a specified period. |
+| **Prior research** | `search_records()` → `connections()` → `read()` | Findings and related records, with named links the agent can follow. |
+| **Source evidence** | `search_documents()` or `retrieve()` | Original source passages or selected excerpts, with Source IDs and exact byte ranges. |
 
-These are lightweight labels on a common record structure: a stable ID, a type, readable text and flexible metadata. Records connect through named links. Company and facility labels, sector-specific details and new relationship labels can develop through use. The initial vocabulary is extensible; separate tables or elaborate schemas for each type are not required.
+Today, the calling agent composes these paths: find a relevant claim, follow its source link, then search within that source using `source_ids`. Automatic assembly of connected research context is a next step.
 
-**Findings are independently addressable.** A finding about a supply relationship connects to the supplier, customer and product, as well as its evidence. Other findings can depend on it, challenge it or revise it. Disclosed facts, agent interpretations and scenario assumptions remain distinguishable.
+The document pipeline incorporates **Contextual Chunk Headers (CCH)** and **Relevant Segment Extraction (RSE)** from [dsRAG](https://github.com/D-Star-AI/dsRAG):
 
-**Questions preserve useful uncertainty.** Identifying which unknown could change a conclusion is valuable research. A question gives later agents somewhere to contribute partial answers, attach evidence and connect a finding that resolves it. Several investigations can share the same question.
+```text
+Extracted text → passages + document context → BM25 → reranking → RSE → excerpts
+```
 
-**Models connect numbers to understanding.** A Variable can link a modeled assumption to the Findings supporting it and the Questions that could change it. Calculations remain in the user's modeling tool. Links point to current records; agents reassess their meaning when assumptions change. Model runs and past assumption values are outside the current ontology.
+- **Context that travels with the passage.** CCH adds a document title and a summary of the document to each passage's search representation and reranking input. You or your agent supply that context. The original source text stays separate and unchanged.
+- **Excerpts sized to the evidence.** RSE uses relevance scores to select contiguous source ranges under a caller-defined token budget. A returned excerpt can span several passages, with an exact locator back to the source.
+- **Replaceable scoring.** Use Jev, Cohere or Voyage through `OpenRouterReranker`, or implement the small `Reranker` interface for your own provider. Built-in Cohere and Voyage adapters use dsRAG's score transforms before RSE.
 
-For example, in a hypothetical investigation:
+Ingestion accepts extracted text; call `chunk_source()` to make its body searchable. Local BM25 search needs no model. OpenRouter reranking sends the query, candidate text and document context to the selected provider.
 
-- **Entities:** Supplier A, Customer B and Product P.
-- **Source S1:** A filing disclosing their supply relationship, with a reference to the relevant passage.
-- **Finding F1:** Supplier A supplies Product P to Customer B. It connects to those entities and is supported by S1.
-- **Finding F2:** Customer B's project delay could affect Supplier A's revenue. This inference depends on F1 and the customer's ability to postpone deliveries.
-- **Question Q1:** Can Customer B postpone contractual deliveries? It concerns the supply relationship and matters to F2.
+[Ingest and search documents](docs/python-api.md#ingest-source-text) · [Configure retrieval](docs/python-api.md#retrieve-evidence) · [Validation and limits](docs/rse-validation.md)
 
-A later agent researching the contracts can answer Q1 and revisit F2. A source that challenges F1 can prompt a review of the findings that depend on it.
+## Six record types. Flexible connections.
 
-Records store current understanding, its last editor and a last-edited timestamp. Updates replace previous contents. Disagreements can remain explicit as separate Findings connected to one another. Later investigations build on the current graph.
+| Record | Purpose | Example |
+| --- | --- | --- |
+| **Entity** | Something the research is about. | A company, facility, product or commodity. |
+| **Source** | Material used as evidence. | A filing, transcript or research note. |
+| **Finding** | A statement or conclusion to build on or challenge. | Delivery flexibility may defer revenue. |
+| **Question** | An unresolved issue worth investigating. | Which customers can postpone orders? |
+| **Model** | A reference to a financial model. | An Excel forecast or Python valuation. |
+| **Variable** | An identifiable model input, intermediate value or output. | FY27 revenue or a utilization assumption. |
+
+Every record has an ID, text, flexible JSON attributes, a last editor and an updated timestamp. Connect any records with named relationships such as `supported_by`, `depends_on`, `contradicts` or `raises`. Links can carry an explanation of why the connection matters.
+
+Findings can support or challenge other findings. Questions can connect several investigations. Model variables can point to the research supporting an assumption; calculations stay in your modeling tool.
+
+Your agent supplies the meaning: label disclosed facts, inferences and scenario assumptions in metadata, and connect them to their basis. PremiseDB keeps current records and links, with updates replacing their contents. Captured source text stays fixed so evidence locators retain their meaning.
 
 ## Bring your own agents
 
-The common interface we are building lets agents:
+The workflow is **Recall → Contribute → Revise**:
 
-- **Recall** relevant knowledge and follow its connections.
-- **Contribute** findings, evidence and questions.
-- **Revise** existing understanding in place.
+1. **Recall** relevant findings, follow their connections and inspect the evidence.
+2. **Contribute** new findings, sources and questions, linked to the existing graph.
+3. **Revise** current understanding when evidence changes. Keep competing interpretations explicit as separate findings when useful.
 
-The planned skills will guide interactive research in Codex and Claude Code. Custom agent workflows will use the same operations against a shared workspace.
+Use the Python API from your own agent tools or from scripts run by coding agents such as Codex and Claude Code. The agent decides what to investigate and what to record. PremiseDB provides the persistent graph and retrieval primitives.
 
-Choose your own models, research tools and orchestration. The research graph should remain available across sessions and agent harnesses.
+The goal is the same whether you guide one agent or coordinate many: knowledge accumulates in a shared research workspace. Today, stores use separate SQLite connections on a local filesystem; large agent fleets and distributed deployments have not been validated. Packaged skills and an MCP server are planned.
 
-## Make it yours
+## Where we are going
 
-Our intended starting point is an example workspace you can explore immediately and a way to build a graph from your own research.
+The working foundation includes records and links, BM25 search, text ingestion, document-level CCH, configurable reranking and token-budgeted RSE. The next layers are:
 
-Extend the skills for your sector. Add workflows for company coverage, meeting preparation or thesis review. Connect the graph to your existing research process.
+- **Connected research retrieval:** assemble useful prior findings, evidence and open questions around a query.
+- **Semantic search:** add embeddings and Faiss alongside SQLite's lexical index.
+- **Agent integrations:** make the research loop easy to adopt through skills and MCP.
+- **Document preparation:** add parsing and automatic context generation.
 
-Repository contributors and agents should use this README as the product direction and [AGENTS.md](AGENTS.md) for implementation guidance. Python is the implementation language; SQLite and Faiss are the selected storage/search engines. Model providers and integration details remain open.
+The [design specification](docs/database-spec.md) describes the broader direction; the [Python API guide](docs/python-api.md) documents what is implemented. Early database formats may change and currently have no migrations.
 
-**Your agents do the research. PremiseDB makes their accumulated knowledge available to whatever comes next.**
+## Contributing
+
+Try PremiseDB on one company or one research question. Show us where an agent reused earlier work, where it missed a useful connection, or what you had to build around the API. [Open an issue](https://github.com/Implied-Capital/PremiseDB/issues) with a small, shareable example.
+
+We welcome retrieval evaluations, agent integrations and focused improvements to the core. Read [AGENTS.md](AGENTS.md) for the development conventions. Run the tests from the checkout:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+If you want to follow the project, **star the repo**. If you build something with it, we'd love to hear about it.
+
+## License and foundations
+
+[MIT](LICENSE). PremiseDB builds on retrieval ideas and adapted code from [dsRAG](https://github.com/D-Star-AI/dsRAG), with storage and indexing ideas informed by [minDB](https://github.com/D-Star-AI/minDB). See [NOTICE](NOTICE) for attribution and the [technical review](docs/dsrag-mindb-review.md) for the design background.

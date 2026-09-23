@@ -1,0 +1,274 @@
+# Python API guide
+
+[Back to PremiseDB](../README.md)
+
+[Records](#try-the-record-store) · [Links](#connect-existing-records) · [Sources](#ingest-source-text) · [CCH](#add-document-context) · [Reranking](#rerank-document-evidence) · [RSE](#retrieve-evidence) · [Record types](#what-the-graph-remembers)
+
+Examples below build on the same `research.sqlite` database. Reranking and integrated retrieval use a configured provider; the other examples run locally.
+
+## Try the record store
+
+From this checkout, use Python 3.12+ linked against SQLite 3.51.3+ with FTS5 enabled (including the [WAL-reset fix](https://sqlite.org/wal.html#walresetbug)). The library has no required third-party runtime dependencies.
+
+```python
+from premisedb import RecordStore
+
+with RecordStore("research.sqlite") as db:
+    first = db.create("Finding", text="Ramp expected in June", author_id="alice")
+    second = db.update(first.id, text="Ramp delayed to September", author_id="bob")
+    assert db.read(first.id) == second
+    print(second.updated_at)
+```
+
+Run tests from the repository root with `python -m unittest discover -s tests -v`.
+
+All table, index and trigger definitions live in [premisedb/schema.sql](../premisedb/schema.sql).
+
+Each record has a stable ID and kind, current text, JSON attributes, the last editor's `author_id`, and a database-assigned UTC `updated_at` timestamp. Updates replace text and attributes in full; omitted attributes become `{}`. Missing references raise `KeyError`. Invalid SQL-constrained fields raise `sqlite3.IntegrityError`. Returned metadata is a detached copy; changing it does not update the database.
+
+One table stores current records and another stores current links. Writes are atomic, and the last committed update wins. There are no revision counters, stale-edit checks or historical reads. Schema format numbers only identify file layouts. During early development, incompatible formats raise `ValueError`; create a new database to use the current schema. No migrations are provided. Use one store per thread on a local filesystem; the API and schema are experimental.
+
+## Connect existing records
+
+```python
+with RecordStore("research.sqlite") as db:
+    finding = db.create("Finding", text="Ramp requires utility approval", author_id="alice")
+    company = db.create("Entity", text="Supplier A", author_id="alice")
+    link = db.create_link(finding.id, company.id, "about", author_id="alice")
+    incoming = db.connections(company.id, direction="in", relation="about")
+    assert incoming.links == (link,) and not incoming.has_more
+```
+
+`read_link(id)` returns current contents. `update_link` replaces its endpoints, relation and explanation in place, records the last editor and refreshes `updated_at`. Links always refer to current records. Agents reassess support when underlying understanding changes; the database does not preserve earlier assumptions or automatically determine whether a relationship is still valid.
+
+`connections` returns links in creation order, with an optional exact relation filter. Its default limit is 100, its maximum is 1,000, and `has_more` reports omitted links. Incoming lookups preserve the stored direction. Missing IDs raise `KeyError`; duplicate links and custom relation labels are allowed. Pagination, recursive traversal and link deletion are not implemented yet.
+
+## Search for a starting point
+
+```python
+with RecordStore("research.sqlite") as db:
+    results = db.search_records("utility approval", kind="Finding", limit=10)
+    for record in results:
+        print(record.text, db.connections(record.id).links)
+```
+
+`search_records` returns a tuple of current `Record` objects, searching only their `text`. The query is plain text: punctuation separates words, any query word can match, and quotes or boolean words have no query-language meaning. Empty or punctuation-only queries return an empty tuple. FTS5 supplies case-insensitive token matching and [BM25 ranking](https://sqlite.org/fts5.html#the_bm25_function); ties use record creation order.
+
+The optional `kind` filter applies before the result limit. The default limit is 10 and the maximum is 1,000; results have no pagination or truncation flag yet. Invalid kinds, limits or non-string queries raise `ValueError`. SQLite triggers keep the index synchronized in the same transaction as each record write, so updated text replaces earlier searchable text immediately after commit.
+
+This uses schema format 9. Databases created by earlier implementations must be recreated; no migration is performed.
+
+## Ingest source text
+
+```python
+with RecordStore("research.sqlite") as db:
+    source = db.ingest_source(
+        description="Supplier A — Q2 filing",
+        document_text="Utility approval is required before construction.",
+        author_id="alice",
+        attributes={"origin": "supplier-a-q2.txt"},
+    )
+    assert source.kind == "Source"
+    assert db.read_source_text(source.id, start_byte=0, end_byte=7) == "Utility"
+```
+
+`ingest_source` accepts already extracted text and returns a new Source record. Its `text` is the short description searched by `search_records`; the document body stays in a separate `source_content` table. The Source, its search entry and its UTF-8 body commit together. Each call creates a new Source identity, even for identical text. Caller-supplied provenance belongs in `attributes`.
+
+The body and its SHA-256 are stored in SQLite for this first ingestion slice. Text is preserved exactly, including whitespace, line endings and Unicode normalization. `read_source_text(id)` returns the full text; optional offsets select a half-open UTF-8 byte range `[start_byte, end_byte)`, fetching only that range. Invalid ranges or offsets inside a character raise `ValueError`. Missing IDs and records without ingested text raise `KeyError`.
+
+Source descriptions and metadata remain editable. Captured text stays fixed so future citation offsets keep their meaning; ingest a separate Source for different text. This is evidence identity, not record edit history. Parsing, original-file storage and section context will be added in later increments. Ingestion currently holds one document's text in memory and makes no model calls.
+
+## Split a source into passages
+
+```python
+with RecordStore("research.sqlite") as db:
+    count = db.chunk_source(source.id, max_chars=2000)
+    for passage in db.read_passages(source.id, limit=100):
+        text = db.read_source_text(passage.source_id,
+                                   start_byte=passage.start_byte, end_byte=passage.end_byte)
+        print(passage.ordinal, text)
+```
+
+The dependency-free splitter caps each passage at `max_chars` Unicode characters (default 2,000), with zero overlap. Before a cut, it prefers the last paragraph break in the latter half of the window, then a line break, then whitespace; otherwise it cuts at the character limit. The final remainder stays intact. Whitespace and original text are preserved exactly. This is a character budget, not a token budget, and the splitter does not detect semantic sections or understand tables.
+
+`chunk_source` replaces the current passage set atomically and returns its count. It processes one document in memory. `read_passages` returns `Passage` locators containing `source_id`, zero-based `ordinal`, `start_byte` and `end_byte`, in source order. Its default limit is 100 and maximum is 1,000; use `start_ordinal=last.ordinal + 1` to continue. These reads use the current set, so concurrent rechunking can change later pages. An ingested but unchunked source returns an empty tuple; missing ingested text raises `KeyError`.
+
+Alternative chunkers can call `set_passages(source_id, ranges)` with UTF-8 byte ranges covering the entire document, in order, without gaps, overlap or empty passages. Boundaries must fall between UTF-8 characters. The built-in `premisedb.chunking.split_ranges` is a pure function independent of SQLite. Passage rows store only locators; document text stays in `source_content`. Rechunking changes passage positions, so evidence references must use Source IDs and byte ranges rather than ordinals. Section context remains a later increment.
+
+## Search document evidence
+
+```python
+with RecordStore("research.sqlite") as db:
+    segments = db.search_documents("utility approval", source_ids=[source.id], limit=5)
+    for segment in segments:
+        print(segment.source_id, segment.start_byte, segment.end_byte, segment.text)
+    assert segments[0].text == db.read_source_text(
+        source.id, start_byte=segments[0].start_byte, end_byte=segments[0].end_byte,
+    )
+```
+
+Call `chunk_source` or `set_passages` first: ingestion alone does not make the document body searchable. `search_documents` returns a tuple of `SourceSegment` objects, each with a Source ID, half-open UTF-8 byte range, exact original text and optional `document_context`. Each search result covers one matching passage; the separate RSE selector can combine supplied adjacent passages into longer ranges with the same locator contract. Read the Source record separately for its description and metadata.
+
+Query words follow the same plain-text rules as `search_records`. BM25 ranks separate header and body fields, with initial weights of 0.5 and 1.0 respectively; these are starting defaults, not tuned relevance guarantees. Ties use Source creation order, then passage ordinal. Source descriptions, attributes and research records are not included in this search. Omit `source_ids` to search all indexed documents, or supply an iterable of IDs to restrict matches before applying `limit`. An empty iterable matches nothing; duplicates have no effect. BM25 statistics still use the full passage corpus. Multiple results can come from one Source.
+
+The default result limit is 10 and the maximum is 1,000. Invalid query, limit or filter types raise `ValueError`; filter IDs without ingested source text raise `KeyError`. Empty queries and scopes containing only unchunked documents return an empty tuple. Results have no pagination, truncation flag or total text budget yet.
+
+SQLite triggers synchronize the passage index within the passage write transaction, including rollback on failure. The [contentless-delete FTS5 index](https://sqlite.org/fts5.html#contentless_delete_tables) stores search terms without another copy of the source text. Search selects locators and document context together, then reads those ranges from fixed canonical text; the ranges remain valid if another connection rechunks the document meanwhile. Reranking and RSE are optional subsequent steps; automatic connected research remains planned.
+
+## Add document context
+
+```python
+with RecordStore("research.sqlite") as db:
+    context = db.set_document_context(
+        source.id,
+        title="Supplier A — Q2 filing",
+        summary="Filing excerpt describing utility approval required before construction.",
+        author_id="research-agent",
+        provenance={"method": "agent-authored"},
+    )
+    segment = db.search_documents("Supplier", source_ids=[source.id])[0]
+    assert segment.document_context == context
+    assert segment.text == db.read_source_text(source.id)
+    print(context.header)
+```
+
+`set_document_context` stores a caller-supplied **document** title and summary once per ingested Source, separately from its record description and original text. It returns a `DocumentContext` with those fields, the Source ID, last editor, UTC `updated_at` and optional JSON provenance. Its `header` is the title, a newline and the summary. A title must be nonblank; an empty summary represents title-only context. This operation makes no model calls.
+
+Context can be supplied before or after chunking. Writes replace current context and provenance in full; omitted provenance becomes `{}`. Triggers refresh every affected passage's search entry in the same transaction. Source text, citation ranges, passage boundaries and the Source record's timestamp stay unchanged. No earlier context is retained. Later chunks automatically use the current context.
+
+`read_document_context(source_id)` returns the current context, or `None` for an ingested Source without context. Missing IDs and records without ingested text raise `KeyError`. Non-string titles/summaries or invalid provenance raise `ValueError`; blank titles/authors violate SQL constraints and raise `sqlite3.IntegrityError`.
+
+Search returns context as a separate field, captured with the matching index entries. A concurrent edit cannot replace it midway through a result. Header-only queries can match every passage in a document; the header provides document context and is not a quotation from the returned passage. Section summaries, automatic generation and embeddings remain future increments.
+
+## Rerank document evidence
+
+```python
+from premisedb import OpenRouterReranker, RecordStore
+
+# Reads OPENROUTER_API_KEY from the environment; alternatively pass api_key=.
+reranker = OpenRouterReranker(model="voyageai/rerank-2.5")
+query = "What could delay construction?"
+with RecordStore("research.sqlite") as db:
+    candidates = db.search_documents(query, limit=50)
+
+results = reranker.rerank(query, candidates)
+for result in results:
+    print(result.score, result.segment.source_id, result.segment.text)
+```
+
+Supported `model` values are `typesafe/jev-1.13`, `cohere/rerank-4-pro` and `voyageai/rerank-2.5`. All three use your OpenRouter account. Set the environment variable in your calling process or supply the key explicitly; the library does not load `.env` files. Construction makes no requests; scoring sends the query, candidate text and document headers to the configured model.
+
+`score(query, segments)` returns a tuple of raw 0–1 scores in input order. `rerank(query, segments)` returns every candidate as a `ScoredSegment(segment, score)`, sorted by descending score with stable ties. Both accept a sequence of `SourceSegment` objects. Text, document context and byte locators remain attached to the original objects. Empty candidates return `()` without requests; blank queries are rejected. Neither method filters low scores, truncates results, writes scores to SQLite or holds a database transaction across model calls.
+
+Cohere and Voyage use one [native rerank request](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/rag) per query, with separate document-context and passage fields encoded as JSON strings. Jev uses one [Decisions request](https://openrouter.ai/docs/guides/community/jev) per candidate, asking whether the passage supplies relevant evidence, including partial or contradictory evidence. Its rubric treats the document header as context, not evidence. Jev concurrency is bounded by `max_workers` (default 4); `timeout` defaults to 30 seconds **per request**, not for the entire reranking operation. Provider input limits apply; this implementation does not truncate or split oversized requests. Failed calls and incomplete or invalid scores raise errors; there are no automatic retries or fallback providers.
+
+These scores share a numerical range, **not a calibrated probability scale**. Before RSE, `retrieve` applies the adapter's `transform(score)`: dsRAG's beta CDF for Cohere and Voyage, identity for Jev. Raw scores remain accessible. The adapter preserves the scoring inputs from our [Jev experiment](https://github.com/Implied-Capital/PremiseDB/pull/11) and the plain-query configuration of our [Cohere/Voyage comparison](https://github.com/Implied-Capital/PremiseDB/pull/12).
+
+To use a direct provider, a local model or caller-supplied scores, subclass `Reranker` and implement `_score(query, segments)`. It receives a nonblank query and a nonempty tuple of segments and must return one finite 0–1 score per segment in input order. The base class supplies validation and sorting:
+
+```python
+from premisedb import Reranker
+
+class MyReranker(Reranker):
+    def _score(self, query, segments):
+        return my_model.score(query, segments)  # Your implementation; same order.
+```
+
+This follows [dsRAG's abstract reranker interface](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py), with raw scoring, score transformation and sorting kept explicit. Custom adapters inherit an identity `transform(score)` and can override it to return a finite relevance value in [0, 1]. No provider registry, serialization or database schema change is needed.
+
+## Retrieve evidence
+
+```python
+import tiktoken  # Optional: pip install tiktoken; any token counter can be supplied.
+from premisedb import OpenRouterReranker, RecordStore, retrieve
+
+encoding = tiktoken.get_encoding("cl100k_base")
+count_tokens = lambda text: len(encoding.encode(text, disallowed_special=()))
+reranker = OpenRouterReranker(model="voyageai/rerank-2.5")
+with RecordStore("research.sqlite") as db:
+    result = retrieve(
+        db, "What could delay construction?", reranker=reranker,
+        count_tokens=count_tokens, candidate_limit=50,
+        max_segment_tokens=2000, max_total_tokens=6000,
+    )
+for excerpt in result.excerpts:
+    print(excerpt.segment.source_id, excerpt.segment.start_byte, excerpt.segment.end_byte)
+    print(excerpt.token_count, excerpt.render())
+print(result.transformed_scores)  # RSE relevance inputs, aligned with scored_passages.
+```
+
+`retrieve` searches with BM25, scores **only those search hits**, transforms their scores through the reranker adapter, and runs RSE. Optional `source_ids` constrain search. The result exposes `excerpts`, `scored_passages` with raw scores in search order, and aligned `transformed_scores` used by RSE. Provider failures and incomplete candidate scores remain errors. The candidate limit bounds retrieval recall.
+
+As in dsRAG, an unreturned passage between hits receives the negative `irrelevant_chunk_penalty`. RSE can bridge it when the summed utility justifies the span. For example, hits at positions 10 and 13 can form one excerpt by paying two penalties for positions 11 and 12. Those intervening passages are never sent to the reranker.
+
+The store reads intervening text for exact token accounting and excerpt assembly, only between hits close enough to fit `max_segment_passages`. No exterior neighbors are read. Gap locators are captured together before body reads and model calls; search-time document context is preserved. Rechunking that removes a hit's exact passage anchor before that capture raises `ValueError` asking the caller to repeat search. Captured byte ranges survive later rechunking. No database transaction spans a model call.
+
+### Token budgets
+
+Supply a deterministic `count_tokens(text)` for the model that will **consume** the excerpts; it need not be the reranker's tokenizer. There is no character-based estimate or required tokenizer dependency. The counter sees each complete rendered excerpt: document header, two separating newlines, then canonical text. `excerpt.render()` returns exactly that string, and `excerpt.token_count` records its cost. Each excerpt must fit `max_segment_tokens`; the sum of those counts must fit `max_total_tokens`. Repeated headers are charged each time. Reserve additional tokens for your own prompt, citation wrappers and separators between rendered excerpts.
+
+The selector counts complete spans instead of adding per-passage counts, since tokenization can merge across boundaries. It also continues past an oversized prefix because appending text can reduce token counts. Counts are cached within an extraction call. Excerpts contain at most `max_segment_passages=32` passages, bounding interval work. Individual oversized passages are never cut, though a longer span can fit if its combined encoding is smaller. Empty input or insufficient evidence/budget returns no excerpts.
+
+### Score transforms and selection
+
+The OpenRouter adapter uses [dsRAG's score transformations](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py):
+
+| Adapter model | Transform before RSE |
+| --- | --- |
+| `cohere/rerank-4-pro` | `beta.cdf(score, 0.4, 0.4)` |
+| `voyageai/rerank-2.5` | `beta.cdf(score, 0.5, 1.8)` |
+| `typesafe/jev-1.13` | Identity: scores are unchanged. |
+
+These monotone transformations reshape scores for RSE; they do not estimate benchmark-support probabilities. A small standard-library implementation evaluates the beta CDF using the [incomplete-beta continued fraction](https://dlmf.nist.gov/8.17.v); SciPy is only an optional test reference. dsRAG's adapters default to older Cohere v3 and Voyage rerank-2 models. We retain their parameters as a starting point for the newer models and report the observed results in [retrieval validation](rse-validation.md). These parameters are inherited from dsRAG rather than fitted to the validation set.
+
+The [dsRAG-derived selector](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py) gives each passage `exp(-rank / decay_rate) * score - irrelevant_chunk_penalty`, with zero-based relevance ranks and stable input-order ties. By default, it multiplies this utility by `max(1, passage_characters / 700)`; `chunk_length_adjustment=False` disables this dsRAG heuristic. This utility weighting is separate from token accounting. It greedily selects the best nonoverlapping intervals, allowing weak intervening material when nearby evidence outweighs its cost. Endpoints must have nonnegative utility. Equal values favor the first encountered Source, then the earliest start and end. `excerpt.value` is summed utility and can exceed 1; it is not a probability.
+
+Both `retrieve` and `extract_segments` use [dsRAG's balanced scoring defaults](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py#L152): `irrelevant_chunk_penalty=0.18`, `minimum_value=0.5`, `decay_rate=30` and `chunk_length_adjustment=True`. Pass explicit keyword overrides through `retrieve` to change selection. Score transforms never change these defaults. PremiseDB retains its token budgets, 32-passage span limit and five-excerpt limit; these are adaptations, not dsRAG's chunk-count budgets.
+
+### Use the selector directly
+
+```python
+from premisedb import extract_segments
+
+scores = tuple(reranker.transform(score) for score in reranker.score(query, candidates))
+excerpts = extract_segments(
+    candidates, scores, count_tokens=count_tokens,
+)
+```
+
+`extract_segments` remains a pure, single-query function accepting aligned `SourceSegment` passages and relevance scores. It performs no database reads or score transformations. Apply `reranker.transform` once before calling it directly, as above. Supply intervening passages with `None` scores to allow bridging; each receives only the negative penalty. `retrieve` supplies these automatically. The example above can combine only contiguous candidates because no intervening passages were supplied. Returned `ExtractedSegment` objects contain `segment`, `value` and `token_count`.
+
+Passages from one Source must not overlap or repeat, and text must match declared UTF-8 byte lengths. Missing ranges and different context snapshots are hard boundaries; separate excerpts are never stitched into a purported continuous quotation. Multiple-query allocation and automatic connected-research retrieval remain planned.
+
+## What the graph remembers
+
+The store supports six record types:
+
+| Record type | What it represents | Examples |
+| --- | --- | --- |
+| **Entity** | Something research refers to repeatedly, with a stable identity across investigations. | A company, product, facility, commodity or regulation. |
+| **Source** | Material used as evidence, with enough provenance to identify the document and locate the relevant passage. | A filing, transcript, analyst note or interview record. |
+| **Finding** | A statement or conclusion from an investigation, with its supporting evidence or reasoning. | A supply relationship, business mechanism, estimate or scenario assumption. |
+| **Question** | An unresolved issue worth investigating, connected to the understanding it could change. | Whether a customer can postpone contractual deliveries. |
+| **Model** | A financial model whose implementation can live in an external tool. | An Excel forecast or a Python valuation model. |
+| **Variable** | An identifiable input, intermediate value or output within a model, connected to its research basis. | A capacity assumption, utilization estimate or revenue forecast for a specified period. |
+
+These are lightweight labels on a common record structure: a stable ID, a type, readable text and flexible metadata. Records connect through named links. Company and facility labels, sector-specific details and new relationship labels can develop through use. The initial vocabulary is extensible; separate tables or elaborate schemas for each type are not required.
+
+**Findings are independently addressable.** A finding about a supply relationship connects to the supplier, customer and product, as well as its evidence. Other findings can depend on it, challenge it or revise it. Disclosed facts, agent interpretations and scenario assumptions remain distinguishable.
+
+**Questions preserve useful uncertainty.** Identifying which unknown could change a conclusion is valuable research. A question gives later agents somewhere to contribute partial answers, attach evidence and connect a finding that resolves it. Several investigations can share the same question.
+
+**Models connect numbers to understanding.** A Variable can link a modeled assumption to the Findings supporting it and the Questions that could change it. Calculations remain in the user's modeling tool. Links point to current records; agents reassess their meaning when assumptions change. Model runs and past assumption values are outside the current ontology.
+
+For example, in a hypothetical investigation:
+
+- **Entities:** Supplier A, Customer B and Product P.
+- **Source S1:** A filing disclosing their supply relationship, with a reference to the relevant passage.
+- **Finding F1:** Supplier A supplies Product P to Customer B. It connects to those entities and is supported by S1.
+- **Finding F2:** Customer B's project delay could affect Supplier A's revenue. This inference depends on F1 and the customer's ability to postpone deliveries.
+- **Question Q1:** Can Customer B postpone contractual deliveries? It concerns the supply relationship and matters to F2.
+
+A later agent researching the contracts can answer Q1 and revisit F2. A source that challenges F1 can prompt a review of the findings that depend on it.
+
+Records store current understanding, its last editor and a last-edited timestamp. Updates replace previous contents. Disagreements can remain explicit as separate Findings connected to one another. Later investigations build on the current graph.
