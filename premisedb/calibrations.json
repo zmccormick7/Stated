@@ -1,0 +1,26 @@
+{
+  "typesafe/jev-1.13": {
+    "name": "finqa-support-v1",
+    "model": "typesafe/jev-1.13",
+    "slope": 1.7361182870934435,
+    "intercept": -3.1216774185946528,
+    "irrelevant_chunk_penalty": 0.001,
+    "minimum_value": 0.01
+  },
+  "cohere/rerank-4-pro": {
+    "name": "finqa-support-v1",
+    "model": "cohere/rerank-4-pro",
+    "slope": 2.615956749027979,
+    "intercept": -6.0852395070712895,
+    "irrelevant_chunk_penalty": 0.001,
+    "minimum_value": 0.01
+  },
+  "voyageai/rerank-2.5": {
+    "name": "finqa-support-v1",
+    "model": "voyageai/rerank-2.5",
+    "slope": 3.108938126837194,
+    "intercept": -3.118986942908924,
+    "irrelevant_chunk_penalty": 0.001,
+    "minimum_value": 0.01
+  }
+}
