@@ -55,3 +55,11 @@ END;
 CREATE TRIGGER source_content_fixed BEFORE UPDATE ON source_content BEGIN
     SELECT RAISE(ABORT, 'source text is fixed; ingest a new Source');
 END;
+
+CREATE TABLE passages (
+    source_key INTEGER NOT NULL REFERENCES source_content (source_key),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    start_byte INTEGER NOT NULL CHECK (start_byte >= 0),
+    end_byte INTEGER NOT NULL CHECK (end_byte > start_byte),
+    PRIMARY KEY (source_key, ordinal)
+) WITHOUT ROWID;
