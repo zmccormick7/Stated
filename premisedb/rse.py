@@ -1,6 +1,6 @@
 """Single-query Relevant Segment Extraction; dsRAG attribution in NOTICE."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from math import exp, isfinite
 
@@ -11,21 +11,32 @@ from .store import DocumentContext, SourceSegment
 class ExtractedSegment:
     segment: SourceSegment
     value: float  # Sum of passage utilities, not a probability or reranker score.
+    token_count: int
+
+    def render(self) -> str:
+        """The exact string charged to the token budget; context stays separately identified."""
+        context = self.segment.document_context
+        return (context.header + "\n\n" if context else "") + self.segment.text
 
 
 def extract_segments(segments: Sequence[SourceSegment], scores: Sequence[float | None], *,
-                     max_segment_chars: int = 8000, max_total_chars: int = 20000,
-                     max_segments: int = 5, irrelevant_chunk_penalty: float = 0.2,
+                     count_tokens: Callable[[str], int],
+                     max_segment_tokens: int = 2000, max_total_tokens: int = 6000,
+                     max_segments: int = 5, max_segment_passages: int = 32,
+                     irrelevant_chunk_penalty: float = 0.2,
                      minimum_value: float = 0.5, decay_rate: float = 30,
                      chunk_length_adjustment: bool = True) -> tuple[ExtractedSegment, ...]:
     """Greedily select contiguous evidence spans from aligned passages and scores.
 
     None scores penalize supplied but unscored passages. Missing byte ranges are
-    hard boundaries. Budgets count Unicode characters, including a header and
+    hard boundaries. Budgets use the supplied tokenizer, including a header and
     two separating newlines per returned span. No storage or model calls occur.
     """
-    for name, value in (("max_segment_chars", max_segment_chars),
-                        ("max_total_chars", max_total_chars), ("max_segments", max_segments)):
+    if not callable(count_tokens):
+        raise ValueError("count_tokens must be callable")
+    for name, value in (("max_segment_tokens", max_segment_tokens),
+                        ("max_total_tokens", max_total_tokens), ("max_segments", max_segments),
+                        ("max_segment_passages", max_segment_passages)):
         if type(value) is not int or value < 1:
             raise ValueError(f"{name} must be a positive integer")
     for name, value in (("irrelevant_chunk_penalty", irrelevant_chunk_penalty),
@@ -76,26 +87,33 @@ def extract_segments(segments: Sequence[SourceSegment], scores: Sequence[float |
             blocks[-1].append(index)
             previous = segment
 
-    used, results, remaining = set(), [], max_total_chars
+    used, results, remaining, token_counts = set(), [], max_total_tokens, {}
     while len(results) < max_segments:
         best = None
         best_value = float("-inf")
-        for block in blocks:
+        for block_index, block in enumerate(blocks):
             context = segments[block[0]].document_context
-            header_chars = len(context.header) + 2 if context else 0
+            header = context.header + "\n\n" if context else ""
             for start, index in enumerate(block):
                 if index in used or values[index] < 0:
                     continue
-                value, size = 0.0, header_chars
-                for end in range(start, len(block)):
+                value = 0.0
+                for end in range(start, min(start + max_segment_passages, len(block))):
                     index = block[end]
                     if index in used:
                         break
-                    size += len(segments[index].text)
-                    if size > min(max_segment_chars, remaining):
-                        break
                     value += values[index]
                     if values[index] >= 0 and value >= minimum_value and value > best_value:
+                        key = (block_index, start, end)
+                        if key not in token_counts:
+                            text = header + "".join(segments[i].text for i in block[start:end + 1])
+                            size = count_tokens(text)
+                            if type(size) is not int or size < 0:
+                                raise ValueError("count_tokens must return a nonnegative integer")
+                            token_counts[key] = size
+                        size = token_counts[key]
+                        if size > min(max_segment_tokens, remaining):
+                            continue  # Adding text can reduce BPE token counts; do not break.
                         best, best_value = (block, start, end + 1, size), value
         if best is None:
             break
@@ -104,7 +122,7 @@ def extract_segments(segments: Sequence[SourceSegment], scores: Sequence[float |
         first, last = segments[selected[0]], segments[selected[-1]]
         segment = SourceSegment(first.source_id, first.start_byte, last.end_byte,
                                 "".join(segments[i].text for i in selected), first.document_context)
-        results.append(ExtractedSegment(segment, best_value))
+        results.append(ExtractedSegment(segment, best_value, size))
         used.update(selected)
         remaining -= size
     return tuple(results)

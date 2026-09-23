@@ -75,6 +75,12 @@ class SourceSegment:
     document_context: DocumentContext | None = None
 
 
+@dataclass(frozen=True)
+class PassageExpansion:
+    segments: tuple[SourceSegment, ...]
+    has_more: bool
+
+
 _LINK_SELECT = """
     SELECT l.id, f.id AS from_id, t.id AS to_id, l.relation,
            l.explanation, l.author_id, l.updated_at
@@ -197,6 +203,50 @@ class RecordStore:
                                   end_byte=row["end_byte"]),
             self._decode_document_context(row["source_id"], row),
         ) for row in rows)
+
+    def expand_passages(self, seeds: Iterable[SourceSegment], *, radius: int = 2,
+                        limit: int = 250) -> PassageExpansion:
+        """Fetch current neighbors around exact passage anchors, retaining all seeds."""
+        if type(radius) is not int or not 0 <= radius <= 10:
+            raise ValueError("radius must be an integer from 0 to 10")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer from 1 to 1000")
+        seeds = tuple(seeds)
+        if any(not isinstance(s, SourceSegment) or not isinstance(s.source_id, str) or not s.source_id
+               or type(s.start_byte) is not int or type(s.end_byte) is not int
+               or not 0 <= s.start_byte < s.end_byte for s in seeds):
+            raise ValueError("seeds must contain SourceSegment objects with valid byte ranges")
+        anchors = list(dict.fromkeys((s.source_id, s.start_byte, s.end_byte) for s in seeds))
+        if len(anchors) > limit:
+            raise ValueError("limit must accommodate all distinct seeds")
+        if not anchors:
+            return PassageExpansion((), False)
+        rows = self._db.execute(
+            """SELECT r.id AS source_id, p.passage_key AS anchor, n.start_byte, n.end_byte,
+                      c.title, c.summary, c.author_id, c.updated_at, c.provenance
+               FROM json_each(?) j
+               LEFT JOIN records r ON r.id = json_extract(j.value, '$[0]')
+               LEFT JOIN passages p ON p.source_key = r.record_key
+                 AND p.start_byte = json_extract(j.value, '$[1]')
+                 AND p.end_byte = json_extract(j.value, '$[2]')
+               LEFT JOIN passages n ON n.source_key = p.source_key
+                 AND n.ordinal BETWEEN p.ordinal - ? AND p.ordinal + ?
+               LEFT JOIN document_context c ON c.source_key = r.record_key
+               ORDER BY abs(n.ordinal - p.ordinal), CAST(j.key AS INTEGER), n.ordinal""",
+            (json.dumps(anchors), radius, radius),
+        ).fetchall()
+        if any(row["anchor"] is None for row in rows):
+            raise ValueError("A seed is no longer a current passage; repeat document search")
+        unique = {}
+        for row in rows:
+            unique.setdefault((row["source_id"], row["start_byte"], row["end_byte"]), row)
+        # Bound text reads after deduplication. Locators and fresh context share one SQL snapshot.
+        segments = tuple(SourceSegment(
+            row["source_id"], row["start_byte"], row["end_byte"],
+            self.read_source_text(row["source_id"], start_byte=row["start_byte"], end_byte=row["end_byte"]),
+            self._decode_document_context(row["source_id"], row),
+        ) for row in list(unique.values())[:limit])
+        return PassageExpansion(segments, len(unique) > limit)
 
     def set_document_context(self, source_id: str, *, title: str, summary: str,
                              author_id: str, provenance: dict[str, object] | None = None) -> DocumentContext:
