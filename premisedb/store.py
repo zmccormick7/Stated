@@ -198,6 +198,45 @@ class RecordStore:
             self._decode_document_context(row["source_id"], row),
         ) for row in rows)
 
+    def _rse_intervening_passages(self, candidates: tuple[SourceSegment, ...],
+                                max_segment_passages: int) -> tuple[SourceSegment, ...]:
+        """Read unreturned passages between hits for RSE penalties and token accounting."""
+        if not candidates:
+            return ()
+        anchors = [(s.source_id, s.start_byte, s.end_byte) for s in candidates]
+        rows = self._db.execute(
+            """WITH anchors AS (
+                   SELECT CAST(j.key AS INTEGER) AS hit, p.source_key, p.ordinal,
+                          lead(p.ordinal) OVER (
+                              PARTITION BY p.source_key ORDER BY p.ordinal) AS next_ordinal
+                   FROM json_each(?) j
+                   LEFT JOIN records r ON r.id = json_extract(j.value, '$[0]')
+                   LEFT JOIN passages p ON p.source_key = r.record_key
+                     AND p.start_byte = json_extract(j.value, '$[1]')
+                     AND p.end_byte = json_extract(j.value, '$[2]')
+               )
+               SELECT a.hit, a.ordinal, p.start_byte, p.end_byte
+               FROM anchors a LEFT JOIN passages p ON p.source_key = a.source_key
+                 AND p.ordinal > a.ordinal AND p.ordinal < a.next_ordinal
+                 AND a.next_ordinal - a.ordinal < ?
+               ORDER BY a.hit, p.ordinal""",
+            (json.dumps(anchors), max_segment_passages),
+        ).fetchall()
+        if any(row["ordinal"] is None for row in rows):
+            raise ValueError("A hit is no longer a current passage; repeat document search")
+        # Larger gaps cannot fit the passage limit. Never read outside the hits.
+        # Capture locators before body reads; retain the search-time context.
+        intervening = []
+        for row in rows:
+            if row["start_byte"] is not None:
+                hit = candidates[row["hit"]]
+                intervening.append(SourceSegment(
+                    hit.source_id, row["start_byte"], row["end_byte"],
+                    self.read_source_text(hit.source_id, start_byte=row["start_byte"], end_byte=row["end_byte"]),
+                    hit.document_context,
+                ))
+        return tuple(intervening)
+
     def set_document_context(self, source_id: str, *, title: str, summary: str,
                              author_id: str, provenance: dict[str, object] | None = None) -> DocumentContext:
         """Replace document-level enrichment and refresh its passage index atomically."""

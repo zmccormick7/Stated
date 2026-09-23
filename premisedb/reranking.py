@@ -10,6 +10,7 @@ import os
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from ._beta import beta_cdf
 from .store import SourceSegment
 
 
@@ -23,6 +24,12 @@ class Reranker(ABC):
     @abstractmethod
     def _score(self, query: str, segments: tuple[SourceSegment, ...]) -> Sequence[float]:
         """Return one raw 0–1 relevance score per segment, in input order."""
+
+    def transform(self, score: float) -> float:
+        """Map a raw score to RSE's relevance scale; custom rerankers default to identity."""
+        if type(score) not in (int, float) or not 0 <= score <= 1:
+            raise ValueError("Expected a finite score in [0, 1]")
+        return float(score)
 
     def score(self, query: str, segments: Sequence[SourceSegment]) -> tuple[float, ...]:
         """Validate scores without sorting, filtering or transforming them."""
@@ -81,6 +88,14 @@ class OpenRouterReranker(Reranker):
             raise ValueError("Set OPENROUTER_API_KEY or supply api_key")
         self.model, self.timeout, self.max_workers = model, timeout, max_workers
         self._api_key = key
+
+    def transform(self, score: float) -> float:
+        """Use dsRAG's Cohere/Voyage beta CDFs; Jev scores pass through unchanged."""
+        score = super().transform(score)
+        if self.model == "typesafe/jev-1.13":
+            return score
+        a, b = (0.4, 0.4) if self.model == "cohere/rerank-4-pro" else (0.5, 1.8)
+        return beta_cdf(score, a, b)
 
     def _post(self, endpoint: str, payload: dict) -> dict:
         request = Request("https://openrouter.ai/api/" + endpoint,

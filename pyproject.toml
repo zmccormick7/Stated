@@ -13,3 +13,6 @@ include = ["premisedb*"]
 
 [tool.setuptools.package-data]
 premisedb = ["schema.sql"]
+
+[project.optional-dependencies]
+evaluation = ["scipy>=1.14,<2", "tiktoken>=0.12,<1"]
