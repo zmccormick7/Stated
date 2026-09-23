@@ -10,7 +10,7 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, RSE, semantic search, automatic graph context, citation links, the installer and agent integrations below remain planned.
+> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, configurable reranking through OpenRouter, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, RSE, vector search, automatic graph context, citation links, the installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
@@ -123,7 +123,7 @@ Query words follow the same plain-text rules as `search_records`. BM25 ranks sep
 
 The default result limit is 10 and the maximum is 1,000. Invalid query, limit or filter types raise `ValueError`; filter IDs without ingested source text raise `KeyError`. Empty queries and scopes containing only unchunked documents return an empty tuple. Results have no pagination, truncation flag or total text budget yet.
 
-SQLite triggers synchronize the passage index within the passage write transaction, including rollback on failure. The [contentless-delete FTS5 index](https://sqlite.org/fts5.html#contentless_delete_tables) stores search terms without another copy of the source text. Search selects locators and document context together, then reads those ranges from fixed canonical text; the ranges remain valid if another connection rechunks the document meanwhile. Semantic ranking, RSE and automatic connected research remain planned.
+SQLite triggers synchronize the passage index within the passage write transaction, including rollback on failure. The [contentless-delete FTS5 index](https://sqlite.org/fts5.html#contentless_delete_tables) stores search terms without another copy of the source text. Search selects locators and document context together, then reads those ranges from fixed canonical text; the ranges remain valid if another connection rechunks the document meanwhile. Reranking is an optional subsequent step; RSE and automatic connected research remain planned.
 
 ## Add document context
 
@@ -149,6 +149,42 @@ Context can be supplied before or after chunking. Writes replace current context
 `read_document_context(source_id)` returns the current context, or `None` for an ingested Source without context. Missing IDs and records without ingested text raise `KeyError`. Non-string titles/summaries or invalid provenance raise `ValueError`; blank titles/authors violate SQL constraints and raise `sqlite3.IntegrityError`.
 
 Search returns context as a separate field, captured with the matching index entries. A concurrent edit cannot replace it midway through a result. Header-only queries can match every passage in a document; the header provides document context and is not a quotation from the returned passage. Section summaries, automatic generation and embeddings remain future increments.
+
+## Rerank document evidence
+
+```python
+from premisedb import OpenRouterReranker, RecordStore
+
+# Reads OPENROUTER_API_KEY from the environment; alternatively pass api_key=.
+reranker = OpenRouterReranker(model="voyageai/rerank-2.5")
+query = "What could delay construction?"
+with RecordStore("research.sqlite") as db:
+    candidates = db.search_documents(query, limit=50)
+
+results = reranker.rerank(query, candidates)
+for result in results:
+    print(result.score, result.segment.source_id, result.segment.text)
+```
+
+Supported `model` values are `typesafe/jev-1.13`, `cohere/rerank-4-pro` and `voyageai/rerank-2.5`. All three use your OpenRouter account. Set the environment variable in your calling process or supply the key explicitly; the library does not load `.env` files. Construction makes no requests; scoring sends the query, candidate text and document headers to the configured model.
+
+`score(query, segments)` returns a tuple of raw 0–1 scores in input order. `rerank(query, segments)` returns every candidate as a `ScoredSegment(segment, score)`, sorted by descending score with stable ties. Both accept a sequence of `SourceSegment` objects. Text, document context and byte locators remain attached to the original objects. Empty candidates return `()` without requests; blank queries are rejected. Neither method filters low scores, truncates results, writes scores to SQLite or holds a database transaction across model calls.
+
+Cohere and Voyage use one [native rerank request](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/rag) per query, with separate document-context and passage fields encoded as JSON strings. Jev uses one [Decisions request](https://openrouter.ai/docs/guides/community/jev) per candidate, asking whether the passage supplies relevant evidence, including partial or contradictory evidence. Its rubric treats the document header as context, not evidence. Jev concurrency is bounded by `max_workers` (default 4); `timeout` defaults to 30 seconds **per request**, not for the entire reranking operation. Provider input limits apply; this implementation does not truncate or split oversized requests. Failed calls and incomplete or invalid scores raise errors; there are no automatic retries or fallback providers.
+
+These scores share a numerical range, **not a calibrated probability scale**. Do not assume that a threshold such as 0.5 means the same thing across models. Model-specific calibration and RSE remain separate increments. The initial adapter preserves the scoring inputs from our [Jev experiment](https://github.com/Implied-Capital/PremiseDB/pull/11) and the plain-query configuration of our [Cohere/Voyage comparison](https://github.com/Implied-Capital/PremiseDB/pull/12).
+
+To use a direct provider, a local model or caller-supplied scores, subclass `Reranker` and implement `_score(query, segments)`. It receives a nonblank query and a nonempty tuple of segments and must return one finite 0–1 score per segment in input order. The base class supplies validation and sorting:
+
+```python
+from premisedb import Reranker
+
+class MyReranker(Reranker):
+    def _score(self, query, segments):
+        return my_model.score(query, segments)  # Your implementation; same order.
+```
+
+This follows [dsRAG's abstract reranker interface](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py), with scoring separated from sorting so later segment extraction can consume all candidate scores. Configuration lives in ordinary Python objects for now; no provider registry, serialization or database schema change is needed.
 
 ## What can you do with PremiseDB?
 
