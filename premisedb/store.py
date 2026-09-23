@@ -14,7 +14,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 7
+_SCHEMA_VERSION = 8
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,14 @@ class Passage:
     ordinal: int
     start_byte: int
     end_byte: int
+
+
+@dataclass(frozen=True)
+class SourceSegment:
+    source_id: str
+    start_byte: int
+    end_byte: int
+    text: str
 
 
 _LINK_SELECT = """
@@ -124,16 +132,13 @@ class RecordStore:
     def search_records(self, query: str, *, kind: str | None = None,
                        limit: int = 10) -> tuple[Record, ...]:
         """Match any plain-text query word; return current records in BM25 order."""
-        if not isinstance(query, str):
-            raise ValueError("query must be a string")
+        expression = self._search_expression(query)
         if kind is not None and kind not in ("Entity", "Source", "Finding", "Question", "Model", "Variable"):
             raise ValueError("kind must be a record kind or None")
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise ValueError("limit must be an integer from 1 to 1000")
-        words = dict.fromkeys(re.findall(r"[^\W_]+", unicodedata.normalize("NFC", query)))
-        if not words:
+        if not expression:
             return ()
-        expression = " OR ".join(f'"{word}"' for word in words)
         rows = self._db.execute(
             """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.updated_at
                FROM records_fts JOIN records r ON r.record_key = records_fts.rowid
@@ -142,6 +147,36 @@ class RecordStore:
             (expression, kind, kind, limit),
         ).fetchall()
         return tuple(self._decode_record(row) for row in rows)
+
+    def search_documents(self, query: str, *, source_ids: Iterable[str] | None = None,
+                         limit: int = 10) -> tuple[SourceSegment, ...]:
+        """Rank passage bodies by BM25 and return exact canonical source ranges."""
+        expression = self._search_expression(query)
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer from 1 to 1000")
+        source_keys = None
+        if source_ids is not None:
+            if isinstance(source_ids, (str, bytes)) or not isinstance(source_ids, Iterable):
+                raise ValueError("source_ids must be an iterable of strings or None")
+            ids = tuple(source_ids)
+            if any(not isinstance(source_id, str) for source_id in ids):
+                raise ValueError("source_ids must contain only strings")
+            source_keys = json.dumps([self._source_key(source_id) for source_id in dict.fromkeys(ids)])
+        if not expression or source_keys == "[]":
+            return ()
+        rows = self._db.execute(
+            """SELECT r.id AS source_id, p.start_byte, p.end_byte
+               FROM passages_fts JOIN passages p ON p.passage_key = passages_fts.rowid
+               JOIN records r ON r.record_key = p.source_key
+               WHERE passages_fts MATCH ?
+                 AND (? IS NULL OR p.source_key IN (SELECT value FROM json_each(?)))
+               ORDER BY bm25(passages_fts), p.source_key, p.ordinal LIMIT ?""",
+            (expression, source_keys, source_keys, limit),
+        ).fetchall()
+        # Canonical text is fixed, so these ranges survive concurrent rechunking.
+        return tuple(SourceSegment(**dict(row), text=self.read_source_text(
+            row["source_id"], start_byte=row["start_byte"], end_byte=row["end_byte"],
+        )) for row in rows)
 
     def create(self, kind: str, *, text: str, author_id: str,
                attributes: dict[str, object] | None = None) -> Record:
@@ -328,6 +363,13 @@ class RecordStore:
                      explanation: str, author_id: str) -> tuple:
         return (self._record_key(from_id), self._record_key(to_id), relation,
                 explanation, author_id, datetime.now(UTC).isoformat())
+
+    @staticmethod
+    def _search_expression(query: str) -> str:
+        if not isinstance(query, str):
+            raise ValueError("query must be a string")
+        words = dict.fromkeys(re.findall(r"[^\W_]+", unicodedata.normalize("NFC", query)))
+        return " OR ".join(f'"{word}"' for word in words)
 
     @staticmethod
     def _decode_record(row: sqlite3.Row) -> Record:

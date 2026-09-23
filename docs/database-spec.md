@@ -1,6 +1,6 @@
 # PremiseDB database: proposed v0 design
 
-**Status: current-state design.** Records and links store current contents and one database-assigned UTC `updated_at` timestamp. Updates replace earlier values; there are no history tables, revision counters, endpoint pins, audit trails or historical reads. The implementation supports record/link operations, lexical record search, bounded directional lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. The richer retrieval interface below remains proposed. SQLite and Faiss remain selected, with no performance claims. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
+**Status: current-state design.** Records and links store current contents and one database-assigned UTC `updated_at` timestamp. Updates replace earlier values; there are no history tables, revision counters, endpoint pins, audit trails or historical reads. The implementation supports record/link operations, lexical record and document search, bounded directional lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. The richer retrieval interface below remains proposed. SQLite and Faiss remain selected, with no performance claims. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
 
 ## 1. What the database owns
 
@@ -141,13 +141,13 @@ Variable ownership lives in the Variable's typed attributes and an indexed proje
 
 Each Source identifies a captured document and its canonical text. Store artifact/text hashes and extraction configuration to identify the cited material. Keep cited text fixed: a materially different document or text rendition is a separate Source when existing citations must remain usable. This is evidence identity, not a chain of edits to a research record.
 
-The implemented `ingest_source` creates a Source description and a separate fixed text body in one transaction. `read_source_text` resolves full text or validated UTF-8 byte ranges. The description participates in record search; the body is not indexed yet. No parsing, normalization, automatic provenance inference or deduplication is performed.
+The implemented `ingest_source` creates a Source description and a separate fixed text body in one transaction. `read_source_text` resolves full text or validated UTF-8 byte ranges. The description participates in record search; the body becomes searchable after passage creation. No parsing, normalization, automatic provenance inference or deduplication is performed.
 
 A text citation is `(source_id, start_byte, end_byte)`, using a half-open UTF-8 range in that Source's canonical text. Validate boundaries and optionally retain a quoted-text hash. Pages, section paths and table/cell references help navigation; they supplement the canonical locator. Non-text evidence uses an explicit artifact/page/region locator rather than fabricated text offsets.
 
-Search passages are derived partitions of a Source, identified by `(source_id, ordinal)` within its current chunk set. Rechunking replaces that derived set; citations use canonical text ranges rather than chunk ordinals. Materialized passage text may duplicate canonical text for efficient search; include that copy in disk sizing.
+Search passages are derived partitions of a Source, identified by `(source_id, ordinal)` within its current chunk set. Rechunking replaces that derived set; citations use canonical text ranges rather than chunk ordinals. The implemented FTS5 index stores terms without materializing another text copy; evidence is read from canonical source ranges.
 
-The implemented `chunk_source` uses a dependency-free, zero-overlap character splitter with paragraph/line/whitespace boundary preferences. It stores exact byte locators without rewriting source text. `set_passages` accepts a caller-supplied complete partition, and `read_passages` reads bounded ordinal ranges. There is no passage search or section detection yet. Section-aware chunkers and document/section CCH context can build on these locators; character budgets do not enforce future model token limits.
+The implemented `chunk_source` uses a dependency-free, zero-overlap character splitter with paragraph/line/whitespace boundary preferences. It stores exact byte locators without rewriting source text. `set_passages` accepts a caller-supplied complete partition, and `read_passages` reads bounded ordinal ranges. `search_documents` ranks passage bodies with BM25 and returns exact `SourceSegment` ranges, one passage per segment. Optional Source IDs restrict matches before the result limit. Passage writes and the index update atomically. Section detection, CCH and RSE remain planned; character budgets do not enforce future model token limits.
 
 ### Contextual Chunk Headers
 
@@ -194,6 +194,7 @@ This is a logical table layout, not final migration SQL. Public IDs map to compa
 | `entity_identifiers`, `entity_aliases` | Exact normalized identity lookup; ambiguous aliases return multiple candidates. |
 | `record_entities`, `model_variables` | Exact, rebuildable membership projections from explicit subject links and Variable ownership. |
 | `source_content`, `passages` | Implemented: fixed canonical UTF-8 body and SHA-256 per Source, plus ordered passage byte ranges. Planned: original-artifact references and processing state. |
+| `records_fts`, `passages_fts` | Implemented: separate lexical indexes for record text and passage bodies, synchronized by SQLite triggers. |
 | `document_context`, `sections`, `section_context` | Current document/section titles and summaries, source-aligned section ranges, authorship and `updated_at`. |
 | `record_context` | Current business background for searchable research records, separate from the record's own claim text. |
 | `context_inputs`, `context_scopes` | Input IDs/fingerprints and watched research scopes for current context, with reverse dependency lookups. |
