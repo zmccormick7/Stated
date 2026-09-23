@@ -78,8 +78,7 @@ class RecordStoreTests(unittest.TestCase):
         read_text = Path.read_text
 
         def fail_after_schema(file):
-            sql = read_text(file)
-            return sql + "\nINVALID SQL;\n" if file.name == "sources.sql" else sql
+            return read_text(file) + "\nINVALID SQL;\n"
 
         with patch.object(Path, "read_text", fail_after_schema):
             with self.assertRaises(sqlite3.OperationalError):

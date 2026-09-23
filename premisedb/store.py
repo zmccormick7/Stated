@@ -81,18 +81,14 @@ class RecordStore:
             if self._schema_version() == _SCHEMA_VERSION:
                 return
             # executescript would commit before running; keep schema creation atomic.
-            for name in ("schema.sql", "links.sql", "search.sql", "sources.sql"):
-                statement = ""
-                for line in Path(__file__).with_name(name).read_text().splitlines(keepends=True):
-                    statement += line
-                    if sqlite3.complete_statement(statement):
-                        self._db.execute(statement)
-                        statement = ""
-                if statement.strip():
-                    raise ValueError(f"Incomplete schema statement in {name}")
-            for direction, column in (("out", "from_key"), ("in", "to_key")):
-                self._db.execute(f"CREATE INDEX links_{direction} ON links ({column}, relation, link_key)")
-                self._db.execute(f"CREATE INDEX links_{direction}_all ON links ({column}, link_key)")
+            statement = ""
+            for line in Path(__file__).with_name("schema.sql").read_text().splitlines(keepends=True):
+                statement += line
+                if sqlite3.complete_statement(statement):
+                    self._db.execute(statement)
+                    statement = ""
+            if statement.strip():
+                raise ValueError("Incomplete statement in schema.sql")
             self._db.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
 
     def close(self) -> None:
