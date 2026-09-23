@@ -10,7 +10,7 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, configurable reranking through OpenRouter, model-specific score calibration, token-budgeted RSE, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, vector search, automatic graph context, citation links, the installer and agent integrations below remain planned.
+> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, configurable reranking through OpenRouter, dsRAG's Cohere/Voyage score transforms, token-budgeted RSE, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, vector search, automatic graph context, citation links, the installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
@@ -172,7 +172,7 @@ Supported `model` values are `typesafe/jev-1.13`, `cohere/rerank-4-pro` and `voy
 
 Cohere and Voyage use one [native rerank request](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/rag) per query, with separate document-context and passage fields encoded as JSON strings. Jev uses one [Decisions request](https://openrouter.ai/docs/guides/community/jev) per candidate, asking whether the passage supplies relevant evidence, including partial or contradictory evidence. Its rubric treats the document header as context, not evidence. Jev concurrency is bounded by `max_workers` (default 4); `timeout` defaults to 30 seconds **per request**, not for the entire reranking operation. Provider input limits apply; this implementation does not truncate or split oversized requests. Failed calls and incomplete or invalid scores raise errors; there are no automatic retries or fallback providers.
 
-These scores share a numerical range, **not a calibrated probability scale**. Do not assume that a threshold such as 0.5 means the same thing across models. Retrieval uses raw scores by default. Experimental model-specific transformations fitted on financial support labels are available explicitly; they reduced support coverage with standard RSE thresholds in our replay. The initial adapter preserves the scoring inputs from our [Jev experiment](https://github.com/Implied-Capital/PremiseDB/pull/11) and the plain-query configuration of our [Cohere/Voyage comparison](https://github.com/Implied-Capital/PremiseDB/pull/12).
+These scores share a numerical range, **not a calibrated probability scale**. Before RSE, `retrieve` applies the adapter's `transform(score)`: dsRAG's beta CDF for Cohere and Voyage, identity for Jev. Raw scores remain accessible. The adapter preserves the scoring inputs from our [Jev experiment](https://github.com/Implied-Capital/PremiseDB/pull/11) and the plain-query configuration of our [Cohere/Voyage comparison](https://github.com/Implied-Capital/PremiseDB/pull/12).
 
 To use a direct provider, a local model or caller-supplied scores, subclass `Reranker` and implement `_score(query, segments)`. It receives a nonblank query and a nonempty tuple of segments and must return one finite 0–1 score per segment in input order. The base class supplies validation and sorting:
 
@@ -184,7 +184,7 @@ class MyReranker(Reranker):
         return my_model.score(query, segments)  # Your implementation; same order.
 ```
 
-This follows [dsRAG's abstract reranker interface](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py), with scoring separated from sorting so segment extraction can consume all candidate scores. Configuration lives in ordinary Python objects for now; no provider registry, serialization or database schema change is needed.
+This follows [dsRAG's abstract reranker interface](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py), with raw scoring, score transformation and sorting kept explicit. Custom adapters inherit an identity `transform(score)` and can override it to return a finite relevance value in [0, 1]. No provider registry, serialization or database schema change is needed.
 
 ## Retrieve evidence
 
@@ -204,10 +204,10 @@ with RecordStore("research.sqlite") as db:
 for excerpt in result.excerpts:
     print(excerpt.segment.source_id, excerpt.segment.start_byte, excerpt.segment.end_byte)
     print(excerpt.token_count, excerpt.render())
-print(result.calibration)  # None unless explicitly supplied.
+print(result.transformed_scores)  # RSE relevance inputs, aligned with scored_passages.
 ```
 
-`retrieve` searches with BM25, scores **only those search hits**, and runs RSE. Optional `source_ids` constrain search. The result exposes `excerpts`, `scored_passages` with raw scores in search order, and `calibration` (the explicitly supplied score transformation, or `None`). Provider failures and incomplete candidate scores remain errors. The candidate limit bounds retrieval recall.
+`retrieve` searches with BM25, scores **only those search hits**, transforms their scores through the reranker adapter, and runs RSE. Optional `source_ids` constrain search. The result exposes `excerpts`, `scored_passages` with raw scores in search order, and aligned `transformed_scores` used by RSE. Provider failures and incomplete candidate scores remain errors. The candidate limit bounds retrieval recall.
 
 As in dsRAG, an unreturned passage between hits receives the negative `irrelevant_chunk_penalty`. RSE can bridge it when the summed utility justifies the span. For example, hits at positions 10 and 13 can form one excerpt by paying two penalties for positions 11 and 12. Those intervening passages are never sent to the reranker.
 
@@ -219,28 +219,34 @@ Supply a deterministic `count_tokens(text)` for the model that will **consume** 
 
 The selector counts complete spans instead of adding per-passage counts, since tokenization can merge across boundaries. It also continues past an oversized prefix because appending text can reduce token counts. Counts are cached within an extraction call. Excerpts contain at most `max_segment_passages=32` passages, bounding interval work. Individual oversized passages are never cut, though a longer span can fit if its combined encoding is smaller. Empty input or insufficient evidence/budget returns no excerpts.
 
-### Calibration and selection
+### Score transforms and selection
 
-`calibration_for(model)` supplies an experimental `ScoreCalibration` for Jev, Cohere or Voyage. Each applies `sigmoid(slope * logit(raw_score) + intercept)` using separately fitted coefficients; scores are clipped to `[1e-6, 1 - 1e-6]` before taking logits. Opt in with `retrieve(..., calibration=calibration_for(reranker.model))`; otherwise scores pass through unchanged. A supplied profile's `model` must match `reranker.model`. Custom rerankers need a model identifier only when using a calibration. These objects and the bundled JSON contain score transformations only; they cannot change RSE selection parameters.
+The OpenRouter adapter uses [dsRAG's score transformations](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py):
 
-The bundled `finqa-support-v1` mappings were fitted on 20 financial questions and evaluated on 20 validation and 20 test questions. They estimate the dataset's **annotated supporting-passage** label, not truth or universal financial relevance. Sparse labels may omit useful context. The original experiment used neighbor-expanded candidate pools and permissive RSE thresholds, both since removed. With the balanced scoring defaults, the mappings reduced support coverage for all three providers in the cached-score replay. Their coefficients remain unchanged and they are opt-in experiments, not recommended provider defaults. See [calibration provenance and replay results](docs/rse-validation.md).
+| Adapter model | Transform before RSE |
+| --- | --- |
+| `cohere/rerank-4-pro` | `beta.cdf(score, 0.4, 0.4)` |
+| `voyageai/rerank-2.5` | `beta.cdf(score, 0.5, 1.8)` |
+| `typesafe/jev-1.13` | Identity: scores are unchanged. |
+
+These monotone transformations reshape scores for RSE; they do not estimate benchmark-support probabilities. A small standard-library implementation evaluates the beta CDF using the [incomplete-beta continued fraction](https://dlmf.nist.gov/8.17.v); SciPy is only an optional test reference. dsRAG's adapters default to older Cohere v3 and Voyage rerank-2 models. We retain their parameters as a starting point for the newer models and report the observed results in [retrieval validation](docs/rse-validation.md). No fitted sigmoid profiles, calibration JSON or training procedure are shipped.
 
 The [dsRAG-derived selector](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py) gives each passage `exp(-rank / decay_rate) * score - irrelevant_chunk_penalty`, with zero-based relevance ranks and stable input-order ties. By default, it multiplies this utility by `max(1, passage_characters / 700)`; `chunk_length_adjustment=False` disables this dsRAG heuristic. This utility weighting is separate from token accounting. It greedily selects the best nonoverlapping intervals, allowing weak intervening material when nearby evidence outweighs its cost. Endpoints must have nonnegative utility. Equal values favor the first encountered Source, then the earliest start and end. `excerpt.value` is summed utility and can exceed 1; it is not a probability.
 
-Both `retrieve` and `extract_segments` use [dsRAG's balanced scoring defaults](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py#L152): `irrelevant_chunk_penalty=0.18`, `minimum_value=0.5`, `decay_rate=30` and `chunk_length_adjustment=True`. Pass explicit keyword overrides through `retrieve` to change selection. Calibration never changes these defaults. PremiseDB retains its token budgets, 32-passage span limit and five-excerpt limit; these are adaptations, not dsRAG's chunk-count budgets.
+Both `retrieve` and `extract_segments` use [dsRAG's balanced scoring defaults](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py#L152): `irrelevant_chunk_penalty=0.18`, `minimum_value=0.5`, `decay_rate=30` and `chunk_length_adjustment=True`. Pass explicit keyword overrides through `retrieve` to change selection. Score transforms never change these defaults. PremiseDB retains its token budgets, 32-passage span limit and five-excerpt limit; these are adaptations, not dsRAG's chunk-count budgets.
 
 ### Use the selector directly
 
 ```python
 from premisedb import extract_segments
 
-scores = reranker.score(query, candidates)
+scores = tuple(reranker.transform(score) for score in reranker.score(query, candidates))
 excerpts = extract_segments(
     candidates, scores, count_tokens=count_tokens,
 )
 ```
 
-`extract_segments` remains a pure, single-query function accepting aligned `SourceSegment` passages and scores. It performs no database reads or calibration. When using it directly, supply intervening passages with `None` scores to allow bridging; each receives only the negative penalty. `retrieve` supplies these automatically. The example above can combine only contiguous candidates because no intervening passages were supplied. Returned `ExtractedSegment` objects contain `segment`, `value` and `token_count`.
+`extract_segments` remains a pure, single-query function accepting aligned `SourceSegment` passages and relevance scores. It performs no database reads or score transformations. Apply `reranker.transform` once before calling it directly, as above. Supply intervening passages with `None` scores to allow bridging; each receives only the negative penalty. `retrieve` supplies these automatically. The example above can combine only contiguous candidates because no intervening passages were supplied. Returned `ExtractedSegment` objects contain `segment`, `value` and `token_count`.
 
 Passages from one Source must not overlap or repeat, and text must match declared UTF-8 byte lengths. Missing ranges and different context snapshots are hard boundaries; separate excerpts are never stitched into a purported continuous quotation. Multiple-query allocation and automatic connected-research retrieval remain planned.
 
