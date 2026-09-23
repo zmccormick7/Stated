@@ -56,6 +56,15 @@ CREATE TRIGGER source_content_fixed BEFORE UPDATE ON source_content BEGIN
     SELECT RAISE(ABORT, 'source text is fixed; ingest a new Source');
 END;
 
+CREATE TABLE document_context (
+    source_key INTEGER PRIMARY KEY REFERENCES source_content (source_key),
+    title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+    summary TEXT NOT NULL,
+    author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),
+    updated_at TEXT NOT NULL,
+    provenance TEXT NOT NULL CHECK (json_valid(provenance) AND json_type(provenance) = 'object')
+);
+
 CREATE TABLE passages (
     passage_key INTEGER PRIMARY KEY AUTOINCREMENT,
     source_key INTEGER NOT NULL REFERENCES source_content (source_key),
@@ -66,20 +75,43 @@ CREATE TABLE passages (
 );
 
 -- Index terms without storing another copy of the document text.
-CREATE VIRTUAL TABLE passages_fts USING fts5(text, content='', contentless_delete=1);
+CREATE VIEW passage_search_content AS
+    SELECT p.passage_key, p.source_key,
+           coalesce(c.title || char(10) || c.summary, '') AS header,
+           CAST(substr(s.text_utf8, p.start_byte + 1, p.end_byte - p.start_byte) AS TEXT) AS text
+    FROM passages p JOIN source_content s ON s.source_key = p.source_key
+    LEFT JOIN document_context c ON c.source_key = p.source_key;
+
+CREATE VIRTUAL TABLE passages_fts USING fts5(header, text, content='', contentless_delete=1);
 CREATE TRIGGER passages_fts_insert AFTER INSERT ON passages BEGIN
-    INSERT INTO passages_fts(rowid, text)
-        SELECT new.passage_key,
-               CAST(substr(text_utf8, new.start_byte + 1, new.end_byte - new.start_byte) AS TEXT)
-        FROM source_content WHERE source_key = new.source_key;
+    INSERT INTO passages_fts(rowid, header, text)
+        SELECT passage_key, header, text FROM passage_search_content WHERE passage_key = new.passage_key;
 END;
 CREATE TRIGGER passages_fts_update AFTER UPDATE ON passages BEGIN
     DELETE FROM passages_fts WHERE rowid = old.passage_key;
-    INSERT INTO passages_fts(rowid, text)
-        SELECT new.passage_key,
-               CAST(substr(text_utf8, new.start_byte + 1, new.end_byte - new.start_byte) AS TEXT)
-        FROM source_content WHERE source_key = new.source_key;
+    INSERT INTO passages_fts(rowid, header, text)
+        SELECT passage_key, header, text FROM passage_search_content WHERE passage_key = new.passage_key;
 END;
 CREATE TRIGGER passages_fts_delete AFTER DELETE ON passages BEGIN
     DELETE FROM passages_fts WHERE rowid = old.passage_key;
+END;
+
+CREATE TRIGGER document_context_insert AFTER INSERT ON document_context BEGIN
+    DELETE FROM passages_fts WHERE rowid IN
+        (SELECT passage_key FROM passages WHERE source_key = new.source_key);
+    INSERT INTO passages_fts(rowid, header, text)
+        SELECT passage_key, header, text FROM passage_search_content WHERE source_key = new.source_key;
+END;
+CREATE TRIGGER document_context_update AFTER UPDATE ON document_context BEGIN
+    DELETE FROM passages_fts WHERE rowid IN
+        (SELECT passage_key FROM passages WHERE source_key IN (old.source_key, new.source_key));
+    INSERT INTO passages_fts(rowid, header, text)
+        SELECT passage_key, header, text FROM passage_search_content
+        WHERE source_key IN (old.source_key, new.source_key);
+END;
+CREATE TRIGGER document_context_delete AFTER DELETE ON document_context BEGIN
+    DELETE FROM passages_fts WHERE rowid IN
+        (SELECT passage_key FROM passages WHERE source_key = old.source_key);
+    INSERT INTO passages_fts(rowid, header, text)
+        SELECT passage_key, header, text FROM passage_search_content WHERE source_key = old.source_key;
 END;

@@ -1,6 +1,6 @@
 # PremiseDB database: proposed v0 design
 
-**Status: current-state design.** Records and links store current contents and one database-assigned UTC `updated_at` timestamp. Updates replace earlier values; there are no history tables, revision counters, endpoint pins, audit trails or historical reads. The implementation supports record/link operations, lexical record and document search, bounded directional lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. The richer retrieval interface below remains proposed. SQLite and Faiss remain selected, with no performance claims. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
+**Status: current-state design.** Records and links store current contents and one database-assigned UTC `updated_at` timestamp. Updates replace earlier values; there are no history tables, revision counters, endpoint pins, audit trails or historical reads. The implementation supports record/link operations, lexical record and document search, caller-supplied document-level CCH, bounded directional lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. The richer retrieval interface below remains proposed. SQLite and Faiss remain selected, with no performance claims. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
 
 ## 1. What the database owns
 
@@ -147,9 +147,11 @@ A text citation is `(source_id, start_byte, end_byte)`, using a half-open UTF-8 
 
 Search passages are derived partitions of a Source, identified by `(source_id, ordinal)` within its current chunk set. Rechunking replaces that derived set; citations use canonical text ranges rather than chunk ordinals. The implemented FTS5 index stores terms without materializing another text copy; evidence is read from canonical source ranges.
 
-The implemented `chunk_source` uses a dependency-free, zero-overlap character splitter with paragraph/line/whitespace boundary preferences. It stores exact byte locators without rewriting source text. `set_passages` accepts a caller-supplied complete partition, and `read_passages` reads bounded ordinal ranges. `search_documents` ranks passage bodies with BM25 and returns exact `SourceSegment` ranges, one passage per segment. Optional Source IDs restrict matches before the result limit. Passage writes and the index update atomically. Section detection, CCH and RSE remain planned; character budgets do not enforce future model token limits.
+The implemented `chunk_source` uses a dependency-free, zero-overlap character splitter with paragraph/line/whitespace boundary preferences. It stores exact byte locators without rewriting source text. `set_passages` accepts a caller-supplied complete partition, and `read_passages` reads bounded ordinal ranges. `search_documents` ranks passage headers and bodies with BM25 and returns exact `SourceSegment` ranges with separate document context, one passage per segment. Optional Source IDs restrict matches before the result limit. Passage/context writes and the index update atomically. Section detection, section context and RSE remain planned; character budgets do not enforce future model token limits.
 
 ### Contextual Chunk Headers
+
+The implemented document-level slice stores caller-supplied title, summary, author, provenance and `updated_at` through `set_document_context`; `read_document_context` returns it or `None` when absent. A SQL view renders title plus newline plus summary separately from the passage body. FTS5 indexes both fields with initial BM25 weights of 0.5 for headers and 1.0 for bodies. Context edits refresh the affected entries transactionally. Search captures matching context in the same statement as the hit locators and returns it separately from evidence. Section context, model generation and the semantic pipeline below remain proposed.
 
 Document and section context are stored explicitly and used to construct each chunk's search representation, following dsRAG's [contextual header implementation](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/auto_context.py#L136):
 
@@ -194,8 +196,8 @@ This is a logical table layout, not final migration SQL. Public IDs map to compa
 | `entity_identifiers`, `entity_aliases` | Exact normalized identity lookup; ambiguous aliases return multiple candidates. |
 | `record_entities`, `model_variables` | Exact, rebuildable membership projections from explicit subject links and Variable ownership. |
 | `source_content`, `passages` | Implemented: fixed canonical UTF-8 body and SHA-256 per Source, plus ordered passage byte ranges. Planned: original-artifact references and processing state. |
-| `records_fts`, `passages_fts` | Implemented: separate lexical indexes for record text and passage bodies, synchronized by SQLite triggers. |
-| `document_context`, `sections`, `section_context` | Current document/section titles and summaries, source-aligned section ranges, authorship and `updated_at`. |
+| `records_fts`, `passages_fts` | Implemented: lexical indexes for record text and passage headers/bodies, synchronized by SQLite triggers. `passage_search_content` is a non-materialized view assembling index inputs. |
+| `document_context`, `sections`, `section_context` | Implemented: current document title/summary, authorship, provenance and `updated_at`. Planned: section titles/summaries and source-aligned ranges. |
 | `record_context` | Current business background for searchable research records, separate from the record's own claim text. |
 | `context_inputs`, `context_scopes` | Input IDs/fingerprints and watched research scopes for current context, with reverse dependency lookups. |
 | `citation_ranges` | Projection of current source-evidence links, indexed by Source and range start. |

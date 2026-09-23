@@ -1,3 +1,3 @@
-from .store import Connections, Link, Passage, Record, RecordStore, SourceSegment
+from .store import Connections, DocumentContext, Link, Passage, Record, RecordStore, SourceSegment
 
-__all__ = ["Connections", "Link", "Passage", "Record", "RecordStore", "SourceSegment"]
+__all__ = ["Connections", "DocumentContext", "Link", "Passage", "Record", "RecordStore", "SourceSegment"]
