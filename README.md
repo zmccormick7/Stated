@@ -32,6 +32,10 @@ with RecordStore("research.sqlite") as db:
 
 Run tests from the repository root with `python -m unittest discover -s tests -v`.
 
+An opt-in [Jev reranking experiment](experiments/README.md) tests relevance scoring
+through OpenRouter against public financial passages. It runs separately from
+the store and does not change `search_documents` or add RSE.
+
 All table, index and trigger definitions live in [premisedb/schema.sql](premisedb/schema.sql).
 
 Each record has a stable ID and kind, current text, JSON attributes, the last editor's `author_id`, and a database-assigned UTC `updated_at` timestamp. Updates replace text and attributes in full; omitted attributes become `{}`. Missing references raise `KeyError`. Invalid SQL-constrained fields raise `sqlite3.IntegrityError`. Returned metadata is a detached copy; changing it does not update the database.
