@@ -10,11 +10,11 @@ The goal is to support one agent you guide carefully or a fleet researching inde
 
 **Every investigation becomes a starting point for the next.**
 
-> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, configurable reranking through OpenRouter, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, RSE, vector search, automatic graph context, citation links, the installer and agent integrations below remain planned.
+> **Status: early implementation.** The Python store supports current records and links, lexical record and document search, caller-supplied document-level CCH, configurable reranking through OpenRouter, a single-query RSE selector, bounded connection lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. Parsing, section context, automatic context generation, neighbor expansion, token budgets, vector search, automatic graph context, citation links, the installer and agent integrations below remain planned.
 
 The [database design specification](docs/database-spec.md) selects SQLite with FTS5 for records, graph storage and lexical search, and Faiss for vector search. It covers retrieval and concurrent contributions, building on a [source review of dsRAG and minDB](docs/dsrag-mindb-review.md). Detailed implementation choices remain proposals to validate.
 
-Document retrieval will incorporate dsRAG's **Contextual Chunk Headers** to give each chunk its document and section context, and **Relevant Segment Extraction** to return useful variable-length evidence spans. The graph connects that evidence to accumulated research and model assumptions.
+Document retrieval incorporates dsRAG's **Contextual Chunk Headers** through caller-supplied document context, and **Relevant Segment Extraction** through an explicit segment-selection step. Section context and an integrated retrieval pipeline remain planned. The graph connects evidence to accumulated research and model assumptions.
 
 ## Try the record store
 
@@ -86,7 +86,7 @@ with RecordStore("research.sqlite") as db:
 
 The body and its SHA-256 are stored in SQLite for this first ingestion slice. Text is preserved exactly, including whitespace, line endings and Unicode normalization. `read_source_text(id)` returns the full text; optional offsets select a half-open UTF-8 byte range `[start_byte, end_byte)`, fetching only that range. Invalid ranges or offsets inside a character raise `ValueError`. Missing IDs and records without ingested text raise `KeyError`.
 
-Source descriptions and metadata remain editable. Captured text stays fixed so future citation offsets keep their meaning; ingest a separate Source for different text. This is evidence identity, not record edit history. Parsing, original-file storage, section context and RSE will be added in later increments. Ingestion currently holds one document's text in memory and makes no model calls.
+Source descriptions and metadata remain editable. Captured text stays fixed so future citation offsets keep their meaning; ingest a separate Source for different text. This is evidence identity, not record edit history. Parsing, original-file storage and section context will be added in later increments. Ingestion currently holds one document's text in memory and makes no model calls.
 
 ## Split a source into passages
 
@@ -117,13 +117,13 @@ with RecordStore("research.sqlite") as db:
     )
 ```
 
-Call `chunk_source` or `set_passages` first: ingestion alone does not make the document body searchable. `search_documents` returns a tuple of `SourceSegment` objects, each with a Source ID, half-open UTF-8 byte range, exact original text and optional `document_context`. Each segment currently covers one matching passage; future RSE can select longer contiguous ranges with the same locator contract. Read the Source record separately for its description and metadata.
+Call `chunk_source` or `set_passages` first: ingestion alone does not make the document body searchable. `search_documents` returns a tuple of `SourceSegment` objects, each with a Source ID, half-open UTF-8 byte range, exact original text and optional `document_context`. Each search result covers one matching passage; the separate RSE selector can combine supplied adjacent passages into longer ranges with the same locator contract. Read the Source record separately for its description and metadata.
 
 Query words follow the same plain-text rules as `search_records`. BM25 ranks separate header and body fields, with initial weights of 0.5 and 1.0 respectively; these are starting defaults, not tuned relevance guarantees. Ties use Source creation order, then passage ordinal. Source descriptions, attributes and research records are not included in this search. Omit `source_ids` to search all indexed documents, or supply an iterable of IDs to restrict matches before applying `limit`. An empty iterable matches nothing; duplicates have no effect. BM25 statistics still use the full passage corpus. Multiple results can come from one Source.
 
 The default result limit is 10 and the maximum is 1,000. Invalid query, limit or filter types raise `ValueError`; filter IDs without ingested source text raise `KeyError`. Empty queries and scopes containing only unchunked documents return an empty tuple. Results have no pagination, truncation flag or total text budget yet.
 
-SQLite triggers synchronize the passage index within the passage write transaction, including rollback on failure. The [contentless-delete FTS5 index](https://sqlite.org/fts5.html#contentless_delete_tables) stores search terms without another copy of the source text. Search selects locators and document context together, then reads those ranges from fixed canonical text; the ranges remain valid if another connection rechunks the document meanwhile. Reranking is an optional subsequent step; RSE and automatic connected research remain planned.
+SQLite triggers synchronize the passage index within the passage write transaction, including rollback on failure. The [contentless-delete FTS5 index](https://sqlite.org/fts5.html#contentless_delete_tables) stores search terms without another copy of the source text. Search selects locators and document context together, then reads those ranges from fixed canonical text; the ranges remain valid if another connection rechunks the document meanwhile. Reranking and RSE are optional subsequent steps; automatic connected research remains planned.
 
 ## Add document context
 
@@ -172,7 +172,7 @@ Supported `model` values are `typesafe/jev-1.13`, `cohere/rerank-4-pro` and `voy
 
 Cohere and Voyage use one [native rerank request](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/rag) per query, with separate document-context and passage fields encoded as JSON strings. Jev uses one [Decisions request](https://openrouter.ai/docs/guides/community/jev) per candidate, asking whether the passage supplies relevant evidence, including partial or contradictory evidence. Its rubric treats the document header as context, not evidence. Jev concurrency is bounded by `max_workers` (default 4); `timeout` defaults to 30 seconds **per request**, not for the entire reranking operation. Provider input limits apply; this implementation does not truncate or split oversized requests. Failed calls and incomplete or invalid scores raise errors; there are no automatic retries or fallback providers.
 
-These scores share a numerical range, **not a calibrated probability scale**. Do not assume that a threshold such as 0.5 means the same thing across models. Model-specific calibration and RSE remain separate increments. The initial adapter preserves the scoring inputs from our [Jev experiment](https://github.com/Implied-Capital/PremiseDB/pull/11) and the plain-query configuration of our [Cohere/Voyage comparison](https://github.com/Implied-Capital/PremiseDB/pull/12).
+These scores share a numerical range, **not a calibrated probability scale**. Do not assume that a threshold such as 0.5 means the same thing across models. RSE now accepts these scores, but its selection parameters still need provider-specific evaluation and calibration. The initial adapter preserves the scoring inputs from our [Jev experiment](https://github.com/Implied-Capital/PremiseDB/pull/11) and the plain-query configuration of our [Cohere/Voyage comparison](https://github.com/Implied-Capital/PremiseDB/pull/12).
 
 To use a direct provider, a local model or caller-supplied scores, subclass `Reranker` and implement `_score(query, segments)`. It receives a nonblank query and a nonempty tuple of segments and must return one finite 0–1 score per segment in input order. The base class supplies validation and sorting:
 
@@ -184,7 +184,32 @@ class MyReranker(Reranker):
         return my_model.score(query, segments)  # Your implementation; same order.
 ```
 
-This follows [dsRAG's abstract reranker interface](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py), with scoring separated from sorting so later segment extraction can consume all candidate scores. Configuration lives in ordinary Python objects for now; no provider registry, serialization or database schema change is needed.
+This follows [dsRAG's abstract reranker interface](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/reranker.py), with scoring separated from sorting so segment extraction can consume all candidate scores. Configuration lives in ordinary Python objects for now; no provider registry, serialization or database schema change is needed.
+
+## Extract relevant segments
+
+```python
+from premisedb import extract_segments
+
+# Use the candidates and configured reranker from the preceding example.
+scores = reranker.score(query, candidates)
+excerpts = extract_segments(candidates, scores, max_segment_chars=8000, max_total_chars=20000)
+for excerpt in excerpts:
+    print(excerpt.value, excerpt.segment.start_byte, excerpt.segment.end_byte)
+    print(excerpt.segment.text)
+```
+
+`extract_segments` is a pure, single-query selector. Supply `SourceSegment` passages and aligned 0–1 scores from the same query, in any order. It returns a tuple of `ExtractedSegment(segment, value)` objects in greedy selection order. It combines adjacent supplied passages into exact, continuous excerpts and can include weak intervening passages when their penalty is outweighed by useful evidence on both sides. Distant evidence stays in separate excerpts; selected byte ranges never overlap.
+
+The [dsRAG-derived algorithm](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/rse.py) assigns each scored passage `exp(-rank / decay_rate) * score - irrelevant_chunk_penalty`, with zero-based relevance rank and stable input-order ties. By default, it multiplies that value by `max(1, passage_characters / 700)`, matching dsRAG's length adjustment; set `chunk_length_adjustment=False` to disable it. A supplied but unscored passage takes `None` and receives only `-irrelevant_chunk_penalty`. No score is invented for it.
+
+The selector repeatedly takes the highest-value available interval whose endpoints have nonnegative utility and whose summed utility reaches `minimum_value`. Previously selected passages are excluded. Equal interval values favor the first encountered Source, then the earliest start and end. This is greedy selection, not a globally optimal allocation of the total budget. The returned `value` is summed utility and can exceed 1; it is not a relevance probability.
+
+Defaults are `irrelevant_chunk_penalty=0.2`, `minimum_value=0.5`, `decay_rate=30`, `max_segments=5`, `max_segment_chars=8000` and `max_total_chars=20000`. They are initial selection settings, **not calibrated presets for the three rerankers**. Higher penalties discourage bridging; a higher minimum rejects more excerpts. See the [reference comparison and financial replay](docs/rse-validation.md) for observed limitations with these defaults.
+
+Budgets count Unicode **characters**, not bytes or tokens: each excerpt costs its text plus `document_context.header + "\n\n"` when context exists. The header stays separate from evidence text. Oversized individual passages are skipped, never cut; repeated headers are charged for every excerpt. Empty input, insufficient utility or insufficient budget returns `()`; fewer than `max_segments` does not prove that no other relevant evidence exists.
+
+Input passages from one Source must not overlap or repeat, and their text must match their declared UTF-8 byte lengths. Missing byte ranges and different document-context snapshots are hard boundaries. This function uses the supplied snapshot without rereading SQLite; source text and citations stay valid after rechunking. To bridge a gap outside the search results, the caller must supply its actual passages and either scores or `None`, using `read_passages` and `read_source_text`. Automatic neighbor fetching, multiple-query selection, token budgets and a combined search/rerank/RSE method remain future increments. The selector scans supplied intervals; keep its candidate pool bounded rather than passing the corpus.
 
 ## What can you do with PremiseDB?
 
