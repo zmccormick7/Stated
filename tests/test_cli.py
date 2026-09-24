@@ -42,8 +42,13 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding"), [finding])
         self.assertEqual(self.call("get", finding["id"]), finding)
         self.assertEqual(self.call("get-link", link["id"]), link)
-        self.assertEqual(self.call("connections", question["id"], "--direction", "in"),
-                         {"links": [link], "has_more": False})
+        self.assertEqual(self.call("connections", question["id"]),
+                         {"links": [link], "has_more": False, "records": {finding["id"]: finding}})
+        self.assertEqual(self.call("connections", question["id"], "--direction", "out")["links"], [])
+        self.assertEqual(self.call("list", "--kind", "Question", "--author", "agent-a"),
+                         {"records": [question], "has_more": False})
+        self.assertEqual(self.call("list", "--after", finding["id"], "--limit", "1"),
+                         {"records": [question], "has_more": False})
         changed = self.call("update", finding["id"], "--input", "-",
                             payload={"text": "PowerFrame ramp delayed.", "author_id": "agent-b"})
         self.assertEqual((changed["id"], changed["attributes"], changed["author_id"]),
@@ -52,13 +57,29 @@ class CLITests(unittest.TestCase):
         self.call("init")  # Opening an existing workspace must retain its records.
         self.assertEqual(self.call("get", finding["id"]), changed)
 
+    def test_contribute_writes_a_batch_by_ref(self):
+        entity = self.create("Entity", "PowerFrame (fictional)")
+        result = self.call("contribute", "--input", "-", payload={
+            "author_id": "agent-a",
+            "records": [{"ref": "f", "kind": "Finding", "text": "Backlog may slip."},
+                        {"ref": "q", "kind": "Question", "text": "Can customers defer?"}],
+            "links": [{"from_id": "f", "to_id": entity["id"], "relation": "about"},
+                      {"from_id": "f", "to_id": "q", "relation": "raises"}]})
+        self.assertEqual(sorted(result["records"]), ["f", "q"])
+        self.assertEqual([link["to_id"] for link in result["links"]], [entity["id"], result["records"]["q"]["id"]])
+        self.assertEqual(self.call("get", result["records"]["f"]["id"]), result["records"]["f"])
+        self.call("contribute", "--input", "-", status=1, payload={
+            "author_id": "agent-a", "records": [{"ref": "g", "kind": "Finding", "text": "Orphan"}],
+            "links": [{"from_id": "g", "to_id": "missing", "relation": "about"}]})
+        self.assertEqual(self.call("search", "Orphan"), [])
+
     def test_connection_limits_and_link_updates(self):
         finding = self.create("Finding", "Capacity depends on power.")
         question = self.create("Question", "Is power available?")
         links = [self.call("link", finding["id"], question["id"], relation, "--input", "-",
                            payload={"author_id": "agent-a"}) for relation in ("raises", "depends_on")]
         self.assertEqual(self.call("connections", finding["id"], "--limit", "1"),
-                         {"links": links[:1], "has_more": True})
+                         {"links": links[:1], "has_more": True, "records": {question["id"]: question}})
         self.assertEqual(self.call("connections", finding["id"], "--relation", "depends_on")["links"], links[1:])
         fields = {"from_id": finding["id"], "to_id": question["id"], "relation": "concerns", "author_id": "agent-b"}
         changed = self.call("update-link", links[0]["id"], "--input", "-", payload=fields)

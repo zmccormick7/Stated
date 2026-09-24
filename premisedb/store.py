@@ -42,6 +42,19 @@ class Link:
 class Connections:
     links: tuple[Link, ...]
     has_more: bool
+    records: dict[str, Record]  # The other end of each returned link, by ID.
+
+
+@dataclass(frozen=True)
+class RecordPage:
+    records: tuple[Record, ...]
+    has_more: bool
+
+
+@dataclass(frozen=True)
+class Contribution:
+    records: dict[str, Record]  # Keyed by the caller's ref.
+    links: tuple[Link, ...]  # Explicit links only; citation links are not repeated here.
 
 
 @dataclass(frozen=True)
@@ -409,16 +422,37 @@ class RecordStore:
 
     def create_link(self, from_id: str, to_id: str, relation: str, *, author_id: str,
                     explanation: str = "") -> Link:
-        link_id = str(uuid4())
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            self._db.execute(
-                """INSERT INTO links (from_key, to_key, relation, explanation,
-                   author_id, updated_at, id) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (*self._link_values(from_id, to_id, relation, explanation, author_id), link_id),
-            )
-            link = self.read_link(link_id)
+            link = self._insert_link(from_id, to_id, relation, explanation, author_id)
         return link
+
+    def contribute(self, *, author_id: str, records: Iterable[dict[str, object]] = (),
+                   links: Iterable[dict[str, object]] = ()) -> Contribution:
+        """Create records and links in one transaction; links may name new records by ref."""
+        records = self._batch(records, "records", {"ref", "kind", "text"}, {"attributes", "citations"})
+        links = self._batch(links, "links", {"from_id", "to_id", "relation"}, {"explanation"})
+        refs = [record["ref"] for record in records]
+        if any(not isinstance(ref, str) or not ref.strip() for ref in refs) or len(set(refs)) != len(refs):
+            raise ValueError("record refs must be unique, nonblank strings")
+        prepared = []
+        for record in records:
+            attributes, source_ids = self._cite(record.get("attributes"), record.get("citations"))
+            prepared.append((record, self._encode(attributes), source_ids))
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            if refs and self._db.execute(f"SELECT 1 FROM records WHERE id IN ({','.join('?' * len(refs))})",
+                                         refs).fetchone():
+                raise ValueError("record refs must not be existing record IDs")
+            created = {}
+            for record, encoded, source_ids in prepared:
+                created[record["ref"]] = self._insert_record(record["kind"], record["text"], encoded, author_id)
+                self._link_sources(created[record["ref"]].id, source_ids, author_id)
+            ids = {ref: record.id for ref, record in created.items()}
+            made = tuple(self._insert_link(ids.get(link["from_id"], link["from_id"]),
+                                           ids.get(link["to_id"], link["to_id"]), link["relation"],
+                                           link.get("explanation", ""), author_id) for link in links)
+        return Contribution(created, made)
 
     def update_link(self, link_id: str, *, from_id: str, to_id: str, relation: str,
                     author_id: str, explanation: str = "") -> Link:
@@ -435,22 +469,50 @@ class RecordStore:
             link = self.read_link(link_id)
         return link
 
-    def connections(self, record_id: str, *, direction: str = "out",
+    def connections(self, record_id: str, *, direction: str = "both",
                     relation: str | None = None, limit: int = 100) -> Connections:
-        """Current one-hop links, ordered by creation; has_more reports truncation."""
-        if direction not in ("out", "in"):
-            raise ValueError("direction must be 'out' or 'in'")
+        """Current one-hop links and the records they reach, in link creation order.
+
+        has_more reports truncation.
+        """
+        if direction not in ("out", "in", "both"):
+            raise ValueError("direction must be 'out', 'in' or 'both'")
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise ValueError("limit must be an integer from 1 to 1000")
-        column = "from_key" if direction == "out" else "to_key"
-        parameters: list[object] = [self._record_key(record_id)]
-        sql = _LINK_SELECT + f" WHERE l.{column} = ?"
+        key = self._record_key(record_id)
+        where = {"out": "l.from_key = ?", "in": "l.to_key = ?", "both": "(l.from_key = ? OR l.to_key = ?)"}
+        parameters: list[object] = [key, key] if direction == "both" else [key]
+        sql = _LINK_SELECT + f" WHERE {where[direction]}"
         if relation is not None:
             sql += " AND l.relation = ?"
             parameters.append(relation)
         rows = self._db.execute(sql + " ORDER BY l.link_key LIMIT ?",
                                 (*parameters, limit + 1)).fetchall()
-        return Connections(tuple(Link(**dict(row)) for row in rows[:limit]), len(rows) > limit)
+        links = tuple(Link(**dict(row)) for row in rows[:limit])
+        # Records are never deleted, so every linked record can be read.
+        ids = dict.fromkeys(link.from_id if link.to_id == record_id else link.to_id for link in links)
+        found = {row["id"]: self._decode_record(row) for row in self._db.execute(
+            """SELECT id, kind, text, attributes, author_id, updated_at FROM records
+               WHERE id IN (SELECT value FROM json_each(?))""", (json.dumps(list(ids)),))}
+        return Connections(links, len(rows) > limit, {record: found[record] for record in ids})
+
+    def list_records(self, *, kind: str | None = None, author_id: str | None = None,
+                     after: str | None = None, limit: int = 100) -> RecordPage:
+        """Current records in creation order, optionally filtered; pass the last ID as after to continue."""
+        if kind is not None and kind not in ("Entity", "Source", "Finding", "Question", "Model", "Variable"):
+            raise ValueError("kind must be a record kind or None")
+        if author_id is not None and not isinstance(author_id, str):
+            raise ValueError("author_id must be a string or None")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer from 1 to 1000")
+        start = 0 if after is None else self._record_key(after)
+        rows = self._db.execute(
+            """SELECT id, kind, text, attributes, author_id, updated_at FROM records
+               WHERE record_key > ? AND (? IS NULL OR kind = ?) AND (? IS NULL OR author_id = ?)
+               ORDER BY record_key LIMIT ?""",
+            (start, kind, kind, author_id, author_id, limit + 1),
+        ).fetchall()
+        return RecordPage(tuple(self._decode_record(row) for row in rows[:limit]), len(rows) > limit)
 
     def _cite(self, attributes: dict[str, object] | None,
               citations: Iterable[dict[str, object]] | None) -> tuple[dict[str, object] | None, tuple[str, ...]]:
@@ -500,6 +562,29 @@ class RecordStore:
                        author_id, updated_at, id) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (*values, str(uuid4())),
                 )
+
+    def _insert_link(self, from_id: str, to_id: str, relation: str, explanation: str, author_id: str) -> Link:
+        link_id = str(uuid4())
+        self._db.execute(
+            """INSERT INTO links (from_key, to_key, relation, explanation,
+               author_id, updated_at, id) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (*self._link_values(from_id, to_id, relation, explanation, author_id), link_id),
+        )
+        return self.read_link(link_id)
+
+    @staticmethod
+    def _batch(items: Iterable[dict[str, object]], name: str, required: set[str],
+               optional: set[str]) -> list[dict[str, object]]:
+        if isinstance(items, (str, bytes, dict)):
+            raise ValueError(f"{name} must be a list of objects")
+        items = list(items)
+        if len(items) > 1000:
+            raise ValueError(f"{name} can contain at most 1,000 items")
+        for index, item in enumerate(items):
+            if not isinstance(item, dict) or not required <= set(item) <= required | optional:
+                raise ValueError(f"{name}[{index}] needs {', '.join(sorted(required))}"
+                                 f" and may have {', '.join(sorted(optional))}")
+        return items
 
     def _record_key(self, record_id: str) -> int:
         row = self._db.execute("SELECT record_key FROM records WHERE id = ?", (record_id,)).fetchone()

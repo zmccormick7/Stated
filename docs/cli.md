@@ -25,10 +25,12 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. JSON k
 | `get ID` | Read current record contents. |
 | `update ID --input FILE` | Replace text and attributes, retaining identity and kind. |
 | `search QUERY [--kind KIND] [--limit N]` | Search record text. |
+| `contribute --input FILE` | Create several records and links in one transaction. |
 | `link FROM TO RELATION --input FILE` | Connect two existing records. |
 | `get-link ID` | Read a link. |
 | `update-link ID --input FILE` | Replace a link's endpoints, relation and explanation. |
-| `connections ID [--direction in\|out] [--relation NAME] [--limit N]` | Inspect one-hop links. |
+| `connections ID [--direction both\|in\|out] [--relation NAME] [--limit N]` | Inspect one-hop links and the records they reach. |
+| `list [--kind KIND] [--author ID] [--after ID] [--limit N]` | List records in creation order. |
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |
 | `source-text SOURCE_ID [--start-byte N] [--end-byte N]` | Read exact source text as a JSON string. |
 | `locate SOURCE_ID QUOTE\|- [--limit N]` | Find exact byte ranges of a quotation for citations. |
@@ -41,11 +43,13 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. JSON k
 
 `--input` accepts a UTF-8 JSON file or `-` to read stdin. For records, supply `text`, `author_id` and optional `attributes` and `citations`. For `link`, supply `author_id` and optional `explanation`. For `update-link`, also supply `from_id`, `to_id` and `relation`.
 
+For `contribute`, supply `author_id`, a `records` list and a `links` list. Each record has a caller-chosen `ref` plus `kind`, `text` and optional `attributes` and `citations`; each link has `from_id`, `to_id`, `relation` and optional `explanation`, where either end can be a new record's `ref` or an existing record ID. The output maps each `ref` to its created record and lists the created links.
+
 For `ingest`, supply `description`, `author_id` and optional `attributes`; the separate text file is read without newline or Unicode normalization. Ingestion creates a new Source on every call and does not chunk it automatically. For `set-context`, supply `title`, `summary`, `author_id` and optional `provenance`.
 
 Updates replace complete contents: omitted attributes/provenance become `{}`, and an omitted link explanation becomes empty. Preserve metadata you intend to keep. Each command uses the existing store operation and its transaction semantics; a series of commands is not one transaction. After an interrupted create or ingestion, check whether it committed before retrying.
 
-Record searches return at most 10 hits by default. Connections default to 100 links and report `has_more`; both limits have a maximum of 1,000. The [research skill](../skills/premisedb-research/SKILL.md) explains how to use these operations during an investigation.
+Record searches return at most 10 hits by default. Connections cover both directions by default, return up to 100 links with the records at their other ends, and report `has_more`. `list` returns up to 100 records with `has_more`; continue with `--after` and the last ID. All three limits have a maximum of 1,000. The [research skill](../skills/premisedb-research/SKILL.md) explains how to use these operations during an investigation.
 
 ## Citations
 

@@ -22,7 +22,7 @@ class LinkTests(unittest.TestCase):
         ab = self.db.create_link(self.a.id, self.b.id, "supported_by", author_id="alice")
         ac = self.db.create_link(self.a.id, self.c.id, "custom_relation", author_id="alice")
         self.assertEqual(self.db.connections(self.b.id, direction="in").links, (ab,))
-        self.assertEqual(self.db.connections(self.b.id).links, ())
+        self.assertEqual(self.db.connections(self.b.id, direction="out").links, ())
         self.assertEqual(self.db.connections(self.a.id, relation="custom_relation").links, (ac,))
         page = self.db.connections(self.a.id, limit=1)
         self.assertEqual(page.links, (ab,))
@@ -34,6 +34,40 @@ class LinkTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.db.connections(self.a.id, **options)
 
+    def test_both_directions_return_linked_records(self):
+        ab = self.db.create_link(self.a.id, self.b.id, "raises", author_id="alice")
+        cb = self.db.create_link(self.c.id, self.b.id, "depends_on", author_id="alice")
+        loop = self.db.create_link(self.b.id, self.b.id, "custom", author_id="alice")
+        again = self.db.create_link(self.a.id, self.b.id, "about", author_id="alice")
+        both = self.db.connections(self.b.id)
+        self.assertEqual((both.links, both.has_more), ((ab, cb, loop, again), False))
+        self.assertEqual(list(both.records), [self.a.id, self.c.id, self.b.id])
+        self.assertEqual(both.records[self.a.id], self.a)
+        self.db.update(self.c.id, text="C revised", author_id="bob")
+        self.assertEqual(self.db.connections(self.b.id, relation="depends_on").records[self.c.id].text, "C revised")
+        page = self.db.connections(self.b.id, limit=2)
+        self.assertEqual((page.links, page.has_more, list(page.records)), ((ab, cb), True, [self.a.id, self.c.id]))
+        outgoing = self.db.connections(self.a.id, direction="out")
+        self.assertEqual((outgoing.links, outgoing.records), ((ab, again), {self.b.id: self.b}))
+        self.assertEqual(self.db.connections(self.c.id, relation="raises").records, {})
+
+    def test_list_records_filters_and_pages_in_creation_order(self):
+        question = self.db.create("Question", text="Q", author_id="bob")
+        self.assertEqual(self.db.list_records().records, (self.a, self.b, self.c, question))
+        self.assertEqual(self.db.list_records(kind="Finding", limit=2).records, (self.a, self.b))
+        self.assertTrue(self.db.list_records(kind="Finding", limit=2).has_more)
+        self.assertEqual(self.db.list_records(kind="Finding", after=self.b.id),
+                         self.db.list_records(kind="Finding", after=self.b.id, limit=1))
+        self.assertEqual(self.db.list_records(kind="Finding", after=self.b.id).records, (self.c,))
+        self.assertFalse(self.db.list_records(kind="Finding", after=self.b.id).has_more)
+        self.assertEqual(self.db.list_records(author_id="bob").records, (question,))
+        self.assertEqual(self.db.list_records(author_id="nobody").records, ())
+        with self.assertRaises(KeyError):
+            self.db.list_records(after="missing")
+        for options in ({"kind": "Company"}, {"limit": 0}, {"limit": 1001}, {"author_id": 3}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                self.db.list_records(**options)
+
     def test_update_retargets_in_place_and_survives_reopening(self):
         first = self.db.create_link(self.a.id, self.b.id, "about", author_id="alice")
         before = datetime.now(UTC)
@@ -42,7 +76,7 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(updated.id, first.id)
         self.assertLessEqual(before, datetime.fromisoformat(updated.updated_at))
         self.assertEqual(self.db.connections(self.b.id, direction="in").links, ())
-        self.assertEqual(self.db.connections(self.a.id).links, ())
+        self.assertEqual(self.db.connections(self.a.id, direction="out").links, ())
         self.assertEqual(self.db.connections(self.c.id, relation="depends_on").links, (updated,))
         self.db.update(self.a.id, text="New understanding", author_id="carol")
         self.db.close()

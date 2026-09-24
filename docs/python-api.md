@@ -2,7 +2,7 @@
 
 [Back to PremiseDB](../README.md)
 
-[Records](#try-the-record-store) · [Links](#connect-existing-records) · [Sources](#ingest-source-text) · [Citations](#cite-evidence) · [CCH](#add-document-context) · [Reranking](#rerank-document-evidence) · [RSE](#retrieve-evidence) · [Record types](#what-the-graph-remembers)
+[Records](#try-the-record-store) · [Links](#connect-existing-records) · [Sources](#ingest-source-text) · [Citations](#cite-evidence) · [Contribute](#contribute-several-records-at-once) · [CCH](#add-document-context) · [Reranking](#rerank-document-evidence) · [RSE](#retrieve-evidence) · [Record types](#what-the-graph-remembers)
 
 Examples below build on the same `research.sqlite` database. Reranking and integrated retrieval use a configured provider; the other examples run locally.
 
@@ -37,11 +37,23 @@ with RecordStore("research.sqlite") as db:
     link = db.create_link(finding.id, company.id, "about", author_id="alice")
     incoming = db.connections(company.id, direction="in", relation="about")
     assert incoming.links == (link,) and not incoming.has_more
+    assert incoming.records[finding.id] == finding
 ```
 
 `read_link(id)` returns current contents. `update_link` replaces its endpoints, relation and explanation in place, records the last editor and refreshes `updated_at`. Links always refer to current records. Agents reassess support when underlying understanding changes; the database does not preserve earlier assumptions or automatically determine whether a relationship is still valid.
 
-`connections` returns links in creation order, with an optional exact relation filter. Its default limit is 100, its maximum is 1,000, and `has_more` reports omitted links. Incoming lookups preserve the stored direction. Missing IDs raise `KeyError`; duplicate links and custom relation labels are allowed. Pagination, recursive traversal and link deletion are not implemented yet.
+`connections` returns links touching a record in creation order, with an optional exact relation filter. `direction` is `"both"` by default, or `"out"` or `"in"`; links keep their stored direction, so check `from_id` and `to_id`. `records` maps the ID at the other end of each returned link to that record's current contents, in first-seen order; a self-link maps the record to itself. The default limit is 100 links, the maximum is 1,000, and `has_more` reports omitted links in the chosen direction. Missing IDs raise `KeyError`; duplicate links and custom relation labels are allowed. Link pagination, recursive traversal and link deletion are not implemented yet.
+
+## List records
+
+```python
+with RecordStore("research.sqlite") as db:
+    page = db.list_records(kind="Question", author_id="alice", limit=100)
+    while page.has_more:
+        page = db.list_records(kind="Question", author_id="alice", after=page.records[-1].id)
+```
+
+`list_records` returns a `RecordPage` of current records in creation order, optionally filtered by exact `kind` and `author_id` (the last editor). Pass the last returned ID as `after` to continue; `has_more` reports whether more matching records follow. The default limit is 100 and the maximum is 1,000. Invalid kinds, limits or author types raise `ValueError`, and an unknown `after` ID raises `KeyError`. Records created after a page is read appear on later pages.
 
 ## Search for a starting point
 
@@ -97,6 +109,28 @@ with RecordStore("research.sqlite") as db:
 `create` and `update` accept optional `citations`: an iterable of objects with a `source_id` and either an exact `quote` or a `start_byte`/`end_byte` range. A quote must occur exactly once, compared as with `locate_source_text`; add `start_byte` (or `end_byte`) to choose among repeated occurrences, and the error lists their offsets. A range without a quote is read from the source and must contain non-whitespace text. Citations are stored in order as `attributes["citations"]`, each with `source_id`, `start_byte`, `end_byte` and the exact `quote`.
 
 The record write and one `supported_by` link to each distinct cited Source, authored by the writer, commit in one transaction. Invalid or ambiguous citations raise `ValueError` and missing sources `KeyError`, before anything is written. Supplying `citations` together with a `citations` attribute raises `ValueError`. On `update`, citations replace the attribute and add any missing `supported_by` links; existing links are kept, because link deletion is not implemented. Without the argument, `attributes` behave as before and nothing is validated or linked.
+
+## Contribute several records at once
+
+```python
+with RecordStore("research.sqlite") as db:
+    result = db.contribute(
+        author_id="alice",
+        records=[
+            {"ref": "f1", "kind": "Finding", "text": "Construction waits on utility approval.",
+             "attributes": {"basis": "disclosed"},
+             "citations": [{"source_id": source.id, "quote": "Utility approval is required"}]},
+            {"ref": "q1", "kind": "Question", "text": "How long does utility approval take?"},
+        ],
+        links=[{"from_id": "f1", "to_id": company.id, "relation": "about"},
+               {"from_id": "f1", "to_id": "q1", "relation": "raises"}],
+    )
+    finding = result.records["f1"]
+```
+
+`contribute` creates records and links in **one transaction** and returns a `Contribution` with `records`, a dict from each caller-chosen `ref` to its new `Record`, and `links`, the created links in input order. Records take `ref`, `kind`, `text` and optional `attributes` and `citations`, with the same meaning as in `create`. Links take `from_id`, `to_id`, `relation` and optional `explanation`; either end can name a new record by its `ref` or an existing record by ID. One `author_id` applies to everything written. The `supported_by` links created for citations are not repeated in `links`.
+
+Any invalid item, missing endpoint, failed citation or constraint violation rolls back the whole contribution, so a failed call can be retried without leaving partial writes. A call that committed but whose result was lost is not deduplicated; check the graph before retrying. Refs must be unique nonblank strings that are not existing record IDs; unknown keys and batches over 1,000 records or 1,000 links raise `ValueError`.
 
 ## Split a source into passages
 

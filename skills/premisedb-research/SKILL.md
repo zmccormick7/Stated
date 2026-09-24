@@ -16,16 +16,17 @@ Run `premisedb --help` or `premisedb COMMAND --help` for arguments and write-pay
 ## Recall
 
 - Search before contributing. Start with relevant company names, aliases and business concepts; one empty result does not establish that something is absent. Record search matches whole words in record text, not attributes: `TSM` does not find `TSMC`. Try several names before creating an Entity, and reuse existing Entity identities when they refer to the same thing.
-- Read relevant records with `get`. Follow `connections` in both directions; incoming links can reveal findings or model assumptions that depend on a record. Inspect the relationship's explanation and the connected record before treating it as useful context.
+- Follow `connections`. By default it returns links in both directions together with the connected records, so one call shows a record's evidence, dependents and open questions. Links keep their stored direction: check `from_id` and `to_id`, since incoming links can reveal findings or model assumptions that depend on the record. Inspect each relationship's explanation and the connected record before treating it as useful context; use `get` for a record you reached another way.
 - Follow evidence, contradictory findings and material open questions even when their wording differs from the original query. Choose connections that could change the answer rather than expanding every branch.
 - To inspect document evidence, ask `search-documents "RESEARCH QUESTION"`, optionally scoped with `--source-id SOURCE_ID`. It returns selected excerpts with exact source locators and separate document context. Use those excerpts to assess the claim; a document search can return no suitable evidence.
-- Results are bounded: `connections` exposes `has_more`; searches return limited results without a completeness flag. Narrow the question, scope or relationship when needed. Do not claim an exhaustive graph review from a truncated lookup.
+- To survey what exists, `list --kind Question` (optionally `--author ID`) pages through records in creation order; keep calling with `--after LAST_ID` while `has_more` is true.
+- Results are bounded: `connections` and `list` expose `has_more`; searches return limited results without a completeness flag. Narrow the question, scope or relationship when needed. Do not claim an exhaustive graph review from a truncated lookup.
 
 ```bash
 premisedb search "PowerFrame backlog" --kind Finding
 premisedb connections RECORD_ID
-premisedb connections RECORD_ID --direction in
-premisedb get CONNECTED_RECORD_ID
+premisedb connections RECORD_ID --relation depends_on
+premisedb list --kind Question
 ```
 
 ## Contribute
@@ -39,17 +40,23 @@ premisedb get CONNECTED_RECORD_ID
 - Save Questions when resolving an uncertainty could materially change a conclusion. Link partial answers and relevant evidence so another investigation can continue the work.
 - Represent an external financial model with a Model record and its identifiable inputs/outputs with Variables. Record the external reference, period, units and assumptions when known. Connect a Variable to its Model with `in_model`, and to supporting Findings with `depends_on`. Follow these links from evidence to assumptions that need review, or from a sensitive assumption to research worth doing. Calculations and model edits remain in the user's modeling workflow.
 
-Example write payload; choose an author identifier for the actual contributor:
+Write a Finding together with its citations, Questions and links in one `contribute` call. Name new records with your own `ref` and use it in links; use record IDs for existing records. The whole contribution commits or nothing does, so fix the reported problem and resend it. Choose an author identifier for the actual contributor:
 
 ```bash
-premisedb create Finding --input - <<'JSON'
-{"text":"PowerFrame's customers can defer deliveries with 90 days' notice.","author_id":"research-agent",
- "attributes":{"basis":"disclosed"},
- "citations":[{"source_id":"SOURCE_ID","quote":"Customers may reschedule deliveries with 90 days' notice."}]}
+premisedb contribute --input - <<'JSON'
+{"author_id":"research-agent",
+ "records":[
+  {"ref":"f1","kind":"Finding","text":"PowerFrame's customers can defer deliveries with 90 days' notice.",
+   "attributes":{"basis":"disclosed"},
+   "citations":[{"source_id":"SOURCE_ID","quote":"Customers may reschedule deliveries with 90 days' notice."}]},
+  {"ref":"q1","kind":"Question","text":"Could grid delays lead PowerFrame's customers to defer deliveries?"}],
+ "links":[
+  {"from_id":"f1","to_id":"ENTITY_ID","relation":"about"},
+  {"from_id":"f1","to_id":"q1","relation":"raises","explanation":"Deferral rights make revenue timing depend on customers' readiness."}]}
 JSON
 ```
 
-Then link the record to the Entities it is `about` and to related Findings and Questions.
+`create` and `link` remain available for single writes.
 
 ## Revise
 
