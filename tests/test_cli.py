@@ -42,8 +42,13 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding"), [finding])
         self.assertEqual(self.call("get", finding["id"]), finding)
         self.assertEqual(self.call("get-link", link["id"]), link)
-        self.assertEqual(self.call("connections", question["id"], "--direction", "in"),
-                         {"links": [link], "has_more": False})
+        self.assertEqual(self.call("connections", question["id"]),
+                         {"links": [link], "has_more": False, "records": {finding["id"]: finding}})
+        self.assertEqual(self.call("connections", question["id"], "--direction", "out")["links"], [])
+        self.assertEqual(self.call("list", "--kind", "Question", "--author", "agent-a"),
+                         {"records": [question], "has_more": False})
+        self.assertEqual(self.call("list", "--after", finding["id"], "--limit", "1"),
+                         {"records": [question], "has_more": False})
         changed = self.call("update", finding["id"], "--input", "-",
                             payload={"text": "PowerFrame ramp delayed.", "author_id": "agent-b"})
         self.assertEqual((changed["id"], changed["attributes"], changed["author_id"]),
@@ -74,7 +79,7 @@ class CLITests(unittest.TestCase):
         links = [self.call("link", finding["id"], question["id"], relation, "--input", "-",
                            payload={"author_id": "agent-a"}) for relation in ("raises", "depends_on")]
         self.assertEqual(self.call("connections", finding["id"], "--limit", "1"),
-                         {"links": links[:1], "has_more": True})
+                         {"links": links[:1], "has_more": True, "records": {question["id"]: question}})
         self.assertEqual(self.call("connections", finding["id"], "--relation", "depends_on")["links"], links[1:])
         fields = {"from_id": finding["id"], "to_id": question["id"], "relation": "concerns", "author_id": "agent-b"}
         changed = self.call("update-link", links[0]["id"], "--input", "-", payload=fields)

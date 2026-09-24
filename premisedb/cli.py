@@ -47,10 +47,16 @@ def _parser():
     command("get-link", "read_link", "Read a current link.", "link_id")
     command("update-link", "update_link", "Replace a link's endpoints, relation and explanation.",
             "link_id", payload="from_id, to_id, relation, author_id, optional explanation")
-    connections = command("connections", "connections", "Read one-hop links and a has_more flag.", "record_id")
-    connections.add_argument("--direction", choices=("in", "out"), default="out")
+    connections = command("connections", "connections",
+                          "Read one-hop links, the records they reach and a has_more flag.", "record_id")
+    connections.add_argument("--direction", choices=("both", "in", "out"), default="both")
     connections.add_argument("--relation")
     connections.add_argument("--limit", type=int, default=100)
+    listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
+    listing.add_argument("--kind")
+    listing.add_argument("--author", dest="author_id")
+    listing.add_argument("--after", metavar="RECORD_ID")
+    listing.add_argument("--limit", type=int, default=100)
     ingest = command("ingest", "ingest_source", "Ingest an extracted UTF-8 text file without normalization.",
                      payload="description, author_id, optional attributes")
     ingest.add_argument("source_file", help="Path to the extracted text file")
