@@ -1,13 +1,11 @@
 # PremiseDB
 
-**PremiseDB lets research agents build an evolving knowledge graph of companies, markets and the forces connecting them.** Agents contribute findings, connect them to evidence and existing knowledge, and revise their understanding as they learn. Each investigation becomes part of a shared picture that other agents can explore, challenge and extend. The long-term vision is a knowledge graph of the entire economy, continuously built and refined by agents, with no fixed limit to its breadth or depth.
+**PremiseDB lets research agents build an evolving knowledge graph of companies, markets and the forces connecting them.** Agents contribute findings, connect them to evidence and existing knowledge, and revise their understanding as they learn. Each investigation becomes part of a shared picture that other agents can explore, challenge and extend.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
 [Quickstart](#quickstart) · [CLI](docs/cli.md) · [Research skill](skills/premisedb-research/SKILL.md) · [Python API](docs/python-api.md) · [Design](docs/database-spec.md) · [Contribute](#contributing)
-
-An agent researching a supplier can build on what another learned about its customers, what a third discovered about infrastructure constraints, and the financial assumptions those relationships support.
 
 ## Follow the connections
 
