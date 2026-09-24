@@ -268,11 +268,15 @@ class RecordStore:
         return self._decode_document_context(source_id, row)
 
     def create(self, kind: str, *, text: str, author_id: str,
-               attributes: dict[str, object] | None = None) -> Record:
+               attributes: dict[str, object] | None = None,
+               citations: Iterable[dict[str, object]] | None = None) -> Record:
+        """Create a record; citations are resolved and linked supported_by in the same transaction."""
+        attributes, source_ids = self._cite(attributes, citations)
         encoded = self._encode(attributes)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             record = self._insert_record(kind, text, encoded, author_id)
+            self._link_sources(record.id, source_ids, author_id)
         return record
 
     def ingest_source(self, *, description: str, document_text: str, author_id: str,
@@ -375,8 +379,14 @@ class RecordStore:
         return tuple(Passage(source_id, **dict(row)) for row in rows)
 
     def update(self, record_id: str, *, text: str, author_id: str,
-               attributes: dict[str, object] | None = None) -> Record:
-        """Replace contents in place; omitted attributes becomes an empty object."""
+               attributes: dict[str, object] | None = None,
+               citations: Iterable[dict[str, object]] | None = None) -> Record:
+        """Replace contents in place; omitted attributes becomes an empty object.
+
+        Citations replace attributes["citations"] and add missing supported_by links;
+        existing links are kept.
+        """
+        attributes, source_ids = self._cite(attributes, citations)
         encoded = self._encode(attributes)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
@@ -387,6 +397,7 @@ class RecordStore:
             )
             if result.rowcount == 0:
                 raise KeyError(record_id)
+            self._link_sources(record_id, source_ids, author_id)
             record = self.read(record_id)
         return record
 
@@ -440,6 +451,55 @@ class RecordStore:
         rows = self._db.execute(sql + " ORDER BY l.link_key LIMIT ?",
                                 (*parameters, limit + 1)).fetchall()
         return Connections(tuple(Link(**dict(row)) for row in rows[:limit]), len(rows) > limit)
+
+    def _cite(self, attributes: dict[str, object] | None,
+              citations: Iterable[dict[str, object]] | None) -> tuple[dict[str, object] | None, tuple[str, ...]]:
+        """Resolve citations to exact byte ranges with their quotes; return attributes and cited sources."""
+        if citations is None:
+            return attributes, ()
+        if attributes is not None and not isinstance(attributes, dict):
+            raise ValueError("attributes must be a JSON object")
+        if attributes and "citations" in attributes:
+            raise ValueError("supply citations as an argument or an attribute, not both")
+        if isinstance(citations, (str, bytes, dict)):
+            raise ValueError("citations must be a list of objects")
+        resolved = []
+        for citation in citations:
+            if (not isinstance(citation, dict) or "source_id" not in citation
+                    or not set(citation) <= {"source_id", "quote", "start_byte", "end_byte"}):
+                raise ValueError("each citation needs source_id and a quote or start_byte/end_byte")
+            source_id, quote = citation["source_id"], citation.get("quote")
+            start, end = citation.get("start_byte"), citation.get("end_byte")
+            if quote is None:
+                if start is None or end is None:
+                    raise ValueError("a citation without a quote needs start_byte and end_byte")
+                quote = self.read_source_text(source_id, start_byte=start, end_byte=end)
+                if not quote.strip():
+                    raise ValueError("a cited range must contain text")
+            else:
+                matches = [m for m in self.locate_source_text(source_id, quote, limit=1000)
+                           if start in (None, m.start_byte) and end in (None, m.end_byte)]
+                if len(matches) != 1:
+                    offsets = ", ".join(str(m.start_byte) for m in matches[:10])
+                    where = "" if start is None and end is None else " at the given offsets"
+                    raise ValueError(f"quote not found in source {source_id}{where}" if not matches else
+                                     f"quote occurs {len(matches)} times in source {source_id} "
+                                     f"(start_byte {offsets}); add start_byte to choose one")
+                start, end = matches[0].start_byte, matches[0].end_byte
+            resolved.append({"source_id": source_id, "start_byte": start, "end_byte": end, "quote": quote})
+        return {**(attributes or {}), "citations": resolved}, tuple(dict.fromkeys(c["source_id"] for c in resolved))
+
+    def _link_sources(self, record_id: str, source_ids: tuple[str, ...], author_id: str) -> None:
+        """Add a supported_by link to each cited source that is not already linked."""
+        for source_id in source_ids:
+            values = self._link_values(record_id, source_id, "supported_by", "Cited evidence.", author_id)
+            if self._db.execute("""SELECT 1 FROM links WHERE from_key = ? AND to_key = ?
+                                   AND relation = 'supported_by'""", values[:2]).fetchone() is None:
+                self._db.execute(
+                    """INSERT INTO links (from_key, to_key, relation, explanation,
+                       author_id, updated_at, id) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (*values, str(uuid4())),
+                )
 
     def _record_key(self, record_id: str) -> int:
         row = self._db.execute("SELECT record_key FROM records WHERE id = ?", (record_id,)).fetchone()

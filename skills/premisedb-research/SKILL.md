@@ -34,8 +34,8 @@ premisedb get CONNECTED_RECORD_ID
 - Save reusable conclusions as focused Findings. Use metadata to distinguish `basis: disclosed`, `basis: inference` and `basis: assumption`. Include relevant company, period, geography and units rather than relying on the conversation to supply scope.
 - Use Source records for evidence. `ingest FILE --input METADATA.json` captures extracted UTF-8 text; metadata supplies `description`, `author_id` and optional `attributes` such as origin URL and known publication/observation dates. For references without captured text, `create Source` is sufficient. Do not imply that an uninspected source supports a claim.
 - After ingestion, `chunk SOURCE_ID` makes the text searchable. `set-context` can add a caller-authored **document** title and summary. Context assists retrieval; cite the original text.
-- Preserve exact citations in Finding attributes, for example `citations: [{source_id, start_byte, end_byte}]`. Get ranges with `locate SOURCE_ID 'EXACT QUOTE'`, copying the quote verbatim from `source-text` or `search-documents` output; matching is exact, so an empty result means the wording, whitespace or punctuation differs. For quotes containing shell characters, pass `-` and supply the quote through a quoted heredoc, as in the example below. Offsets are half-open UTF-8 byte ranges, not character positions or chunk ordinals; do not compute them by hand. These citation attributes are a convention, not database-validated references.
-- Connect records with `link FROM_ID TO_ID RELATION --input FILE`. A Finding can be `about` an Entity, `supported_by` a Source, `depends_on` another Finding, `contradicts` a competing Finding, or `raises` a Question. Explain non-obvious connections. Search existing links before adding duplicates.
+- Cite evidence as you write. Add `citations: [{"source_id": SOURCE_ID, "quote": "exact source text"}]` to a `create` or `update` payload. PremiseDB finds the quote's exact UTF-8 byte range, stores it with the quote in the record's `citations` attribute and links the record `supported_by` each cited Source, all in one step. Copy quotes verbatim from `source-text` or `search-documents` output; matching is exact, including whitespace and punctuation. When a quote occurs more than once, the error lists each `start_byte`; add the one you mean to the citation. A citation can instead give the `start_byte` and `end_byte` of a `search-documents` excerpt. A citation that does not match writes nothing. `locate SOURCE_ID QUOTE` checks a quote beforehand.
+- Connect records with `link FROM_ID TO_ID RELATION --input FILE`. A Finding can be `about` an Entity, `depends_on` another Finding, `contradicts` a competing Finding, or `raises` a Question. Explain non-obvious connections. Search existing links before adding duplicates.
 - Save Questions when resolving an uncertainty could materially change a conclusion. Link partial answers and relevant evidence so another investigation can continue the work.
 - Represent an external financial model with a Model record and its identifiable inputs/outputs with Variables. Record the external reference, period, units and assumptions when known. Connect a Variable to its Model with `in_model`, and to supporting Findings with `depends_on`. Follow these links from evidence to assumptions that need review, or from a sensitive assumption to research worth doing. Calculations and model edits remain in the user's modeling workflow.
 
@@ -43,21 +43,17 @@ Example write payload; choose an author identifier for the actual contributor:
 
 ```bash
 premisedb create Finding --input - <<'JSON'
-{"text":"PowerFrame's backlog may shift into later quarters.","author_id":"research-agent","attributes":{"basis":"inference"}}
+{"text":"PowerFrame's customers can defer deliveries with 90 days' notice.","author_id":"research-agent",
+ "attributes":{"basis":"disclosed"},
+ "citations":[{"source_id":"SOURCE_ID","quote":"Customers may reschedule deliveries with 90 days' notice."}]}
 JSON
 ```
 
-```bash
-premisedb locate SOURCE_ID - <<'QUOTE'
-Customers may reschedule deliveries with 90 days' notice.
-QUOTE
-```
-
-Attach the evidence and relevant connections after creating the record. The example alone is an unsupported inference.
+Then link the record to the Entities it is `about` and to related Findings and Questions.
 
 ## Revise
 
-Read current contents before updating. `update ID --input FILE` replaces **all** text and attributes; preserve metadata that still applies because omitted attributes become `{}`. `update-link` similarly replaces the link's endpoints, relation and explanation. Use the actual editor's `author_id`.
+Read current contents before updating. `update ID --input FILE` replaces **all** text and attributes; preserve metadata that still applies because omitted attributes become `{}`. To change citations, leave `citations` out of the attributes you send and pass the complete list as `citations`. `update-link` similarly replaces the link's endpoints, relation and explanation. Use the actual editor's `author_id`.
 
 Revise a conclusion when evidence warrants it. Keep unresolved competing interpretations as separate Findings connected by `contradicts`. A Question's attributes can record its current status, with an `answered_by` link to the Finding that resolves it. Follow incoming dependencies to identify other conclusions or model assumptions worth reassessing; the database does not propagate revisions automatically.
 

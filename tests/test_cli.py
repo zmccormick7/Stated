@@ -89,6 +89,12 @@ class CLITests(unittest.TestCase):
         stdin = self.run_cli("locate", sid, "-", stdin="Z\r\nGrid approval\n")
         self.assertEqual([(m["start_byte"], m["end_byte"]) for m in json.loads(stdin.stdout)], [(8, 24)])
         self.call("locate", sid, " ", status=1)
+        finding = self.call("create", "Finding", "--input", "-", payload={
+            "text": "Approval is pending.", "author_id": "agent-a",
+            "citations": [{"source_id": sid, "quote": "Grid approval is pending."}]})
+        self.assertEqual(finding["attributes"]["citations"],
+                         [{"source_id": sid, "start_byte": 11, "end_byte": 36, "quote": "Grid approval is pending."}])
+        self.assertEqual([link["to_id"] for link in self.call("connections", finding["id"])["links"]], [sid])
 
     def test_bad_inputs_fail_without_writes_or_tracebacks(self):
         for payload in ([], {"text": "Missing author"}, {"text": "Claim", "author_id": "a", "kind": "Entity"},

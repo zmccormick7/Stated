@@ -39,7 +39,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. JSON k
 
 ## Write payloads
 
-`--input` accepts a UTF-8 JSON file or `-` to read stdin. For records, supply `text`, `author_id` and optional `attributes`. For `link`, supply `author_id` and optional `explanation`. For `update-link`, also supply `from_id`, `to_id` and `relation`.
+`--input` accepts a UTF-8 JSON file or `-` to read stdin. For records, supply `text`, `author_id` and optional `attributes` and `citations`. For `link`, supply `author_id` and optional `explanation`. For `update-link`, also supply `from_id`, `to_id` and `relation`.
 
 For `ingest`, supply `description`, `author_id` and optional `attributes`; the separate text file is read without newline or Unicode normalization. Ingestion creates a new Source on every call and does not chunk it automatically. For `set-context`, supply `title`, `summary`, `author_id` and optional `provenance`.
 
@@ -50,6 +50,8 @@ Record searches return at most 10 hits by default. Connections default to 100 li
 ## Citations
 
 `locate SOURCE_ID QUOTE` returns the exact, nonoverlapping occurrences of a quotation in source order, each with `source_id`, `start_byte`, `end_byte` and `text`. Matching is exact: whitespace, line endings, quotation marks and Unicode forms must match the source, so copy the quote from `source-text` or `search-documents` output. Pass `-` as QUOTE to read it from stdin, which avoids shell quoting; one final newline, such as the one a heredoc adds, is removed. An empty array means no exact match. At most 10 matches are returned by default (maximum 1,000); lengthen the quote when several occurrences are ambiguous.
+
+To cite while writing, add `citations` to a `create` or `update` payload, each `{"source_id": ..., "quote": ...}` or `{"source_id": ..., "start_byte": ..., "end_byte": ...}`. The [Python API guide](python-api.md#cite-evidence) describes how quotes are resolved and linked.
 
 ## Document search
 
