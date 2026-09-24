@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
-[Quickstart](#quickstart) · [Python API](docs/python-api.md) · [Design](docs/database-spec.md) · [Contribute](#contributing)
+[Quickstart](#quickstart) · [CLI](docs/cli.md) · [Research skill](skills/premisedb-research/SKILL.md) · [Python API](docs/python-api.md) · [Design](docs/database-spec.md) · [Contribute](#contributing)
 
 An agent researching a supplier can build on what another learned about its customers, what a third discovered about infrastructure constraints, and the financial assumptions those relationships support.
 
@@ -47,7 +47,7 @@ Your financial model can live in Excel, Python or another tool. PremiseDB's **Mo
 
 ## Quickstart
 
-> **Early MVP.** The Python API supports storing, connecting and retrieving research today. Packaged agent integrations are planned. The API and database format are still evolving.
+> **Early MVP.** The CLI, Python API and research skill support storing, connecting and retrieving research today. The API and database format are still evolving.
 
 Requires **Python 3.12+**, linked against **SQLite 3.51.3+ with FTS5**. Check your Python's SQLite version with `python -c "import sqlite3; print(sqlite3.sqlite_version)"`.
 
@@ -58,10 +58,33 @@ git clone https://github.com/Implied-Capital/PremiseDB.git
 cd PremiseDB
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e .
+python -m pip install -e '.[cli]'
+premisedb --db research.sqlite init
 ```
 
-This example runs locally without an API key. It uses fictional research to show the two sides of the workflow.
+### Use your agent
+
+From the checkout, copy the bundled skill into your harness's personal skills directory. Choose [Codex](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) or [Claude Code](https://code.claude.com/docs/en/skills#where-skills-live):
+
+```bash
+# Codex
+mkdir -p ~/.agents/skills
+cp -R skills/premisedb-research ~/.agents/skills/
+
+# Claude Code
+mkdir -p ~/.claude/skills
+cp -R skills/premisedb-research ~/.claude/skills/
+```
+
+Open a new agent session in your research workspace and ask:
+
+> Use the premisedb-research skill and research.sqlite to investigate this company's exposure to customer project delays. Build on existing findings, inspect the evidence, and save the important conclusions and open questions.
+
+Make the installed `premisedb` executable available in the agent's shell, or give it the absolute path to this checkout's `.venv/bin/premisedb`. Set `PREMISEDB_DB` to the workspace database's absolute path so every session uses the same graph. For document search, configure `OPENROUTER_API_KEY` in that environment once. The agent asks a research question and receives relevant excerpts with citations; PremiseDB handles the retrieval pipeline. The [CLI guide](docs/cli.md) documents commands and setup. The skill guides the research; the agent uses its existing tools to find new sources.
+
+### Try the Python API
+
+This example also runs locally without an API key. It uses fictional research to show the two sides of the workflow.
 
 **1. Save what an investigation learned.**
 
@@ -137,16 +160,16 @@ The workflow is **Recall → Contribute → Revise**:
 2. **Contribute** new findings, sources and questions, linked to the existing graph.
 3. **Revise** current understanding when evidence changes. Keep competing interpretations explicit as separate findings when useful.
 
-Use the Python API from your own agent tools or from scripts run by coding agents such as Codex and Claude Code. The agent decides what to investigate and what to record. PremiseDB provides the persistent graph and retrieval primitives.
+Use the CLI and research skill with Codex or Claude Code, or call the Python API from your own agent tools. The agent decides what to investigate and what to record. PremiseDB provides the persistent graph and retrieval primitives.
 
-The goal is the same whether you guide one agent or coordinate many: knowledge accumulates in a shared research workspace. Today, stores use separate SQLite connections on a local filesystem; large agent fleets and distributed deployments have not been validated. Packaged skills and an MCP server are planned.
+The goal is the same whether you guide one agent or coordinate many: knowledge accumulates in a shared research workspace. Today, stores use separate SQLite connections on a local filesystem; large agent fleets and distributed deployments have not been validated.
 
 ## Where we are going
 
 The working foundation lets agents store evidence, connect their findings and build on earlier research. The next layers are:
 
 - **Connected research retrieval:** assemble useful prior findings, evidence and open questions around a query.
-- **Agent integrations:** make the research loop easy to adopt through skills and MCP.
+- **Research workflows:** improve the CLI and skill through real company coverage and thesis reviews.
 - **Document preparation:** make it easier to bring filings, transcripts and other source material into the research workspace.
 
 The [design specification](docs/database-spec.md) describes the broader direction; the [Python API guide](docs/python-api.md) documents what is implemented. Early database formats may change and currently have no migrations.

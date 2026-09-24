@@ -310,6 +310,24 @@ class RecordStore:
             content.seek(start_byte)
             return content.read(end_byte - start_byte).decode("utf-8")
 
+    def locate_source_text(self, source_id: str, quote: str, *,
+                           limit: int = 10) -> tuple[SourceSegment, ...]:
+        """Find exact, nonoverlapping occurrences of a quotation as UTF-8 byte ranges."""
+        if not isinstance(quote, str) or not quote.strip():
+            raise ValueError("quote must be a nonblank string")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer from 1 to 1000")
+        needle = quote.encode("utf-8")
+        with self._db.blobopen("source_content", "text_utf8", self._source_key(source_id),
+                               readonly=True) as content:
+            body = content.read()
+        # A valid UTF-8 needle can only match whole characters in valid UTF-8 text.
+        matches, start = [], body.find(needle)
+        while start != -1 and len(matches) < limit:
+            matches.append(SourceSegment(source_id, start, start + len(needle), quote))
+            start = body.find(needle, start + len(needle))
+        return tuple(matches)
+
     def chunk_source(self, source_id: str, *, max_chars: int = 2000) -> int:
         """Replace the source's passages using the default splitter; return their count."""
         ranges = split_ranges(self.read_source_text(source_id), max_chars=max_chars)
