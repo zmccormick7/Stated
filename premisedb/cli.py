@@ -15,7 +15,8 @@ from .retrieval import retrieve
 
 def _parser():
     parser = argparse.ArgumentParser(prog="premisedb", description=__doc__)
-    parser.add_argument("--db", default="research.sqlite", help="Database file (default: research.sqlite)")
+    parser.add_argument("--db", default=os.environ.get("PREMISEDB_DB") or "research.sqlite",
+                        help="Database file (default: $PREMISEDB_DB, else research.sqlite)")
     commands = parser.add_subparsers(dest="command", required=True)
 
     def command(name, method, description, *arguments, payload=None):
@@ -53,6 +54,10 @@ def _parser():
     source = command("source-text", "read_source_text", "Read source text as a JSON string; offsets are UTF-8 bytes.", "source_id")
     source.add_argument("--start-byte", type=int, default=0)
     source.add_argument("--end-byte", type=int)
+    locate = command("locate", "locate_source_text",
+                     "Find exact UTF-8 byte ranges of a quotation for citations; use - to read the quote "
+                     "from stdin.", "source_id", "quote")
+    locate.add_argument("--limit", type=int, default=10)
     chunk = command("chunk", "chunk_source", "Replace passages and return their count; enables document search.", "source_id")
     chunk.add_argument("--max-chars", type=int, default=2000)
     documents = command("search-documents", "search_documents", "Find relevant source excerpts for a research question.", "query")
@@ -97,6 +102,8 @@ def main(argv=None):
                 raise ValueError("--input must contain a JSON object")
         if filename := options.pop("source_file", None):
             options["document_text"] = Path(filename).read_bytes().decode("utf-8")
+        if options.get("quote") == "-":  # Drop the final newline a heredoc adds.
+            options["quote"] = sys.stdin.read().removesuffix("\n")
         if options.keys() & payload.keys():
             raise ValueError("JSON input must not repeat arguments supplied by the command")
         with RecordStore(path) as db:

@@ -76,6 +76,8 @@ with RecordStore("research.sqlite") as db:
 
 The body and its SHA-256 are stored in SQLite for this first ingestion slice. Text is preserved exactly, including whitespace, line endings and Unicode normalization. `read_source_text(id)` returns the full text; optional offsets select a half-open UTF-8 byte range `[start_byte, end_byte)`, fetching only that range. Invalid ranges or offsets inside a character raise `ValueError`. Missing IDs and records without ingested text raise `KeyError`.
 
+`locate_source_text(id, quote, limit=10)` finds exact, nonoverlapping occurrences of a quotation and returns them in source order as `SourceSegment` objects with byte ranges suitable for citations and no document context. Matching compares UTF-8 bytes without whitespace, quotation-mark or Unicode normalization; no match returns an empty tuple. Blank quotes and limits outside 1–1,000 raise `ValueError`. The search reads the whole document into memory.
+
 Source descriptions and metadata remain editable. Captured text stays fixed so future citation offsets keep their meaning; ingest a separate Source for different text. This is evidence identity, not record edit history. Parsing, original-file storage and section context will be added in later increments. Ingestion currently holds one document's text in memory and makes no model calls.
 
 ## Split a source into passages

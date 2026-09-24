@@ -9,31 +9,32 @@ Use the graph to carry useful understanding between investigations. Follow the u
 
 ## Workspace and commands
 
-Use the user's research database. The CLI defaults to `research.sqlite` in the current directory; pass `--db PATH` **before** the command and keep that path consistent across sessions. Only `init` creates a database. If a lookup reports a missing database, check the path before initializing a new workspace.
+Use the user's research database. Commands without `--db` use `PREMISEDB_DB` when it is set, otherwise `research.sqlite` in the current directory. When the user names another path, pass `--db PATH` **before** the command and keep it consistent across sessions. Only `init` creates a database. If a lookup reports a missing database, check the path before initializing a new workspace.
 
 Run `premisedb --help` or `premisedb COMMAND --help` for arguments and write-payload fields. If the command is unavailable, use the project's installed executable, such as `.venv/bin/premisedb`, or establish where PremiseDB is installed. Successful operations return JSON; failures write to stderr and exit nonzero. Writes take a JSON object with `--input FILE` or `--input -` for stdin. Use a file or a quoted heredoc so research text is not interpreted by the shell.
 
 ## Recall
 
-- Search before contributing. Start with relevant company names, aliases and business concepts; one empty result does not establish that something is absent. Reuse existing Entity identities when they refer to the same thing.
+- Search before contributing. Start with relevant company names, aliases and business concepts; one empty result does not establish that something is absent. Record search matches whole words in record text, not attributes: `TSM` does not find `TSMC`. Try several names before creating an Entity, and reuse existing Entity identities when they refer to the same thing.
 - Read relevant records with `get`. Follow `connections` in both directions; incoming links can reveal findings or model assumptions that depend on a record. Inspect the relationship's explanation and the connected record before treating it as useful context.
 - Follow evidence, contradictory findings and material open questions even when their wording differs from the original query. Choose connections that could change the answer rather than expanding every branch.
 - To inspect document evidence, ask `search-documents "RESEARCH QUESTION"`, optionally scoped with `--source-id SOURCE_ID`. It returns selected excerpts with exact source locators and separate document context. Use those excerpts to assess the claim; a document search can return no suitable evidence.
 - Results are bounded: `connections` exposes `has_more`; searches return limited results without a completeness flag. Narrow the question, scope or relationship when needed. Do not claim an exhaustive graph review from a truncated lookup.
 
 ```bash
-premisedb --db research.sqlite search "PowerFrame backlog" --kind Finding
-premisedb --db research.sqlite connections RECORD_ID
-premisedb --db research.sqlite connections RECORD_ID --direction in
-premisedb --db research.sqlite get CONNECTED_RECORD_ID
+premisedb search "PowerFrame backlog" --kind Finding
+premisedb connections RECORD_ID
+premisedb connections RECORD_ID --direction in
+premisedb get CONNECTED_RECORD_ID
 ```
 
 ## Contribute
 
+- Make Entities findable by name. Their text should hold the canonical name, ticker and common aliases, for example `Taiwan Semiconductor Manufacturing Company (TSMC; NYSE: TSM; TWSE: 2330)`; attributes can repeat these as structured fields. When you find an Entity under an alias it lacks, add the alias to its text.
 - Save reusable conclusions as focused Findings. Use metadata to distinguish `basis: disclosed`, `basis: inference` and `basis: assumption`. Include relevant company, period, geography and units rather than relying on the conversation to supply scope.
 - Use Source records for evidence. `ingest FILE --input METADATA.json` captures extracted UTF-8 text; metadata supplies `description`, `author_id` and optional `attributes` such as origin URL and known publication/observation dates. For references without captured text, `create Source` is sufficient. Do not imply that an uninspected source supports a claim.
 - After ingestion, `chunk SOURCE_ID` makes the text searchable. `set-context` can add a caller-authored **document** title and summary. Context assists retrieval; cite the original text.
-- Preserve exact citations in Finding attributes, for example `citations: [{source_id, start_byte, end_byte}]`. Verify ranges with `source-text SOURCE_ID --start-byte START --end-byte END`. Offsets are half-open UTF-8 byte ranges, not character positions or chunk ordinals. These citation attributes are a convention, not database-validated references.
+- Preserve exact citations in Finding attributes, for example `citations: [{source_id, start_byte, end_byte}]`. Get ranges with `locate SOURCE_ID 'EXACT QUOTE'`, copying the quote verbatim from `source-text` or `search-documents` output; matching is exact, so an empty result means the wording, whitespace or punctuation differs. For quotes containing shell characters, pass `-` and supply the quote through a quoted heredoc, as in the example below. Offsets are half-open UTF-8 byte ranges, not character positions or chunk ordinals; do not compute them by hand. These citation attributes are a convention, not database-validated references.
 - Connect records with `link FROM_ID TO_ID RELATION --input FILE`. A Finding can be `about` an Entity, `supported_by` a Source, `depends_on` another Finding, `contradicts` a competing Finding, or `raises` a Question. Explain non-obvious connections. Search existing links before adding duplicates.
 - Save Questions when resolving an uncertainty could materially change a conclusion. Link partial answers and relevant evidence so another investigation can continue the work.
 - Represent an external financial model with a Model record and its identifiable inputs/outputs with Variables. Record the external reference, period, units and assumptions when known. Connect a Variable to its Model with `in_model`, and to supporting Findings with `depends_on`. Follow these links from evidence to assumptions that need review, or from a sensitive assumption to research worth doing. Calculations and model edits remain in the user's modeling workflow.
@@ -41,9 +42,15 @@ premisedb --db research.sqlite get CONNECTED_RECORD_ID
 Example write payload; choose an author identifier for the actual contributor:
 
 ```bash
-premisedb --db research.sqlite create Finding --input - <<'JSON'
+premisedb create Finding --input - <<'JSON'
 {"text":"PowerFrame's backlog may shift into later quarters.","author_id":"research-agent","attributes":{"basis":"inference"}}
 JSON
+```
+
+```bash
+premisedb locate SOURCE_ID - <<'QUOTE'
+Customers may reschedule deliveries with 90 days' notice.
+QUOTE
 ```
 
 Attach the evidence and relevant connections after creating the record. The example alone is an unsupported inference.

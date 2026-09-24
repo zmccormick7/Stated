@@ -46,6 +46,25 @@ class SourceTests(unittest.TestCase):
             with self.subTest(start=start, end=end), self.assertRaises(ValueError):
                 self.db.read_source_text(source.id, start_byte=start, end_byte=end)
 
+    def test_locate_returns_exact_byte_ranges_without_normalization(self):
+        text = "A€ ramp.\r\nThe €5 ramp’s risk; the €5 ramp's risk. €5€5€5"
+        source = self.ingest(text)
+        matches = self.db.locate_source_text(source.id, "€5 ramp")
+        self.assertEqual([(m.start_byte, m.end_byte) for m in matches], [(16, 25), (40, 49)])
+        for match in matches:
+            self.assertEqual((match.source_id, match.text, match.document_context), (source.id, "€5 ramp", None))
+            self.assertEqual(self.db.read_source_text(source.id, start_byte=match.start_byte,
+                                                      end_byte=match.end_byte), "€5 ramp")
+        self.assertEqual(len(self.db.locate_source_text(source.id, "ramp's")), 1)  # No quote folding.
+        self.assertEqual(self.db.locate_source_text(source.id, "ramp.\n"), ())  # Line endings are exact.
+        self.assertEqual(len(self.db.locate_source_text(source.id, "€5€5")), 1)  # Nonoverlapping.
+        self.assertEqual(len(self.db.locate_source_text(source.id, "€5", limit=2)), 2)
+        for quote, limit in (("", 10), (" \n", 10), (None, 10), ("\ud800", 10), ("ramp", 0), ("ramp", True)):
+            with self.subTest(quote=quote, limit=limit), self.assertRaises(ValueError):
+                self.db.locate_source_text(source.id, quote, limit=limit)
+        with self.assertRaises(KeyError):
+            self.db.locate_source_text("missing", "ramp")
+
     def test_record_edits_leave_canonical_text_fixed(self):
         source = self.ingest()
         self.db.update(source.id, text="Corrected description", author_id="bob")

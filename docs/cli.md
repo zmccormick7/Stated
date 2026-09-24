@@ -10,7 +10,7 @@ JSON
 premisedb --db research.sqlite search "PowerFrame backlog" --kind Finding
 ```
 
-`--db` is a global option placed **before** the command; it defaults to `research.sqlite` in the current directory. Only `init` creates a missing database, and it safely reopens an existing one. Parent directories must exist. Use a persistent local file and the same path across agent sessions.
+`--db` is a global option placed **before** the command. Without it, the CLI uses `PREMISEDB_DB` when set, otherwise `research.sqlite` in the current directory. Set `PREMISEDB_DB` in the agent's environment so every session uses the shared workspace regardless of its working directory. Only `init` creates a missing database, and it safely reopens an existing one. Parent directories must exist. Use a persistent local file and the same path across agent sessions.
 
 Successful operations print one JSON value to stdout: record/link/context objects, arrays of search results, a connection object with `links` and `has_more`, a passage count from `chunk`, a JSON string from `source-text`, or an absolute database path object from `init`. Missing context returns `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
 
@@ -31,6 +31,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. JSON k
 | `connections ID [--direction in\|out] [--relation NAME] [--limit N]` | Inspect one-hop links. |
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |
 | `source-text SOURCE_ID [--start-byte N] [--end-byte N]` | Read exact source text as a JSON string. |
+| `locate SOURCE_ID QUOTE\|- [--limit N]` | Find exact byte ranges of a quotation for citations. |
 | `chunk SOURCE_ID [--max-chars N]` | Split source text into searchable passages. |
 | `search-documents QUERY [--source-id ID] [--limit N] [--max-tokens N]` | Return relevant excerpts with citations; repeat `--source-id` to scope to several sources. |
 | `set-context SOURCE_ID --input FILE` | Set the document title, summary and provenance. |
@@ -45,6 +46,10 @@ For `ingest`, supply `description`, `author_id` and optional `attributes`; the s
 Updates replace complete contents: omitted attributes/provenance become `{}`, and an omitted link explanation becomes empty. Preserve metadata you intend to keep. Each command uses the existing store operation and its transaction semantics; a series of commands is not one transaction. After an interrupted create or ingestion, check whether it committed before retrying.
 
 Record searches return at most 10 hits by default. Connections default to 100 links and report `has_more`; both limits have a maximum of 1,000. The [research skill](../skills/premisedb-research/SKILL.md) explains how to use these operations during an investigation.
+
+## Citations
+
+`locate SOURCE_ID QUOTE` returns the exact, nonoverlapping occurrences of a quotation in source order, each with `source_id`, `start_byte`, `end_byte` and `text`. Matching is exact: whitespace, line endings, quotation marks and Unicode forms must match the source, so copy the quote from `source-text` or `search-documents` output. Pass `-` as QUOTE to read it from stdin, which avoids shell quoting; one final newline, such as the one a heredoc adds, is removed. An empty array means no exact match. At most 10 matches are returned by default (maximum 1,000); lengthen the quote when several occurrences are ambiguous.
 
 ## Document search
 

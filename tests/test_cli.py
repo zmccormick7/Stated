@@ -82,6 +82,13 @@ class CLITests(unittest.TestCase):
             "author_id": "agent-a", "provenance": {"method": "agent-authored"}})
         self.assertEqual(self.call("get-context", sid), context)
         self.assertEqual(self.call("source-text", sid), text)
+        match = {"source_id": sid, "start_byte": 16, "end_byte": 30, "text": "approval is pe",
+                 "document_context": None}
+        self.assertEqual(self.call("locate", sid, "approval is pe"), [match])
+        self.assertEqual(self.call("locate", sid, "approval  is"), [])
+        stdin = self.run_cli("locate", sid, "-", stdin="Z\r\nGrid approval\n")
+        self.assertEqual([(m["start_byte"], m["end_byte"]) for m in json.loads(stdin.stdout)], [(8, 24)])
+        self.call("locate", sid, " ", status=1)
 
     def test_bad_inputs_fail_without_writes_or_tracebacks(self):
         for payload in ([], {"text": "Missing author"}, {"text": "Claim", "author_id": "a", "kind": "Entity"},
@@ -109,3 +116,14 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("init"), {"database": str(self.path.resolve())})
         self.path = Path(":memory:")
         self.assertIn("persistent", self.call("init", status=1)["error"])
+
+    def test_environment_selects_the_default_database(self):
+        shared = self.directory / "shared.sqlite"
+        run = lambda *arguments, path=str(shared): subprocess.run(
+            [sys.executable, "-m", "premisedb", *arguments], text=True, capture_output=True,
+            cwd=self.directory, env={**self.env, "PREMISEDB_DB": path})
+        self.assertEqual(json.loads(run("init").stdout), {"database": str(shared.resolve())})
+        self.assertEqual(json.loads(run("search", "anything").stdout), [])
+        self.assertIn("does not exist", run("--db", "other.sqlite", "search", "x").stderr)
+        self.assertEqual(json.loads(run("init", path="").stdout),
+                         {"database": str((self.directory / "research.sqlite").resolve())})
