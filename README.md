@@ -1,19 +1,13 @@
 # PremiseDB
 
-**A growing knowledge graph for investment research agents.**
+**PremiseDB lets research agents build an evolving knowledge graph of companies, markets and the forces connecting them.** Agents contribute findings, connect them to evidence and existing knowledge, and revise their understanding as they learn. Each investigation becomes part of a shared picture that other agents can explore, challenge and extend. The long-term vision is a knowledge graph of the entire economy, continuously built and refined by agents, with no fixed limit to its breadth or depth.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
 [Quickstart](#quickstart) · [Python API](docs/python-api.md) · [Design](docs/database-spec.md) · [Contribute](#contributing)
 
-Give your agents a shared memory of **what they know, why they believe it, and what they still need to find out**.
-
-PremiseDB stores research as connected companies, sources, findings, questions and model assumptions. Agents can recall prior work, follow its connections and revise their understanding as new evidence arrives. What one agent learns becomes available to the next, across sessions and investigations.
-
-An embedded Python library, backed by SQLite. No required third-party runtime dependencies. MIT licensed.
-
-> **Early MVP.** The graph store and document-retrieval pipeline work today through Python. Agent skills, MCP integration and vector search are on the roadmap. The API and database format are still evolving.
+An agent researching a supplier can build on what another learned about its customers, what a third discovered about infrastructure constraints, and the financial assumptions those relationships support.
 
 ## Follow the connections
 
@@ -39,6 +33,8 @@ The same pattern supports company coverage, thesis reviews and financial model a
 | What supports this forecast? | The research behind a model variable, including gaps in the evidence. |
 
 ## Quickstart
+
+> **Early MVP.** The Python API supports storing, connecting and retrieving research today. Packaged agent integrations are planned. The API and database format are still evolving.
 
 Requires **Python 3.12+**, linked against **SQLite 3.51.3+ with FTS5**. Check your Python's SQLite version with `python -c "import sqlite3; print(sqlite3.sqlite_version)"`.
 
@@ -103,31 +99,6 @@ raises: Could grid delays cause customers to defer orders?
 
 See the [Python API guide](docs/python-api.md) for updates, incoming connections, relation filters and document retrieval.
 
-## Research memory and document evidence
-
-An investigation needs both the understanding accumulated by earlier agents and the source material to check it against. PremiseDB provides two complementary retrieval paths:
-
-| Path | Operations | Returns |
-| --- | --- | --- |
-| **Prior research** | `search_records()` → `connections()` → `read()` | Findings and related records, with named links the agent can follow. |
-| **Source evidence** | `search_documents()` or `retrieve()` | Original source passages or selected excerpts, with Source IDs and exact byte ranges. |
-
-Today, the calling agent composes these paths: find a relevant claim, follow its source link, then search within that source using `source_ids`. Automatic assembly of connected research context is a next step.
-
-The document pipeline incorporates **Contextual Chunk Headers (CCH)** and **Relevant Segment Extraction (RSE)** from [dsRAG](https://github.com/D-Star-AI/dsRAG):
-
-```text
-Extracted text → passages + document context → BM25 → reranking → RSE → excerpts
-```
-
-- **Context that travels with the passage.** CCH adds a document title and a summary of the document to each passage's search representation and reranking input. You or your agent supply that context. The original source text stays separate and unchanged.
-- **Excerpts sized to the evidence.** RSE uses relevance scores to select contiguous source ranges under a caller-defined token budget. A returned excerpt can span several passages, with an exact locator back to the source.
-- **Replaceable scoring.** Use Jev, Cohere or Voyage through `OpenRouterReranker`, or implement the small `Reranker` interface for your own provider. Built-in Cohere and Voyage adapters use dsRAG's score transforms before RSE.
-
-Ingestion accepts extracted text; call `chunk_source()` to make its body searchable. Local BM25 search needs no model. OpenRouter reranking sends the query, candidate text and document context to the selected provider.
-
-[Ingest and search documents](docs/python-api.md#ingest-source-text) · [Configure retrieval](docs/python-api.md#retrieve-evidence) · [Validation and limits](docs/rse-validation.md)
-
 ## Six record types. Flexible connections.
 
 | Record | Purpose | Example |
@@ -159,12 +130,11 @@ The goal is the same whether you guide one agent or coordinate many: knowledge a
 
 ## Where we are going
 
-The working foundation includes records and links, BM25 search, text ingestion, document-level CCH, configurable reranking and token-budgeted RSE. The next layers are:
+The working foundation lets agents store evidence, connect their findings and build on earlier research. The next layers are:
 
 - **Connected research retrieval:** assemble useful prior findings, evidence and open questions around a query.
-- **Semantic search:** add embeddings and Faiss alongside SQLite's lexical index.
 - **Agent integrations:** make the research loop easy to adopt through skills and MCP.
-- **Document preparation:** add parsing and automatic context generation.
+- **Document preparation:** make it easier to bring filings, transcripts and other source material into the research workspace.
 
 The [design specification](docs/database-spec.md) describes the broader direction; the [Python API guide](docs/python-api.md) documents what is implemented. Early database formats may change and currently have no migrations.
 
