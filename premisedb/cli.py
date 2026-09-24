@@ -39,6 +39,9 @@ def _parser():
     search = command("search", "search_records", "Search record text; any query word can match.", "query")
     search.add_argument("--kind")
     search.add_argument("--limit", type=int, default=10)
+    command("contribute", "contribute", "Create records and links in one transaction; links can name new records by ref.",
+            payload="author_id, records [{ref, kind, text, optional attributes and citations}], "
+                    "links [{from_id, to_id, relation, optional explanation}]")
     command("link", "create_link", "Connect two records with a named relationship.",
             "from_id", "to_id", "relation", payload="author_id, optional explanation")
     command("get-link", "read_link", "Read a current link.", "link_id")

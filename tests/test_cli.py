@@ -52,6 +52,22 @@ class CLITests(unittest.TestCase):
         self.call("init")  # Opening an existing workspace must retain its records.
         self.assertEqual(self.call("get", finding["id"]), changed)
 
+    def test_contribute_writes_a_batch_by_ref(self):
+        entity = self.create("Entity", "PowerFrame (fictional)")
+        result = self.call("contribute", "--input", "-", payload={
+            "author_id": "agent-a",
+            "records": [{"ref": "f", "kind": "Finding", "text": "Backlog may slip."},
+                        {"ref": "q", "kind": "Question", "text": "Can customers defer?"}],
+            "links": [{"from_id": "f", "to_id": entity["id"], "relation": "about"},
+                      {"from_id": "f", "to_id": "q", "relation": "raises"}]})
+        self.assertEqual(sorted(result["records"]), ["f", "q"])
+        self.assertEqual([link["to_id"] for link in result["links"]], [entity["id"], result["records"]["q"]["id"]])
+        self.assertEqual(self.call("get", result["records"]["f"]["id"]), result["records"]["f"])
+        self.call("contribute", "--input", "-", status=1, payload={
+            "author_id": "agent-a", "records": [{"ref": "g", "kind": "Finding", "text": "Orphan"}],
+            "links": [{"from_id": "g", "to_id": "missing", "relation": "about"}]})
+        self.assertEqual(self.call("search", "Orphan"), [])
+
     def test_connection_limits_and_link_updates(self):
         finding = self.create("Finding", "Capacity depends on power.")
         question = self.create("Question", "Is power available?")

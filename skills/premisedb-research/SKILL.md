@@ -39,17 +39,23 @@ premisedb get CONNECTED_RECORD_ID
 - Save Questions when resolving an uncertainty could materially change a conclusion. Link partial answers and relevant evidence so another investigation can continue the work.
 - Represent an external financial model with a Model record and its identifiable inputs/outputs with Variables. Record the external reference, period, units and assumptions when known. Connect a Variable to its Model with `in_model`, and to supporting Findings with `depends_on`. Follow these links from evidence to assumptions that need review, or from a sensitive assumption to research worth doing. Calculations and model edits remain in the user's modeling workflow.
 
-Example write payload; choose an author identifier for the actual contributor:
+Write a Finding together with its citations, Questions and links in one `contribute` call. Name new records with your own `ref` and use it in links; use record IDs for existing records. The whole contribution commits or nothing does, so fix the reported problem and resend it. Choose an author identifier for the actual contributor:
 
 ```bash
-premisedb create Finding --input - <<'JSON'
-{"text":"PowerFrame's customers can defer deliveries with 90 days' notice.","author_id":"research-agent",
- "attributes":{"basis":"disclosed"},
- "citations":[{"source_id":"SOURCE_ID","quote":"Customers may reschedule deliveries with 90 days' notice."}]}
+premisedb contribute --input - <<'JSON'
+{"author_id":"research-agent",
+ "records":[
+  {"ref":"f1","kind":"Finding","text":"PowerFrame's customers can defer deliveries with 90 days' notice.",
+   "attributes":{"basis":"disclosed"},
+   "citations":[{"source_id":"SOURCE_ID","quote":"Customers may reschedule deliveries with 90 days' notice."}]},
+  {"ref":"q1","kind":"Question","text":"Could grid delays lead PowerFrame's customers to defer deliveries?"}],
+ "links":[
+  {"from_id":"f1","to_id":"ENTITY_ID","relation":"about"},
+  {"from_id":"f1","to_id":"q1","relation":"raises","explanation":"Deferral rights make revenue timing depend on customers' readiness."}]}
 JSON
 ```
 
-Then link the record to the Entities it is `about` and to related Findings and Questions.
+`create` and `link` remain available for single writes.
 
 ## Revise
 

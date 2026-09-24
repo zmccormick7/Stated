@@ -45,6 +45,12 @@ class Connections:
 
 
 @dataclass(frozen=True)
+class Contribution:
+    records: dict[str, Record]  # Keyed by the caller's ref.
+    links: tuple[Link, ...]  # Explicit links only; citation links are not repeated here.
+
+
+@dataclass(frozen=True)
 class Passage:
     source_id: str
     ordinal: int
@@ -409,16 +415,37 @@ class RecordStore:
 
     def create_link(self, from_id: str, to_id: str, relation: str, *, author_id: str,
                     explanation: str = "") -> Link:
-        link_id = str(uuid4())
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            self._db.execute(
-                """INSERT INTO links (from_key, to_key, relation, explanation,
-                   author_id, updated_at, id) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (*self._link_values(from_id, to_id, relation, explanation, author_id), link_id),
-            )
-            link = self.read_link(link_id)
+            link = self._insert_link(from_id, to_id, relation, explanation, author_id)
         return link
+
+    def contribute(self, *, author_id: str, records: Iterable[dict[str, object]] = (),
+                   links: Iterable[dict[str, object]] = ()) -> Contribution:
+        """Create records and links in one transaction; links may name new records by ref."""
+        records = self._batch(records, "records", {"ref", "kind", "text"}, {"attributes", "citations"})
+        links = self._batch(links, "links", {"from_id", "to_id", "relation"}, {"explanation"})
+        refs = [record["ref"] for record in records]
+        if any(not isinstance(ref, str) or not ref.strip() for ref in refs) or len(set(refs)) != len(refs):
+            raise ValueError("record refs must be unique, nonblank strings")
+        prepared = []
+        for record in records:
+            attributes, source_ids = self._cite(record.get("attributes"), record.get("citations"))
+            prepared.append((record, self._encode(attributes), source_ids))
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            if refs and self._db.execute(f"SELECT 1 FROM records WHERE id IN ({','.join('?' * len(refs))})",
+                                         refs).fetchone():
+                raise ValueError("record refs must not be existing record IDs")
+            created = {}
+            for record, encoded, source_ids in prepared:
+                created[record["ref"]] = self._insert_record(record["kind"], record["text"], encoded, author_id)
+                self._link_sources(created[record["ref"]].id, source_ids, author_id)
+            ids = {ref: record.id for ref, record in created.items()}
+            made = tuple(self._insert_link(ids.get(link["from_id"], link["from_id"]),
+                                           ids.get(link["to_id"], link["to_id"]), link["relation"],
+                                           link.get("explanation", ""), author_id) for link in links)
+        return Contribution(created, made)
 
     def update_link(self, link_id: str, *, from_id: str, to_id: str, relation: str,
                     author_id: str, explanation: str = "") -> Link:
@@ -500,6 +527,29 @@ class RecordStore:
                        author_id, updated_at, id) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (*values, str(uuid4())),
                 )
+
+    def _insert_link(self, from_id: str, to_id: str, relation: str, explanation: str, author_id: str) -> Link:
+        link_id = str(uuid4())
+        self._db.execute(
+            """INSERT INTO links (from_key, to_key, relation, explanation,
+               author_id, updated_at, id) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (*self._link_values(from_id, to_id, relation, explanation, author_id), link_id),
+        )
+        return self.read_link(link_id)
+
+    @staticmethod
+    def _batch(items: Iterable[dict[str, object]], name: str, required: set[str],
+               optional: set[str]) -> list[dict[str, object]]:
+        if isinstance(items, (str, bytes, dict)):
+            raise ValueError(f"{name} must be a list of objects")
+        items = list(items)
+        if len(items) > 1000:
+            raise ValueError(f"{name} can contain at most 1,000 items")
+        for index, item in enumerate(items):
+            if not isinstance(item, dict) or not required <= set(item) <= required | optional:
+                raise ValueError(f"{name}[{index}] needs {', '.join(sorted(required))}"
+                                 f" and may have {', '.join(sorted(optional))}")
+        return items
 
     def _record_key(self, record_id: str) -> int:
         row = self._db.execute("SELECT record_key FROM records WHERE id = ?", (record_id,)).fetchone()
