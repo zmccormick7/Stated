@@ -65,7 +65,7 @@ class CLITests(unittest.TestCase):
         self.call("update-link", changed["id"], "--input", "-", payload={**fields, "to_id": "missing"}, status=1)
         self.assertEqual(self.call("get-link", changed["id"]), changed)
 
-    def test_exact_source_ingestion_context_and_scoped_search(self):
+    def test_exact_source_ingestion_and_context(self):
         text = "A€🙂Z\r\nGrid approval is pending.\n"
         source_file = self.directory / "filing.txt"
         source_file.write_bytes(text.encode("utf-8"))
@@ -76,19 +76,11 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("source-text", sid, "--start-byte", "1", "--end-byte", "8"), "€🙂")
         self.call("source-text", sid, "--start-byte", "2", status=1)
         self.assertIsNone(self.call("get-context", sid))
-        self.assertEqual(self.call("search-documents", "Grid", "--source-id", sid), [])
         self.assertGreater(self.call("chunk", sid, "--max-chars", "12"), 1)
         context = self.call("set-context", sid, "--input", "-", payload={
             "title": "PowerFrame Q2", "summary": "Fictional filing about utility approval.",
             "author_id": "agent-a", "provenance": {"method": "agent-authored"}})
         self.assertEqual(self.call("get-context", sid), context)
-        hits = self.call("search-documents", "Grid", "--source-id", sid)
-        self.assertTrue(hits)
-        for hit in hits:
-            self.assertEqual(hit["source_id"], sid)
-            self.assertEqual(hit["document_context"], context)
-            self.assertEqual(hit["text"], text.encode("utf-8")[hit["start_byte"]:hit["end_byte"]].decode("utf-8"))
-        self.assertTrue(self.call("search-documents", "PowerFrame", "--source-id", sid))
         self.assertEqual(self.call("source-text", sid), text)
 
     def test_bad_inputs_fail_without_writes_or_tracebacks(self):

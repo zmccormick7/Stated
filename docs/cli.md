@@ -1,6 +1,6 @@
 # Command-line interface
 
-Install from the checkout with `python -m pip install -e .`. This provides `premisedb`; `python -m premisedb` is equivalent. The [runtime requirements](../README.md#quickstart) apply to both.
+Install from the checkout with `python -m pip install -e '.[cli]'`. This provides `premisedb` and its document-search tokenizer; `python -m premisedb` is equivalent. The [runtime requirements](../README.md#quickstart) apply to both. The base Python library and graph commands work without the optional tokenizer.
 
 ```bash
 premisedb --db research.sqlite init
@@ -12,7 +12,7 @@ premisedb --db research.sqlite search "PowerFrame backlog" --kind Finding
 
 `--db` is a global option placed **before** the command; it defaults to `research.sqlite` in the current directory. Only `init` creates a missing database, and it safely reopens an existing one. Parent directories must exist. Use a persistent local file and the same path across agent sessions.
 
-Successful operations print one JSON value to stdout: record/link/context objects, arrays of search hits, a connection object with `links` and `has_more`, a passage count from `chunk`, a JSON string from `source-text`, or an absolute database path object from `init`. Missing context returns `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. No model calls are made by these commands.
+Successful operations print one JSON value to stdout: record/link/context objects, arrays of search results, a connection object with `links` and `has_more`, a passage count from `chunk`, a JSON string from `source-text`, or an absolute database path object from `init`. Missing context returns `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
 
 ## Commands
 
@@ -32,7 +32,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. JSON k
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |
 | `source-text SOURCE_ID [--start-byte N] [--end-byte N]` | Read exact source text as a JSON string. |
 | `chunk SOURCE_ID [--max-chars N]` | Split source text into searchable passages. |
-| `search-documents QUERY [--source-id ID] [--limit N]` | Search passages; repeat `--source-id` to scope to several sources. |
+| `search-documents QUERY [--source-id ID] [--limit N] [--max-tokens N]` | Return relevant excerpts with citations; repeat `--source-id` to scope to several sources. |
 | `set-context SOURCE_ID --input FILE` | Set the document title, summary and provenance. |
 | `get-context SOURCE_ID` | Read the document context. |
 
@@ -44,4 +44,18 @@ For `ingest`, supply `description`, `author_id` and optional `attributes`; the s
 
 Updates replace complete contents: omitted attributes/provenance become `{}`, and an omitted link explanation becomes empty. Preserve metadata you intend to keep. Each command uses the existing store operation and its transaction semantics; a series of commands is not one transaction. After an interrupted create or ingestion, check whether it committed before retrying.
 
-Searches return at most 10 hits by default. Connections default to 100 links and report `has_more`; both limits have a maximum of 1,000. The [research skill](../skills/premisedb-research/SKILL.md) explains how to use these operations during an investigation. Configurable reranking and token-budgeted retrieval remain available through the [Python API](python-api.md#retrieve-evidence).
+Record searches return at most 10 hits by default. Connections default to 100 links and report `has_more`; both limits have a maximum of 1,000. The [research skill](../skills/premisedb-research/SKILL.md) explains how to use these operations during an investigation.
+
+## Document search
+
+Configure `OPENROUTER_API_KEY` in the calling environment once; the CLI does not load `.env` files. The agent supplies a research question and optional source scope:
+
+```bash
+premisedb search-documents "Could customer project delays affect revenue timing?"
+```
+
+This runs the existing BM25 → reranking → score transformation → RSE pipeline automatically. Only selected excerpts are returned, each with `source_id`, `start_byte`, `end_byte`, original `text`, optional `document_context` and `token_count`. Candidate passages and internal scores are not dumped into the agent's context. Empty results mean no excerpts met the search and selection constraints; provider errors remain errors.
+
+Defaults select up to five excerpts within a total 6,000-token budget (2,000 per excerpt), using Voyage rerank-2.5 and the existing RSE defaults. Optional `--limit` and `--max-tokens` control output size. The budget counts source text plus document headers in the configured encoding; JSON metadata and the rest of the agent's prompt are additional.
+
+Deployment settings can override `PREMISEDB_RERANKER_MODEL` with `typesafe/jev-1.13`, `cohere/rerank-4-pro` or `voyageai/rerank-2.5`, and `PREMISEDB_TOKEN_ENCODING` with a tiktoken encoding (default `cl100k_base`). These are setup choices, not decisions the research agent needs to make for each query. Token counts refer to that encoding; select one appropriate to the consuming model. Tokenizer data may download on first use. Searches send the query, candidate text and document context to OpenRouter. The [Python API guide](python-api.md#retrieve-evidence) explains the underlying retrieval contract.

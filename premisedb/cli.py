@@ -3,11 +3,14 @@
 import argparse
 from dataclasses import asdict
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
 
 from .store import RecordStore
+from .reranking import OpenRouterReranker
+from .retrieval import retrieve
 
 
 def _parser():
@@ -52,13 +55,28 @@ def _parser():
     source.add_argument("--end-byte", type=int)
     chunk = command("chunk", "chunk_source", "Replace passages and return their count; enables document search.", "source_id")
     chunk.add_argument("--max-chars", type=int, default=2000)
-    documents = command("search-documents", "search_documents", "Search source passages with exact byte locators.", "query")
+    documents = command("search-documents", "search_documents", "Find relevant source excerpts for a research question.", "query")
     documents.add_argument("--source-id", dest="source_ids", action="append")
-    documents.add_argument("--limit", type=int, default=10)
+    documents.add_argument("--limit", dest="max_segments", type=int, default=argparse.SUPPRESS,
+                           help="Maximum excerpts to return (default: 5)")
+    documents.add_argument("--max-tokens", dest="max_total_tokens", type=int, default=argparse.SUPPRESS,
+                           help="Total excerpt budget (default: 6000)")
     command("set-context", "set_document_context", "Set a document's title and summary, separately from evidence.",
             "source_id", payload="title, summary, author_id, optional provenance")
     command("get-context", "read_document_context", "Read document context, or null if absent.", "source_id")
     return parser
+
+
+def _search_documents(db, options):
+    try:
+        import tiktoken
+    except ImportError:
+        raise RuntimeError("Document search requires tiktoken; install with: python -m pip install 'tiktoken>=0.12,<1'") from None
+    encoding = tiktoken.get_encoding(os.environ.get("PREMISEDB_TOKEN_ENCODING", "cl100k_base"))
+    reranker = OpenRouterReranker(os.environ.get("PREMISEDB_RERANKER_MODEL", "voyageai/rerank-2.5"))
+    result = retrieve(db, reranker=reranker,
+                      count_tokens=lambda text: len(encoding.encode(text, disallowed_special=())), **options)
+    return [{**asdict(excerpt.segment), "token_count": excerpt.token_count} for excerpt in result.excerpts]
 
 
 def main(argv=None):
@@ -82,8 +100,11 @@ def main(argv=None):
         if options.keys() & payload.keys():
             raise ValueError("JSON input must not repeat arguments supplied by the command")
         with RecordStore(path) as db:
-            result = (getattr(db, method)(**options, **payload) if method
-                      else {"database": str(path.resolve())})
+            if method == "search_documents":
+                result = _search_documents(db, options)
+            else:
+                result = (getattr(db, method)(**options, **payload) if method
+                          else {"database": str(path.resolve())})
         print(json.dumps(result, default=asdict, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError, sqlite3.Error) as error:

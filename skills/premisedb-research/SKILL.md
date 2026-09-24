@@ -15,10 +15,11 @@ Run `premisedb --help` or `premisedb COMMAND --help` for arguments and write-pay
 
 ## Recall
 
-- Search before contributing. Use focused company names, aliases and business concepts: `search` matches any query word and is lexical, so one empty result does not establish that something is absent. Reuse existing Entity identities when they refer to the same thing.
+- Search before contributing. Start with relevant company names, aliases and business concepts; one empty result does not establish that something is absent. Reuse existing Entity identities when they refer to the same thing.
 - Read relevant records with `get`. Follow `connections` in both directions; incoming links can reveal findings or model assumptions that depend on a record. Inspect the relationship's explanation and the connected record before treating it as useful context.
 - Follow evidence, contradictory findings and material open questions even when their wording differs from the original query. Choose connections that could change the answer rather than expanding every branch.
-- Results are bounded: `connections` exposes `has_more`; searches return up to `--limit` without a completeness flag. Narrow searches and relations or raise the limit when necessary (maximum 1,000). Do not claim an exhaustive graph review from a truncated lookup.
+- To inspect document evidence, ask `search-documents "RESEARCH QUESTION"`, optionally scoped with `--source-id SOURCE_ID`. It returns selected excerpts with exact source locators and separate document context. Use those excerpts to assess the claim; a document search can return no suitable evidence.
+- Results are bounded: `connections` exposes `has_more`; searches return limited results without a completeness flag. Narrow the question, scope or relationship when needed. Do not claim an exhaustive graph review from a truncated lookup.
 
 ```bash
 premisedb --db research.sqlite search "PowerFrame backlog" --kind Finding
@@ -31,7 +32,7 @@ premisedb --db research.sqlite get CONNECTED_RECORD_ID
 
 - Save reusable conclusions as focused Findings. Use metadata to distinguish `basis: disclosed`, `basis: inference` and `basis: assumption`. Include relevant company, period, geography and units rather than relying on the conversation to supply scope.
 - Use Source records for evidence. `ingest FILE --input METADATA.json` captures extracted UTF-8 text; metadata supplies `description`, `author_id` and optional `attributes` such as origin URL and known publication/observation dates. For references without captured text, `create Source` is sufficient. Do not imply that an uninspected source supports a claim.
-- After ingestion, `chunk SOURCE_ID` enables `search-documents QUERY --source-id SOURCE_ID`. `set-context` can add a caller-authored **document** title and summary. Context assists retrieval; cite the original text.
+- After ingestion, `chunk SOURCE_ID` makes the text searchable. `set-context` can add a caller-authored **document** title and summary. Context assists retrieval; cite the original text.
 - Preserve exact citations in Finding attributes, for example `citations: [{source_id, start_byte, end_byte}]`. Verify ranges with `source-text SOURCE_ID --start-byte START --end-byte END`. Offsets are half-open UTF-8 byte ranges, not character positions or chunk ordinals. These citation attributes are a convention, not database-validated references.
 - Connect records with `link FROM_ID TO_ID RELATION --input FILE`. A Finding can be `about` an Entity, `supported_by` a Source, `depends_on` another Finding, `contradicts` a competing Finding, or `raises` a Question. Explain non-obvious connections. Search existing links before adding duplicates.
 - Save Questions when resolving an uncertainty could materially change a conclusion. Link partial answers and relevant evidence so another investigation can continue the work.

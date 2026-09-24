@@ -18,4 +18,5 @@ include = ["premisedb*"]
 premisedb = ["schema.sql"]
 
 [project.optional-dependencies]
+cli = ["tiktoken>=0.12,<1"]
 evaluation = ["scipy>=1.14,<2", "tiktoken>=0.12,<1"]
