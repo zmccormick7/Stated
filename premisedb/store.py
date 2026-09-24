@@ -42,6 +42,13 @@ class Link:
 class Connections:
     links: tuple[Link, ...]
     has_more: bool
+    records: dict[str, Record]  # The other end of each returned link, by ID.
+
+
+@dataclass(frozen=True)
+class RecordPage:
+    records: tuple[Record, ...]
+    has_more: bool
 
 
 @dataclass(frozen=True)
@@ -462,22 +469,50 @@ class RecordStore:
             link = self.read_link(link_id)
         return link
 
-    def connections(self, record_id: str, *, direction: str = "out",
+    def connections(self, record_id: str, *, direction: str = "both",
                     relation: str | None = None, limit: int = 100) -> Connections:
-        """Current one-hop links, ordered by creation; has_more reports truncation."""
-        if direction not in ("out", "in"):
-            raise ValueError("direction must be 'out' or 'in'")
+        """Current one-hop links and the records they reach, in link creation order.
+
+        has_more reports truncation.
+        """
+        if direction not in ("out", "in", "both"):
+            raise ValueError("direction must be 'out', 'in' or 'both'")
         if type(limit) is not int or not 1 <= limit <= 1000:
             raise ValueError("limit must be an integer from 1 to 1000")
-        column = "from_key" if direction == "out" else "to_key"
-        parameters: list[object] = [self._record_key(record_id)]
-        sql = _LINK_SELECT + f" WHERE l.{column} = ?"
+        key = self._record_key(record_id)
+        where = {"out": "l.from_key = ?", "in": "l.to_key = ?", "both": "(l.from_key = ? OR l.to_key = ?)"}
+        parameters: list[object] = [key, key] if direction == "both" else [key]
+        sql = _LINK_SELECT + f" WHERE {where[direction]}"
         if relation is not None:
             sql += " AND l.relation = ?"
             parameters.append(relation)
         rows = self._db.execute(sql + " ORDER BY l.link_key LIMIT ?",
                                 (*parameters, limit + 1)).fetchall()
-        return Connections(tuple(Link(**dict(row)) for row in rows[:limit]), len(rows) > limit)
+        links = tuple(Link(**dict(row)) for row in rows[:limit])
+        # Records are never deleted, so every linked record can be read.
+        ids = dict.fromkeys(link.from_id if link.to_id == record_id else link.to_id for link in links)
+        found = {row["id"]: self._decode_record(row) for row in self._db.execute(
+            """SELECT id, kind, text, attributes, author_id, updated_at FROM records
+               WHERE id IN (SELECT value FROM json_each(?))""", (json.dumps(list(ids)),))}
+        return Connections(links, len(rows) > limit, {record: found[record] for record in ids})
+
+    def list_records(self, *, kind: str | None = None, author_id: str | None = None,
+                     after: str | None = None, limit: int = 100) -> RecordPage:
+        """Current records in creation order, optionally filtered; pass the last ID as after to continue."""
+        if kind is not None and kind not in ("Entity", "Source", "Finding", "Question", "Model", "Variable"):
+            raise ValueError("kind must be a record kind or None")
+        if author_id is not None and not isinstance(author_id, str):
+            raise ValueError("author_id must be a string or None")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer from 1 to 1000")
+        start = 0 if after is None else self._record_key(after)
+        rows = self._db.execute(
+            """SELECT id, kind, text, attributes, author_id, updated_at FROM records
+               WHERE record_key > ? AND (? IS NULL OR kind = ?) AND (? IS NULL OR author_id = ?)
+               ORDER BY record_key LIMIT ?""",
+            (start, kind, kind, author_id, author_id, limit + 1),
+        ).fetchall()
+        return RecordPage(tuple(self._decode_record(row) for row in rows[:limit]), len(rows) > limit)
 
     def _cite(self, attributes: dict[str, object] | None,
               citations: Iterable[dict[str, object]] | None) -> tuple[dict[str, object] | None, tuple[str, ...]]:

@@ -37,11 +37,23 @@ with RecordStore("research.sqlite") as db:
     link = db.create_link(finding.id, company.id, "about", author_id="alice")
     incoming = db.connections(company.id, direction="in", relation="about")
     assert incoming.links == (link,) and not incoming.has_more
+    assert incoming.records[finding.id] == finding
 ```
 
 `read_link(id)` returns current contents. `update_link` replaces its endpoints, relation and explanation in place, records the last editor and refreshes `updated_at`. Links always refer to current records. Agents reassess support when underlying understanding changes; the database does not preserve earlier assumptions or automatically determine whether a relationship is still valid.
 
-`connections` returns links in creation order, with an optional exact relation filter. Its default limit is 100, its maximum is 1,000, and `has_more` reports omitted links. Incoming lookups preserve the stored direction. Missing IDs raise `KeyError`; duplicate links and custom relation labels are allowed. Pagination, recursive traversal and link deletion are not implemented yet.
+`connections` returns links touching a record in creation order, with an optional exact relation filter. `direction` is `"both"` by default, or `"out"` or `"in"`; links keep their stored direction, so check `from_id` and `to_id`. `records` maps the ID at the other end of each returned link to that record's current contents, in first-seen order; a self-link maps the record to itself. The default limit is 100 links, the maximum is 1,000, and `has_more` reports omitted links in the chosen direction. Missing IDs raise `KeyError`; duplicate links and custom relation labels are allowed. Link pagination, recursive traversal and link deletion are not implemented yet.
+
+## List records
+
+```python
+with RecordStore("research.sqlite") as db:
+    page = db.list_records(kind="Question", author_id="alice", limit=100)
+    while page.has_more:
+        page = db.list_records(kind="Question", author_id="alice", after=page.records[-1].id)
+```
+
+`list_records` returns a `RecordPage` of current records in creation order, optionally filtered by exact `kind` and `author_id` (the last editor). Pass the last returned ID as `after` to continue; `has_more` reports whether more matching records follow. The default limit is 100 and the maximum is 1,000. Invalid kinds, limits or author types raise `ValueError`, and an unknown `after` ID raises `KeyError`. Records created after a page is read appear on later pages.
 
 ## Search for a starting point
 
