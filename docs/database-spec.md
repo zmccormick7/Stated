@@ -80,7 +80,7 @@ SQLite WAL permits concurrent readers with one writer. A shared desk uses a sing
 
 **SQLite is selected**, including full vectors in a separate BLOB table. Measure batched candidate-vector fetches, ingestion and graph-write interference before loading the full corpus. Revisit another store only if these measurements expose a specific bottleneck. Do not add LMDB speculatively or introduce two independent authoritative stores with best-effort dual writes.
 
-The first implementation uses Python and direct `sqlite3` calls. Transport remains open; no general backend abstraction or distributed database is planned for the initial slice.
+The first implementation uses Python and direct `sqlite3` calls. Agents access it through the Python API or a thin CLI with a portable research skill; an MCP server is out of scope. No general backend abstraction or distributed database is planned for the initial slice.
 
 ## 4. Logical data model
 

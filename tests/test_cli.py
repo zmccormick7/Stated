@@ -1,0 +1,119 @@
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+from tempfile import TemporaryDirectory
+import unittest
+
+
+class CLITests(unittest.TestCase):
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+        self.path = self.directory / "research.sqlite"
+        self.env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+        self.call("init")
+
+    def run_cli(self, *arguments, stdin=None):
+        return subprocess.run([sys.executable, "-m", "premisedb", "--db", str(self.path), *arguments],
+                              input=stdin, text=True, capture_output=True,
+                              cwd=self.directory, env=self.env)
+
+    def call(self, *arguments, payload=None, status=0):
+        result = self.run_cli(*arguments, stdin=None if payload is None else json.dumps(payload))
+        self.assertEqual(result.returncode, status, result.stderr)
+        self.assertEqual(result.stderr if status == 0 else result.stdout, "")
+        return json.loads(result.stdout if status == 0 else result.stderr)
+
+    def create(self, kind, text):
+        return self.call("create", kind, "--input", "-", payload={"text": text, "author_id": "agent-a"})
+
+    def test_recall_and_revision_across_processes(self):
+        text = "PowerFrame's backlog may slip.\n€5 and $HOME stay literal."
+        data = {"text": text, "attributes": {"basis": "inference"}, "author_id": "agent-a"}
+        payload_file = self.directory / "finding.json"
+        payload_file.write_text(json.dumps(data), encoding="utf-8")
+        finding = self.call("create", "Finding", "--input", str(payload_file))
+        question = self.create("Question", "Could grid delays cause deferrals?")
+        link = self.call("link", finding["id"], question["id"], "raises", "--input", "-",
+                         payload={"author_id": "agent-a", "explanation": "Investigate customer timing."})
+        self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding"), [finding])
+        self.assertEqual(self.call("get", finding["id"]), finding)
+        self.assertEqual(self.call("get-link", link["id"]), link)
+        self.assertEqual(self.call("connections", question["id"], "--direction", "in"),
+                         {"links": [link], "has_more": False})
+        changed = self.call("update", finding["id"], "--input", "-",
+                            payload={"text": "PowerFrame ramp delayed.", "author_id": "agent-b"})
+        self.assertEqual((changed["id"], changed["attributes"], changed["author_id"]),
+                         (finding["id"], {}, "agent-b"))
+        self.assertEqual(self.call("search", "backlog"), [])
+        self.call("init")  # Opening an existing workspace must retain its records.
+        self.assertEqual(self.call("get", finding["id"]), changed)
+
+    def test_connection_limits_and_link_updates(self):
+        finding = self.create("Finding", "Capacity depends on power.")
+        question = self.create("Question", "Is power available?")
+        links = [self.call("link", finding["id"], question["id"], relation, "--input", "-",
+                           payload={"author_id": "agent-a"}) for relation in ("raises", "depends_on")]
+        self.assertEqual(self.call("connections", finding["id"], "--limit", "1"),
+                         {"links": links[:1], "has_more": True})
+        self.assertEqual(self.call("connections", finding["id"], "--relation", "depends_on")["links"], links[1:])
+        fields = {"from_id": finding["id"], "to_id": question["id"], "relation": "concerns", "author_id": "agent-b"}
+        changed = self.call("update-link", links[0]["id"], "--input", "-", payload=fields)
+        self.call("update-link", changed["id"], "--input", "-", payload={**fields, "to_id": "missing"}, status=1)
+        self.assertEqual(self.call("get-link", changed["id"]), changed)
+
+    def test_exact_source_ingestion_context_and_scoped_search(self):
+        text = "A€🙂Z\r\nGrid approval is pending.\n"
+        source_file = self.directory / "filing.txt"
+        source_file.write_bytes(text.encode("utf-8"))
+        source = self.call("ingest", str(source_file), "--input", "-",
+                           payload={"description": "Fictional filing", "author_id": "agent-a"})
+        sid = source["id"]
+        self.assertEqual(self.call("source-text", sid), text)
+        self.assertEqual(self.call("source-text", sid, "--start-byte", "1", "--end-byte", "8"), "€🙂")
+        self.call("source-text", sid, "--start-byte", "2", status=1)
+        self.assertIsNone(self.call("get-context", sid))
+        self.assertEqual(self.call("search-documents", "Grid", "--source-id", sid), [])
+        self.assertGreater(self.call("chunk", sid, "--max-chars", "12"), 1)
+        context = self.call("set-context", sid, "--input", "-", payload={
+            "title": "PowerFrame Q2", "summary": "Fictional filing about utility approval.",
+            "author_id": "agent-a", "provenance": {"method": "agent-authored"}})
+        self.assertEqual(self.call("get-context", sid), context)
+        hits = self.call("search-documents", "Grid", "--source-id", sid)
+        self.assertTrue(hits)
+        for hit in hits:
+            self.assertEqual(hit["source_id"], sid)
+            self.assertEqual(hit["document_context"], context)
+            self.assertEqual(hit["text"], text.encode("utf-8")[hit["start_byte"]:hit["end_byte"]].decode("utf-8"))
+        self.assertTrue(self.call("search-documents", "PowerFrame", "--source-id", sid))
+        self.assertEqual(self.call("source-text", sid), text)
+
+    def test_bad_inputs_fail_without_writes_or_tracebacks(self):
+        for payload in ([], {"text": "Missing author"}, {"text": "Claim", "author_id": "a", "kind": "Entity"},
+                        {"text": "Claim", "author_id": "a", "attributes": []}):
+            with self.subTest(payload=payload):
+                error = self.call("create", "Finding", "--input", "-", payload=payload, status=1)
+                self.assertTrue(error["error"])
+        invalid = self.run_cli("create", "Finding", "--input", "-", stdin="{invalid")
+        self.assertEqual(invalid.returncode, 1)
+        self.assertEqual(invalid.stdout, "")
+        self.assertTrue(json.loads(invalid.stderr)["error"])
+        self.assertEqual(self.call("search", "Claim Missing"), [])
+        self.call("create", "Finding", "--input", "absent.json", status=1)
+        self.call("get", "missing", status=1)
+        usage = self.run_cli("search", "claim", "--limit", "invalid")
+        self.assertEqual((usage.returncode, usage.stdout), (2, ""))
+
+    def test_only_init_creates_a_database(self):
+        self.path = self.directory / "typo.sqlite"
+        self.assertIn("init", self.call("search", "anything", status=1)["error"])
+        self.assertFalse(self.path.exists())
+        help_result = self.run_cli("--help")
+        self.assertEqual(help_result.returncode, 0)
+        self.assertFalse(self.path.exists())
+        self.assertEqual(self.call("init"), {"database": str(self.path.resolve())})
+        self.path = Path(":memory:")
+        self.assertIn("persistent", self.call("init", status=1)["error"])
