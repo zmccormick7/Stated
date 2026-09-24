@@ -32,6 +32,19 @@ The same pattern supports company coverage, thesis reviews and financial model a
 | What could this disclosure change? | Connected conclusions and assumptions to reassess. |
 | What supports this forecast? | The research behind a model variable, including gaps in the evidence. |
 
+## Connect research to financial models
+
+Every forecast rests on a view of how a business works. PremiseDB lets agents connect model variables to the findings, evidence and unresolved questions behind that view.
+
+For example, a hypothetical forecast might assume that **80% of PowerFrame's backlog converts to revenue next year**. An agent can link that assumption to the delivery terms, findings about customer expansion plans, and open questions about grid connections. A new disclosure about a customer's project delay then gives the agent a path to an assumption worth revisiting and a financial model in which to assess the impact.
+
+The connection works in both directions:
+
+- **Research informs the model.** Trace new evidence to the assumptions and forecasts it could change.
+- **The model guides the research.** Start with an important assumption, inspect its basis and identify what still needs to be investigated.
+
+Your financial model can live in Excel, Python or another tool. PremiseDB's **Model** and **Variable** records connect it to the research graph. Calculations stay in your modeling tool; the graph preserves the reasoning behind the numbers. The MVP stores these references and relationships; your workflow supplies the integration with the modeling tool.
+
 ## Quickstart
 
 > **Early MVP.** The Python API supports storing, connecting and retrieving research today. Packaged agent integrations are planned. The API and database format are still evolving.
