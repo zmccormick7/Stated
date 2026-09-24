@@ -166,7 +166,7 @@ The goal is the same whether you guide one agent or coordinate many: knowledge a
 
 The working foundation lets agents store evidence, connect their findings and build on earlier research. The next layers are:
 
-- **Connected research retrieval:** assemble useful prior findings, evidence and open questions around a query.
+- **Connected research retrieval:** assemble useful prior findings, evidence and open questions around a query. The [retrieval evaluation](docs/retrieval-evaluation.md) measures each stage against the evidence Findings cite.
 - **Research workflows:** improve the CLI and skill through real company coverage and thesis reviews.
 - **Document preparation:** make it easier to bring filings, transcripts and other source material into the research workspace.
 
