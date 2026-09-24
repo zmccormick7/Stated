@@ -2,7 +2,7 @@
 
 [Back to PremiseDB](../README.md)
 
-[Records](#try-the-record-store) · [Links](#connect-existing-records) · [Sources](#ingest-source-text) · [CCH](#add-document-context) · [Reranking](#rerank-document-evidence) · [RSE](#retrieve-evidence) · [Record types](#what-the-graph-remembers)
+[Records](#try-the-record-store) · [Links](#connect-existing-records) · [Sources](#ingest-source-text) · [Citations](#cite-evidence) · [CCH](#add-document-context) · [Reranking](#rerank-document-evidence) · [RSE](#retrieve-evidence) · [Record types](#what-the-graph-remembers)
 
 Examples below build on the same `research.sqlite` database. Reranking and integrated retrieval use a configured provider; the other examples run locally.
 
@@ -79,6 +79,24 @@ The body and its SHA-256 are stored in SQLite for this first ingestion slice. Te
 `locate_source_text(id, quote, limit=10)` finds exact, nonoverlapping occurrences of a quotation and returns them in source order as `SourceSegment` objects with byte ranges suitable for citations and no document context. Matching compares UTF-8 bytes without whitespace, quotation-mark or Unicode normalization; no match returns an empty tuple. Blank quotes and limits outside 1–1,000 raise `ValueError`. The search reads the whole document into memory.
 
 Source descriptions and metadata remain editable. Captured text stays fixed so future citation offsets keep their meaning; ingest a separate Source for different text. This is evidence identity, not record edit history. Parsing, original-file storage and section context will be added in later increments. Ingestion currently holds one document's text in memory and makes no model calls.
+
+## Cite evidence
+
+```python
+with RecordStore("research.sqlite") as db:
+    finding = db.create(
+        "Finding", text="Utility approval gates construction.", author_id="alice",
+        attributes={"basis": "disclosed"},
+        citations=[{"source_id": source.id, "quote": "Utility approval is required"}],
+    )
+    assert finding.attributes["citations"] == [{"source_id": source.id, "start_byte": 0,
+                                                "end_byte": 28, "quote": "Utility approval is required"}]
+    assert db.connections(finding.id, relation="supported_by").links[0].to_id == source.id
+```
+
+`create` and `update` accept optional `citations`: an iterable of objects with a `source_id` and either an exact `quote` or a `start_byte`/`end_byte` range. A quote must occur exactly once, compared as with `locate_source_text`; add `start_byte` (or `end_byte`) to choose among repeated occurrences, and the error lists their offsets. A range without a quote is read from the source and must contain non-whitespace text. Citations are stored in order as `attributes["citations"]`, each with `source_id`, `start_byte`, `end_byte` and the exact `quote`.
+
+The record write and one `supported_by` link to each distinct cited Source, authored by the writer, commit in one transaction. Invalid or ambiguous citations raise `ValueError` and missing sources `KeyError`, before anything is written. Supplying `citations` together with a `citations` attribute raises `ValueError`. On `update`, citations replace the attribute and add any missing `supported_by` links; existing links are kept, because link deletion is not implemented. Without the argument, `attributes` behave as before and nothing is validated or linked.
 
 ## Split a source into passages
 
