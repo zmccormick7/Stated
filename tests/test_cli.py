@@ -50,9 +50,12 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("list", "--after", finding["id"], "--limit", "1"),
                          {"records": [question], "has_more": False})
         walked = self.call("expand", question["id"], "--relation", "raises")
-        self.assertEqual([(r["record"]["id"], r["depth"], [l["id"] for l in r["path"]]) for r in walked["reached"]],
-                         [(question["id"], 0, []), (finding["id"], 1, [link["id"]])])
-        self.assertEqual((walked["capped"], walked["has_more"]), ([], False))
+        self.assertEqual(walked["reached"][1], {
+            "id": finding["id"], "kind": "Finding", "text": finding["text"], "depth": 1,
+            "path": [{"id": link["id"], "from_id": finding["id"], "to_id": question["id"], "relation": "raises"}]})
+        self.assertEqual((walked["reached"][0]["depth"], walked["capped"], walked["has_more"]), (0, [], False))
+        full = self.call("expand", question["id"], "--relation", "raises", "--full")
+        self.assertEqual((full["reached"][1]["record"], full["reached"][1]["path"]), (finding, [link]))
         self.assertEqual(self.run_cli("expand", question["id"], "--depth", "3").returncode, 2)
         self.assertEqual(self.call("relations"),
                          [{"relation": "raises", "from_kind": "Finding", "to_kind": "Question", "links": 1}])
