@@ -68,6 +68,22 @@ class LinkTests(unittest.TestCase):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 self.db.list_records(**options)
 
+    def test_relation_usage_counts_links_by_relation_and_record_kinds(self):
+        self.assertEqual(self.db.relation_usage(), ())
+        question = self.db.create("Question", text="Q", author_id="alice")
+        for from_id, to_id, relation in ((self.a.id, self.b.id, "depends_on"), (self.c.id, self.b.id, "depends_on"),
+                                         (self.a.id, question.id, "raises"), (question.id, self.c.id, "depends_on"),
+                                         (question.id, self.a.id, "answered_by")):
+            self.db.create_link(from_id, to_id, relation, author_id="alice")
+        usage = [(u.relation, u.from_kind, u.to_kind, u.links) for u in self.db.relation_usage()]
+        self.assertEqual(usage, [("answered_by", "Question", "Finding", 1), ("depends_on", "Finding", "Finding", 2),
+                                 ("depends_on", "Question", "Finding", 1), ("raises", "Finding", "Question", 1)])
+        link = self.db.connections(question.id, relation="depends_on").links[0]
+        self.db.update_link(link.id, from_id=self.a.id, to_id=self.b.id, relation="updates", author_id="bob")
+        self.assertIn(("updates", "Finding", "Finding", 1),
+                      [(u.relation, u.from_kind, u.to_kind, u.links) for u in self.db.relation_usage()])
+        self.assertNotIn("Question", {u.from_kind for u in self.db.relation_usage() if u.relation == "depends_on"})
+
     def test_update_retargets_in_place_and_survives_reopening(self):
         first = self.db.create_link(self.a.id, self.b.id, "about", author_id="alice")
         before = datetime.now(UTC)

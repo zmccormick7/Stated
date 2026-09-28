@@ -52,6 +52,7 @@ def _parser():
     connections.add_argument("--direction", choices=("both", "in", "out"), default="both")
     connections.add_argument("--relation")
     connections.add_argument("--limit", type=int, default=100)
+    command("relations", "relation_usage", "Count links by relation and the record kinds they connect.")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--kind")
     listing.add_argument("--author", dest="author_id")
