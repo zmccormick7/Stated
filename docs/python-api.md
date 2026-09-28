@@ -70,7 +70,7 @@ with RecordStore("research.sqlite") as db:
 
 The optional `kind` filter applies before the result limit. The default limit is 10 and the maximum is 1,000; results have no pagination or truncation flag yet. Invalid kinds, limits or non-string queries raise `ValueError`. SQLite triggers keep the index synchronized in the same transaction as each record write, so updated text replaces earlier searchable text immediately after commit.
 
-This uses schema format 9. Databases created by earlier implementations must be recreated; no migration is performed.
+This uses schema format 10. Databases created by earlier implementations must be recreated; no migration is performed.
 
 ## Ingest source text
 
@@ -111,6 +111,10 @@ with RecordStore("research.sqlite") as db:
 `create` and `update` accept optional `citations`: an iterable of objects with a `source_id` and either an exact `quote` or a `start_byte`/`end_byte` range. A quote must occur exactly once, compared as with `locate_source_text`; add `start_byte` (or `end_byte`) to choose among repeated occurrences, and the error lists their offsets. A range without a quote is read from the source and must contain non-whitespace text. Citations are stored in order as `attributes["citations"]`, each with `source_id`, `start_byte`, `end_byte` and the exact `quote`.
 
 The record write and one `supported_by` link to each distinct cited Source, authored by the writer, commit in one transaction. Invalid or ambiguous citations raise `ValueError` and missing sources `KeyError`, before anything is written. Supplying `citations` together with a `citations` attribute raises `ValueError`. On `update`, citations replace the attribute and add any missing `supported_by` links; existing links are kept, because link deletion is not implemented. Without the argument, `attributes` behave as before and nothing is validated or linked.
+
+`cited_by(source_id, start_byte=0, end_byte=None, limit=100)` answers the reverse question: which records cite any part of a half-open byte range of a Source. It returns a `CitationPage` of `Citation` objects, each with the citing `record`, `source_id` and the cited `start_byte` and `end_byte`, in source order. One record appears once per overlapping citation. `has_more` reports truncation; the limit is 1–1,000. The whole document is the default range. Ranges outside the text raise `ValueError`, and IDs without ingested text raise `KeyError`.
+
+The `citations` table behind it is derived from each record's `citations` attribute. Triggers rewrite it in the same transaction as every record write, including `update`, `patch` and attributes supplied directly. Entries that do not name an ingested Source and a valid integer range within its text are kept in the attribute but not indexed.
 
 ## Contribute several records at once
 

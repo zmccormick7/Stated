@@ -115,3 +115,40 @@ CREATE TRIGGER document_context_delete AFTER DELETE ON document_context BEGIN
     INSERT INTO passages_fts(rowid, header, text)
         SELECT passage_key, header, text FROM passage_search_content WHERE source_key = old.source_key;
 END;
+
+-- Reverse citations: which records cite which source ranges. Derived from each record's
+-- attributes.citations and rewritten in the same transaction as every record write.
+-- Entries that do not name an ingested Source and a valid byte range are not indexed.
+CREATE TABLE citations (
+    record_key INTEGER NOT NULL REFERENCES records (record_key),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    source_key INTEGER NOT NULL REFERENCES source_content (source_key),
+    start_byte INTEGER NOT NULL CHECK (start_byte >= 0),
+    end_byte INTEGER NOT NULL CHECK (end_byte > start_byte),
+    PRIMARY KEY (record_key, ordinal)
+);
+CREATE INDEX citations_by_source ON citations (source_key, start_byte);
+
+CREATE VIEW record_citations AS
+    -- Read fields by path from the whole document: non-object entries yield NULL, not errors.
+    SELECT r.record_key, c.key AS ordinal, s.source_key,
+           json_extract(r.attributes, c.fullkey || '.start_byte') AS start_byte,
+           json_extract(r.attributes, c.fullkey || '.end_byte') AS end_byte
+    FROM records r JOIN json_each(r.attributes, '$.citations') c
+    JOIN records cited ON cited.id = json_extract(r.attributes, c.fullkey || '.source_id')
+    JOIN source_content s ON s.source_key = cited.record_key
+    WHERE json_type(r.attributes, '$.citations') = 'array' AND c.type = 'object'
+      AND json_type(r.attributes, c.fullkey || '.start_byte') = 'integer'
+      AND json_type(r.attributes, c.fullkey || '.end_byte') = 'integer'
+      AND json_extract(r.attributes, c.fullkey || '.start_byte') >= 0
+      AND json_extract(r.attributes, c.fullkey || '.end_byte')
+          > json_extract(r.attributes, c.fullkey || '.start_byte')
+      AND json_extract(r.attributes, c.fullkey || '.end_byte') <= length(s.text_utf8);
+
+CREATE TRIGGER citations_insert AFTER INSERT ON records BEGIN
+    INSERT INTO citations SELECT * FROM record_citations WHERE record_key = new.record_key;
+END;
+CREATE TRIGGER citations_update AFTER UPDATE OF attributes ON records BEGIN
+    DELETE FROM citations WHERE record_key = old.record_key;
+    INSERT INTO citations SELECT * FROM record_citations WHERE record_key = new.record_key;
+END;

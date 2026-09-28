@@ -14,7 +14,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 9
+_SCHEMA_VERSION = 10
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,20 @@ class Connections:
 @dataclass(frozen=True)
 class RecordPage:
     records: tuple[Record, ...]
+    has_more: bool
+
+
+@dataclass(frozen=True)
+class Citation:
+    record: Record  # The citing record's current contents.
+    source_id: str
+    start_byte: int
+    end_byte: int
+
+
+@dataclass(frozen=True)
+class CitationPage:
+    citations: tuple[Citation, ...]
     has_more: bool
 
 
@@ -555,6 +569,32 @@ class RecordStore:
             (start, kind, kind, author_id, author_id, limit + 1),
         ).fetchall()
         return RecordPage(tuple(self._decode_record(row) for row in rows[:limit]), len(rows) > limit)
+
+    def cited_by(self, source_id: str, *, start_byte: int = 0, end_byte: int | None = None,
+                 limit: int = 100) -> CitationPage:
+        """Records whose citations overlap a half-open byte range of a source, in source order."""
+        if type(start_byte) is not int or (end_byte is not None and type(end_byte) is not int):
+            raise ValueError("byte offsets must be integers")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer from 1 to 1000")
+        source_key = self._source_key(source_id)
+        length = self._db.execute("SELECT length(text_utf8) FROM source_content WHERE source_key = ?",
+                                  (source_key,)).fetchone()[0]
+        end_byte = length if end_byte is None else end_byte
+        if not 0 <= start_byte < end_byte <= length:
+            raise ValueError("byte range is outside source text")
+        rows = self._db.execute(
+            """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.updated_at,
+                      c.start_byte AS cited_start, c.end_byte AS cited_end
+               FROM citations c JOIN records r ON r.record_key = c.record_key
+               WHERE c.source_key = ? AND c.start_byte < ? AND c.end_byte > ?
+               ORDER BY c.start_byte, c.end_byte, c.record_key, c.ordinal LIMIT ?""",
+            (source_key, end_byte, start_byte, limit + 1),
+        ).fetchall()
+        citations = tuple(Citation(Record(row["id"], row["kind"], row["text"], json.loads(row["attributes"]),
+                                          row["author_id"], row["updated_at"]),
+                                   source_id, row["cited_start"], row["cited_end"]) for row in rows[:limit])
+        return CitationPage(citations, len(rows) > limit)
 
     def relation_usage(self) -> tuple[RelationUsage, ...]:
         """Count current links by relation and the kinds of record they connect."""

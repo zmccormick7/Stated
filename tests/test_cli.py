@@ -125,6 +125,10 @@ class CLITests(unittest.TestCase):
         self.assertEqual(finding["attributes"]["citations"],
                          [{"source_id": sid, "start_byte": 11, "end_byte": 36, "quote": "Grid approval is pending."}])
         self.assertEqual([link["to_id"] for link in self.call("connections", finding["id"])["links"]], [sid])
+        cited = self.call("cited-by", sid, "--start-byte", "20", "--end-byte", "24")
+        self.assertEqual(cited, {"citations": [{"record": finding, "source_id": sid, "start_byte": 11, "end_byte": 36}],
+                                 "has_more": False})
+        self.assertEqual(self.call("cited-by", sid, "--end-byte", "11")["citations"], [])
 
     def test_bad_inputs_fail_without_writes_or_tracebacks(self):
         for payload in ([], {"text": "Missing author"}, {"text": "Claim", "author_id": "a", "kind": "Entity"},
