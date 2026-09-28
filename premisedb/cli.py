@@ -70,6 +70,10 @@ def _parser():
                      "Find exact UTF-8 byte ranges of a quotation for citations; use - to read the quote "
                      "from stdin.", "source_id", "quote")
     locate.add_argument("--limit", type=int, default=10)
+    cited = command("cited-by", "cited_by", "Records citing any part of a source byte range, in source order.", "source_id")
+    cited.add_argument("--start-byte", type=int, default=0)
+    cited.add_argument("--end-byte", type=int)
+    cited.add_argument("--limit", type=int, default=100)
     chunk = command("chunk", "chunk_source", "Replace passages and return their count; enables document search.", "source_id")
     chunk.add_argument("--max-chars", type=int, default=2000)
     documents = command("search-documents", "search_documents", "Find relevant source excerpts for a research question.", "query")

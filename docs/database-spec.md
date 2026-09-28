@@ -1,6 +1,6 @@
 # PremiseDB database: proposed v0 design
 
-**Status: current-state design.** Records and links store current contents and one database-assigned UTC `updated_at` timestamp. Updates replace earlier values; there are no history tables, revision counters, endpoint pins, audit trails or historical reads. The implementation supports record/link operations, lexical record and document search, caller-supplied document-level CCH, bounded directional lookups, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. The richer retrieval interface below remains proposed. SQLite and Faiss remain selected, with no performance claims. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
+**Status: current-state design.** Records and links store current contents and one database-assigned UTC `updated_at` timestamp. Updates replace earlier values; there are no history tables, revision counters, endpoint pins, audit trails or historical reads. The implementation supports record/link operations, lexical record and document search, caller-supplied document-level CCH, bounded directional lookups, a reverse-citation index from source ranges to citing records, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. The richer retrieval interface below remains proposed. SQLite and Faiss remain selected, with no performance claims. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
 
 ## 1. What the database owns
 

@@ -35,6 +35,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. JSON k
 | `relations` | Count links by relation and the record kinds they connect. |
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |
 | `source-text SOURCE_ID [--start-byte N] [--end-byte N]` | Read exact source text as a JSON string. |
+| `cited-by SOURCE_ID [--start-byte N] [--end-byte N] [--limit N]` | List records citing any part of a source range. |
 | `locate SOURCE_ID QUOTE\|- [--limit N]` | Find exact byte ranges of a quotation for citations. |
 | `chunk SOURCE_ID [--max-chars N]` | Split source text into searchable passages. |
 | `search-documents QUERY [--source-id ID] [--limit N] [--max-tokens N]` | Return relevant excerpts with citations; repeat `--source-id` to scope to several sources. |

@@ -61,7 +61,7 @@ class RecordStoreTests(unittest.TestCase):
                 self.store.create("Finding", text="x", author_id="alice", attributes=attributes)
 
     def test_incompatible_schema_is_rejected_without_changing_file(self):
-        for version in (1, 2, 3, 4, 5, 6, 7, 8, 10):
+        for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 11):
             with self.subTest(version=version):
                 path = self.path.with_name(f"schema-{version}.sqlite")
                 with closing(sqlite3.connect(path, isolation_level=None)) as sql:

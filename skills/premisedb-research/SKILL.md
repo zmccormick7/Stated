@@ -20,6 +20,7 @@ Run `premisedb --help` or `premisedb COMMAND --help` for arguments and write-pay
 - Follow evidence, contradictory findings and material open questions even when their wording differs from the original query. Choose connections that could change the answer rather than expanding every branch.
 - To inspect document evidence, ask `search-documents "RESEARCH QUESTION"`, optionally scoped with `--source-id SOURCE_ID`. It returns selected excerpts with exact source locators and separate document context. Use those excerpts to assess the claim; a document search can return no suitable evidence.
 - To survey what exists, `list --kind Question` (optionally `--author ID`) pages through records in creation order; keep calling with `--after LAST_ID` while `has_more` is true.
+- To find what the graph already concludes from a passage, run `cited-by SOURCE_ID --start-byte START --end-byte END` with a `search-documents` excerpt's range. It lists the records citing any part of it; follow their `connections` to the Findings, Variables and Questions that depend on them. A passage nobody has cited returns nothing, which is itself a sign of unexamined evidence.
 - Results are bounded: `connections` and `list` expose `has_more`; searches return limited results without a completeness flag. Narrow the question, scope or relationship when needed. Do not claim an exhaustive graph review from a truncated lookup.
 
 ```bash
