@@ -54,6 +54,15 @@ def _parser():
     connections.add_argument("--direction", choices=("both", "in", "out"), default="both")
     connections.add_argument("--relation")
     connections.add_argument("--limit", type=int, default=100)
+    walk = command("expand", "expand", "Walk links from seed records, one or two hops, reporting each record's path.")
+    walk.add_argument("seed_ids", nargs="+", metavar="SEED_ID")
+    walk.add_argument("--depth", type=int, choices=(1, 2), default=1)
+    walk.add_argument("--direction", choices=("both", "in", "out"), default="both")
+    walk.add_argument("--relation", dest="relations", action="append", help="Follow only this relation; repeatable.")
+    walk.add_argument("--limit", type=int, default=100, help="Maximum records reached beyond the seeds.")
+    walk.add_argument("--per-record", dest="per_record_limit", type=int, default=50,
+                      help="Maximum links followed from any one record.")
+    walk.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     command("relations", "relation_usage", "Count links by relation and the record kinds they connect.")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--kind")
@@ -100,6 +109,19 @@ def _search_documents(db, options):
     return [{**asdict(excerpt.segment), "token_count": excerpt.token_count} for excerpt in result.excerpts]
 
 
+def _expand(db, options):
+    """Previews by default: ID, kind, the start of the text, depth and the linking path."""
+    full = options.pop("full")
+    result = db.expand(**options)
+    if full:
+        return result
+    preview = lambda text: text if len(text) <= 200 else text[:199] + "…"
+    return {"reached": [{"id": r.record.id, "kind": r.record.kind, "text": preview(r.record.text), "depth": r.depth,
+                         "path": [{"id": link.id, "from_id": link.from_id, "to_id": link.to_id,
+                                   "relation": link.relation} for link in r.path]} for r in result.reached],
+            "capped": list(result.capped), "has_more": result.has_more}
+
+
 def main(argv=None):
     options = vars(_parser().parse_args(argv))
     path = Path(options.pop("db"))
@@ -125,6 +147,8 @@ def main(argv=None):
         with RecordStore(path) as db:
             if method == "search_documents":
                 result = _search_documents(db, options)
+            elif method == "expand":
+                result = _expand(db, options)
             else:
                 result = (getattr(db, method)(**options, **payload) if method
                           else {"database": str(path.resolve())})

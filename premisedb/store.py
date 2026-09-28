@@ -46,6 +46,20 @@ class Connections:
 
 
 @dataclass(frozen=True)
+class Reached:
+    record: Record
+    depth: int  # 0 for a seed.
+    path: tuple[Link, ...]  # Links from a seed to this record, in traversal order.
+
+
+@dataclass(frozen=True)
+class Expansion:
+    reached: tuple[Reached, ...]  # Seeds first, then breadth-first; each record once.
+    capped: tuple[str, ...]  # Records with more matching links than per_record_limit.
+    has_more: bool  # The overall limit stopped the walk.
+
+
+@dataclass(frozen=True)
 class RecordPage:
     records: tuple[Record, ...]
     has_more: bool
@@ -531,26 +545,91 @@ class RecordStore:
 
         has_more reports truncation.
         """
-        if direction not in ("out", "in", "both"):
-            raise ValueError("direction must be 'out', 'in' or 'both'")
-        if type(limit) is not int or not 1 <= limit <= 1000:
-            raise ValueError("limit must be an integer from 1 to 1000")
-        key = self._record_key(record_id)
-        where = {"out": "l.from_key = ?", "in": "l.to_key = ?", "both": "(l.from_key = ? OR l.to_key = ?)"}
-        parameters: list[object] = [key, key] if direction == "both" else [key]
-        sql = _LINK_SELECT + f" WHERE {where[direction]}"
-        if relation is not None:
-            sql += " AND l.relation = ?"
-            parameters.append(relation)
-        rows = self._db.execute(sql + " ORDER BY l.link_key LIMIT ?",
-                                (*parameters, limit + 1)).fetchall()
-        links = tuple(Link(**dict(row)) for row in rows[:limit])
+        self._check_walk(direction, limit)
+        links, has_more = self._links_of(record_id, direction, None if relation is None else (relation,), limit)
         # Records are never deleted, so every linked record can be read.
         ids = dict.fromkeys(link.from_id if link.to_id == record_id else link.to_id for link in links)
         found = {row["id"]: self._decode_record(row) for row in self._db.execute(
             """SELECT id, kind, text, attributes, author_id, updated_at FROM records
                WHERE id IN (SELECT value FROM json_each(?))""", (json.dumps(list(ids)),))}
-        return Connections(links, len(rows) > limit, {record: found[record] for record in ids})
+        return Connections(links, has_more, {record: found[record] for record in ids})
+
+    def expand(self, seed_ids: Iterable[str], *, depth: int = 1, direction: str = "both",
+               relations: Iterable[str] | None = None, limit: int = 100,
+               per_record_limit: int = 50) -> Expansion:
+        """Walk current links breadth-first from seed records, at most two hops, in one snapshot.
+
+        Each record is reported once, at its shortest depth, with the first path found. At most
+        per_record_limit links to records not yet reached are followed from any one record; records
+        with more are listed as capped.
+        """
+        if isinstance(seed_ids, (str, bytes)):
+            raise ValueError("seed_ids must be a list of record IDs")
+        seeds = tuple(dict.fromkeys(seed_ids))
+        if not 1 <= len(seeds) <= 100 or any(not isinstance(seed, str) for seed in seeds):
+            raise ValueError("seed_ids must contain 1 to 100 record IDs")
+        if type(depth) is not int or depth not in (1, 2):
+            raise ValueError("depth must be 1 or 2")
+        if relations is not None:
+            if isinstance(relations, (str, bytes)):
+                raise ValueError("relations must be a list of relation names")
+            relations = tuple(relations)
+            if not relations or any(not isinstance(name, str) or not name.strip() for name in relations):
+                raise ValueError("relations must be a nonempty list of relation names")
+        self._check_walk(direction, limit)
+        if type(per_record_limit) is not int or not 1 <= per_record_limit <= 1000:
+            raise ValueError("per_record_limit must be an integer from 1 to 1000")
+        with self._db:
+            self._db.execute("BEGIN")  # One read snapshot for the whole walk.
+            reached = {seed: Reached(self.read(seed), 0, ()) for seed in seeds}
+            frontier, capped, has_more = list(seeds), [], False
+            for level in range(1, depth + 1):
+                following = []
+                for node in frontier:
+                    links, more = self._links_of(node, direction, relations, per_record_limit, exclude=reached)
+                    if more:
+                        capped.append(node)
+                    for link in links:
+                        other = link.from_id if link.to_id == node else link.to_id
+                        if other in reached:  # Reached earlier in this level.
+                            continue
+                        if len(reached) - len(seeds) >= limit:
+                            has_more = True
+                            break
+                        reached[other] = Reached(self.read(other), level, reached[node].path + (link,))
+                        following.append(other)
+                    if has_more:
+                        break
+                if has_more:
+                    break
+                frontier = following
+        return Expansion(tuple(reached.values()), tuple(capped), has_more)
+
+    @staticmethod
+    def _check_walk(direction: str, limit: int) -> None:
+        if direction not in ("out", "in", "both"):
+            raise ValueError("direction must be 'out', 'in' or 'both'")
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("limit must be an integer from 1 to 1000")
+
+    def _links_of(self, record_id: str, direction: str, relations: tuple[str, ...] | None,
+                  limit: int, exclude: Iterable[str] = ()) -> tuple[tuple[Link, ...], bool]:
+        """Links touching a record in creation order, and whether more than limit matched.
+
+        Links whose other end is in exclude are skipped before the limit applies.
+        """
+        key = self._record_key(record_id)
+        where = {"out": "l.from_key = ?", "in": "l.to_key = ?", "both": "(l.from_key = ? OR l.to_key = ?)"}
+        parameters: list[object] = [key, key] if direction == "both" else [key]
+        sql = _LINK_SELECT + f" WHERE {where[direction]}"
+        if relations is not None:
+            sql += " AND l.relation IN (SELECT value FROM json_each(?))"
+            parameters.append(json.dumps(relations))
+        if exclude:
+            sql += " AND (CASE WHEN l.from_key = ? THEN t.id ELSE f.id END) NOT IN (SELECT value FROM json_each(?))"
+            parameters += [key, json.dumps(list(exclude))]
+        rows = self._db.execute(sql + " ORDER BY l.link_key LIMIT ?", (*parameters, limit + 1)).fetchall()
+        return tuple(Link(**dict(row)) for row in rows[:limit]), len(rows) > limit
 
     def list_records(self, *, kind: str | None = None, author_id: str | None = None,
                      after: str | None = None, limit: int = 100) -> RecordPage:
