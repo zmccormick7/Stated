@@ -24,6 +24,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. JSON k
 | `create KIND --input FILE` | Create one of the six record types. |
 | `get ID` | Read current record contents. |
 | `update ID --input FILE` | Replace text and attributes, retaining identity and kind. |
+| `patch ID --input FILE` | Change text or some top-level attributes, keeping the rest. |
 | `search QUERY [--kind KIND] [--limit N]` | Search record text. |
 | `contribute --input FILE` | Create several records and links in one transaction. |
 | `link FROM TO RELATION --input FILE` | Connect two existing records. |
@@ -48,7 +49,7 @@ For `contribute`, supply `author_id`, a `records` list and a `links` list. Each 
 
 For `ingest`, supply `description`, `author_id` and optional `attributes`; the separate text file is read without newline or Unicode normalization. Ingestion creates a new Source on every call and does not chunk it automatically. For `set-context`, supply `title`, `summary`, `author_id` and optional `provenance`.
 
-Updates replace complete contents: omitted attributes/provenance become `{}`, and an omitted link explanation becomes empty. Preserve metadata you intend to keep. Each command uses the existing store operation and its transaction semantics; a series of commands is not one transaction. After an interrupted create or ingestion, check whether it committed before retrying.
+Updates replace complete contents: omitted attributes/provenance become `{}`, and an omitted link explanation becomes empty. Preserve metadata you intend to keep. For `patch`, supply `author_id` and any of `text`, `attributes` (keys to set), `remove` (keys to delete) and `citations`; unnamed attributes are kept. Each command uses the existing store operation and its transaction semantics; a series of commands is not one transaction. After an interrupted create or ingestion, check whether it committed before retrying.
 
 Record searches return at most 10 hits by default. Connections cover both directions by default, return up to 100 links with the records at their other ends, and report `has_more`. `list` returns up to 100 records with `has_more`; continue with `--after` and the last ID. All three limits have a maximum of 1,000. The [research skill](../skills/premisedb-research/SKILL.md) explains how to use these operations during an investigation.
 

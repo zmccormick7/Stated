@@ -422,6 +422,40 @@ class RecordStore:
             record = self.read(record_id)
         return record
 
+    def patch(self, record_id: str, *, author_id: str, text: str | None = None,
+              attributes: dict[str, object] | None = None, remove: Iterable[str] = (),
+              citations: Iterable[dict[str, object]] | None = None) -> Record:
+        """Change only the given text and top-level attributes; the rest of the record is kept.
+
+        The current record is read and rewritten in one transaction, so concurrent patches to
+        different attributes are all kept. Removing an absent attribute changes nothing.
+        """
+        if attributes is not None and not isinstance(attributes, dict):
+            raise ValueError("attributes must be a JSON object")
+        if isinstance(remove, (str, bytes)):
+            raise ValueError("remove must be a list of attribute names")
+        remove = tuple(remove)
+        if any(not isinstance(key, str) for key in remove):
+            raise ValueError("remove must be a list of attribute names")
+        if text is None and not attributes and not remove and citations is None:
+            raise ValueError("patch needs text, attributes, remove or citations")
+        changes, source_ids = self._cite(attributes or {}, citations)
+        if set(changes) & set(remove):
+            raise ValueError("an attribute cannot be both set and removed")
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            current = self.read(record_id)
+            merged = {key: value for key, value in current.attributes.items() if key not in remove}
+            self._db.execute(
+                """UPDATE records SET text = ?, attributes = ?, author_id = ?, updated_at = ?
+                   WHERE id = ?""",
+                (current.text if text is None else text, self._encode({**merged, **changes}),
+                 author_id, datetime.now(UTC).isoformat(), record_id),
+            )
+            self._link_sources(record_id, source_ids, author_id)
+            record = self.read(record_id)
+        return record
+
     def read_link(self, link_id: str) -> Link:
         row = self._db.execute(_LINK_SELECT + " WHERE l.id = ?", (link_id,)).fetchone()
         if row is None:

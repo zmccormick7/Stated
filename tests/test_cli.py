@@ -56,6 +56,13 @@ class CLITests(unittest.TestCase):
         self.assertEqual((changed["id"], changed["attributes"], changed["author_id"]),
                          (finding["id"], {}, "agent-b"))
         self.assertEqual(self.call("search", "backlog"), [])
+        patched = self.call("patch", finding["id"], "--input", "-", payload={
+            "author_id": "agent-c", "attributes": {"basis": "inference", "status": "draft"}, "remove": ["absent"]})
+        self.assertEqual((patched["text"], patched["attributes"], patched["author_id"]),
+                         ("PowerFrame ramp delayed.", {"basis": "inference", "status": "draft"}, "agent-c"))
+        changed = self.call("patch", finding["id"], "--input", "-", payload={"author_id": "agent-b", "remove": ["status"]})
+        self.assertEqual(changed["attributes"], {"basis": "inference"})
+        self.call("patch", finding["id"], "--input", "-", payload={"author_id": "agent-b"}, status=1)
         self.call("init")  # Opening an existing workspace must retain its records.
         self.assertEqual(self.call("get", finding["id"]), changed)
 
