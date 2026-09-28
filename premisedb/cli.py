@@ -36,6 +36,8 @@ def _parser():
     command("get", "read", "Read a current record.", "record_id")
     command("update", "update", "Replace a record's text and attributes in full.",
             "record_id", payload=record)
+    command("patch", "patch", "Change text or some top-level attributes, keeping the rest.", "record_id",
+            payload="author_id, optional text, attributes (keys to set), remove (keys to delete), citations")
     search = command("search", "search_records", "Search record text; any query word can match.", "query")
     search.add_argument("--kind")
     search.add_argument("--limit", type=int, default=10)
