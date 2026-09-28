@@ -49,6 +49,8 @@ class CLITests(unittest.TestCase):
                          {"records": [question], "has_more": False})
         self.assertEqual(self.call("list", "--after", finding["id"], "--limit", "1"),
                          {"records": [question], "has_more": False})
+        self.assertEqual(self.call("relations"),
+                         [{"relation": "raises", "from_kind": "Finding", "to_kind": "Question", "links": 1}])
         changed = self.call("update", finding["id"], "--input", "-",
                             payload={"text": "PowerFrame ramp delayed.", "author_id": "agent-b"})
         self.assertEqual((changed["id"], changed["attributes"], changed["author_id"]),

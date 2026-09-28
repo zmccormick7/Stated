@@ -52,6 +52,14 @@ class RecordPage:
 
 
 @dataclass(frozen=True)
+class RelationUsage:
+    relation: str
+    from_kind: str
+    to_kind: str
+    links: int
+
+
+@dataclass(frozen=True)
 class Contribution:
     records: dict[str, Record]  # Keyed by the caller's ref.
     links: tuple[Link, ...]  # Explicit links only; citation links are not repeated here.
@@ -513,6 +521,15 @@ class RecordStore:
             (start, kind, kind, author_id, author_id, limit + 1),
         ).fetchall()
         return RecordPage(tuple(self._decode_record(row) for row in rows[:limit]), len(rows) > limit)
+
+    def relation_usage(self) -> tuple[RelationUsage, ...]:
+        """Count current links by relation and the kinds of record they connect."""
+        rows = self._db.execute(
+            """SELECT l.relation, f.kind AS from_kind, t.kind AS to_kind, count(*) AS links
+               FROM links l JOIN records f ON f.record_key = l.from_key
+               JOIN records t ON t.record_key = l.to_key
+               GROUP BY l.relation, f.kind, t.kind ORDER BY l.relation, links DESC, f.kind, t.kind""")
+        return tuple(RelationUsage(**dict(row)) for row in rows)
 
     def _cite(self, attributes: dict[str, object] | None,
               citations: Iterable[dict[str, object]] | None) -> tuple[dict[str, object] | None, tuple[str, ...]]:

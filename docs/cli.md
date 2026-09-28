@@ -31,6 +31,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. JSON k
 | `update-link ID --input FILE` | Replace a link's endpoints, relation and explanation. |
 | `connections ID [--direction both\|in\|out] [--relation NAME] [--limit N]` | Inspect one-hop links and the records they reach. |
 | `list [--kind KIND] [--author ID] [--after ID] [--limit N]` | List records in creation order. |
+| `relations` | Count links by relation and the record kinds they connect. |
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |
 | `source-text SOURCE_ID [--start-byte N] [--end-byte N]` | Read exact source text as a JSON string. |
 | `locate SOURCE_ID QUOTE\|- [--limit N]` | Find exact byte ranges of a quotation for citations. |
