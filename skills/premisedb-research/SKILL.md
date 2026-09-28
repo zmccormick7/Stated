@@ -66,8 +66,9 @@ Use these names so other agents can follow and filter your links. Link from the 
 | --- | --- | --- |
 | `about` | Finding, Question or Model → Entity | The record concerns this company, product, facility or market. |
 | `supported_by` | Finding or other record → Source | Cited evidence. Citations add this link automatically. |
-| `depends_on` | Finding → Finding; Variable → Finding or Variable | The conclusion or value rests on the target: evidence for a model input, an input of a model output, or another model's output used as an input. |
+| `depends_on` | Finding or Variable → Finding or Variable | The conclusion or value rests on the target: evidence for a model input, an input of a model output, another model's output used as an input, or the model outputs an inference is drawn from. |
 | `contradicts` | Finding → Finding | The two conflict. Keep both current until the conflict is resolved. |
+| `corroborates` | Finding → Finding | Separate evidence for the same claim or figure, such as a second source reporting it. |
 | `updates` | Finding → Finding | Newer figures for the same measure, such as a later quarter or revised guidance. The older Finding stays true of its own date. |
 | `qualifies` | Finding → Finding or Variable | Adds a condition, scope limit or caveat without contradicting the target. |
 | `raises` | Any record → Question | Answering the Question could change this record. |
@@ -76,7 +77,7 @@ Use these names so other agents can follow and filter your links. Link from the 
 | `in_model` | Variable → Model | The Variable is an input or output of that model. |
 | `shares_driver` | Variable → Variable in another model | Both move with the same underlying factor, though neither is computed from the other. Name the factor in the explanation. |
 
-Use `depends_on` only for real dependence; for evidence that bears on a record without determining it, use `qualifies` or a Question. `premisedb relations` shows which relations the workspace uses, between which record kinds, and how often. When none of these fits, first reuse a name already in use for the same meaning. Otherwise choose a clear new name and describe it in the workspace's instructions so others use it consistently.
+Use `depends_on` only for real dependence; for evidence that bears on a record without determining it, use `corroborates` when it confirms the target, `qualifies` when it adds a condition or caveat, or a Question. `premisedb relations` shows which relations the workspace uses, between which record kinds, and how often. When none of these fits, first reuse a name already in use for the same meaning. Otherwise choose a clear new name and describe it in the workspace's instructions so others use it consistently.
 
 ## Revise
 
