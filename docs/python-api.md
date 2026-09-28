@@ -44,6 +44,14 @@ with RecordStore("research.sqlite") as db:
 
 `connections` returns links touching a record in creation order, with an optional exact relation filter. `direction` is `"both"` by default, or `"out"` or `"in"`; links keep their stored direction, so check `from_id` and `to_id`. `records` maps the ID at the other end of each returned link to that record's current contents, in first-seen order; a self-link maps the record to itself. The default limit is 100 links, the maximum is 1,000, and `has_more` reports omitted links in the chosen direction. Missing IDs raise `KeyError`; duplicate links and custom relation labels are allowed. Link pagination, recursive traversal and link deletion are not implemented yet.
 
+`expand(seed_ids, depth=1, direction="both", relations=None, limit=100, per_record_limit=50)` walks current links breadth-first from up to 100 seed records, one or two hops, and returns an `Expansion`:
+- `reached` lists each record once as a `Reached(record, depth, path)`, where `path` is the chain of links from a seed. Seeds come first at depth 0, then records in the order reached, each at its shortest depth with the first path found.
+- `relations` restricts every hop to the named relations. `direction` applies at every hop.
+- From any one record, at most `per_record_limit` links to records not yet reached are followed; records with more appear in `capped`, so hubs such as a layer Entity cannot flood the walk.
+- `has_more` reports that `limit` (records beyond the seeds, 1–1,000) stopped the walk.
+
+The walk reads one consistent snapshot. Unbounded recursion and path finding are not provided.
+
 `relation_usage()` returns a `RelationUsage` for each combination of relation, source record kind and target record kind among current links, with its link count, ordered by relation, then by count. Agents use it to reuse the relation names a workspace already has. The database does not restrict relation labels; the [research skill](../skills/premisedb-research/SKILL.md#relations) defines the standard vocabulary.
 
 ## List records
