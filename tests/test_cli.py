@@ -111,18 +111,29 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("list", "--kind", "Variable", "--full")["records"], [variable])
 
     def test_recall_returns_records_evidence_and_issues(self):
-        finding = self.create("Finding", "Backlog may slip.")
+        text = "A€ backlog note. Customers may defer deliveries."
+        source_file = self.directory / "note.txt"
+        source_file.write_bytes(text.encode("utf-8"))
+        source = self.call("ingest", str(source_file), "--input", "-", payload={"description": "Note", "author_id": "agent-a"})
+        finding = self.call("create", "Finding", "--input", "-", payload={
+            "text": "Backlog may slip.", "author_id": "agent-a", "attributes": {"basis": "disclosed"},
+            "citations": [{"source_id": source["id"], "quote": "Customers may defer deliveries."}]})
         question = self.create("Question", "Can customers defer?")
-        link = self.call("link", finding["id"], question["id"], "raises", "--input", "-", payload={"author_id": "agent-a"})
+        self.call("link", finding["id"], question["id"], "raises", "--input", "-", payload={"author_id": "agent-a"})
         result = self.call("recall", "backlog", "--max-records", "5")
-        self.assertEqual([(r["id"], r["path"]) for r in result["records"]],
-                         [(finding["id"], []), (question["id"], [{"id": link["id"], "from_id": finding["id"],
-                                                                  "to_id": question["id"], "relation": "raises"}])])
-        self.assertEqual(result["records"][0]["channels"], ["search"])
-        self.assertEqual([q["id"] for q in result["issues"]["open_questions"]], [question["id"]])
-        self.assertEqual((result["evidence"], result["issues"]["links"], result["frontier"]), ([], [], []))
+        entry, walked = result["records"]
+        self.assertEqual(entry, {"id": finding["id"], "kind": "Finding", "text": "Backlog may slip.", "basis": "disclosed",
+                                 "citations": 1, "entry_channels": ["search"]})
+        self.assertEqual(walked, {"id": question["id"], "kind": "Question", "text": "Can customers defer?",
+                                  "via": finding["id"][:8], "path": ["raises"]})
+        self.assertEqual(result["evidence"], [{"source_id": source["id"], "start_byte": 19, "end_byte": 50,
+                                               "quote": "Customers may defer deliveries.", "record_ids": [finding["id"][:8]]}])
+        self.assertEqual((result["issues"], result["frontier"]), ({"links": [], "open_questions": []}, []))
         seeded = self.call("recall", "nothing", "--seed", question["id"][:8], "--max-records", "1")
-        self.assertEqual((seeded["records"][0]["id"], seeded["coverage"]["truncated"]), (question["id"], True))
+        self.assertEqual(seeded["records"][0]["id"], question["id"])
+        self.assertEqual(seeded["frontier"], [{"id": finding["id"], "kind": "Finding", "text": "Backlog may slip."}])
+        self.assertTrue(seeded["coverage"]["truncated"])
+        self.assertEqual(seeded["issues"]["open_questions"], [])  # The Question is already a record.
         full = self.call("recall", "backlog", "--full")
         self.assertEqual(full["records"][0]["record"], finding)
 

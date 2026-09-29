@@ -12,6 +12,14 @@ premisedb --db research.sqlite search "PowerFrame backlog" --kind Finding
 
 `--db` is a global option placed **before** the command. Without it, the CLI uses `PREMISEDB_DB` when set, otherwise `research.sqlite` in the current directory. Set `PREMISEDB_DB` in the agent's environment so every session uses the shared workspace regardless of its working directory. Only `init` creates a missing database, and it safely reopens an existing one. Parent directories must exist. Use a persistent local file and the same path across agent sessions.
 
+`recall` output is also compact unless given `--full`:
+- entry points show `entry_channels`;
+- records reached by walking show a shorter text, `via` (the 8-character prefix of their entry point in the same result) and `path` as a list of relations;
+- `evidence` keeps one quote per record, up to 240 characters;
+- the `frontier` shows its first 10 records as short previews.
+
+The counts left out are reported in `coverage`.
+
 `search`, `list` and `expand` print previews unless given `--full`. A preview holds the record's `id`, `kind`, the first 200 characters of `text`, any of the attributes `basis`, `status`, `key` and `value`, and `citations` as a count when the record cites sources. Use `get` for a complete record. Successful operations print one JSON value to stdout: record/link/context objects, arrays of search results, a connection object with `links` and `has_more`, a passage count from `chunk`, a JSON string from `source-text`, or an absolute database path object from `init`. Missing context returns `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
 
 ## Commands
@@ -34,7 +42,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 | `connections ID [--direction both\|in\|out] [--relation NAME] [--limit N]` | Inspect one-hop links and the records they reach. |
 | `list [--kind KIND] [--author ID] [--where KEY=VALUE]... [--after ID] [--limit N] [--full]` | List records in creation order, optionally matching top-level attribute values. Previews by default. |
 | `expand SEED_ID... [--depth 1\|2] [--direction both\|in\|out] [--relation NAME]... [--limit N] [--per-record N] [--full]` | Walk links from seed records, reporting each record reached and its path. Previews by default; `--full` returns complete records. |
-| `recall QUERY [--seed ID]... [--max-records N] [--full]` | Assemble connected research: records with paths, cited evidence, disagreements, open Questions and a frontier. |
+| `recall QUERY [--seed ID]... [--max-records N] [--full]` | Assemble connected research: records with paths, cited evidence, disagreements, open Questions and a frontier. Compact by default, sized to stay within about 25 KB at 40 records. |
 | `relations` | Count links by relation and the record kinds they connect. |
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |
 | `source-text SOURCE_ID [--start-byte N] [--end-byte N]` | Read exact source text as a JSON string. |

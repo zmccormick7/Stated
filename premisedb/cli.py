@@ -158,20 +158,44 @@ def _compact(method, result):
             "capped": list(result.capped), "has_more": result.has_more}
 
 
+def _clip(text, limit):
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
 def _recall(db, options):
-    """Previews by default; evidence, issues and coverage are always included."""
+    """Compact by default, so the whole bundle fits in an agent's view; --full returns everything."""
     full = options.pop("full")
     result = recall(db, options.pop("query"), **options)
     if full:
         return result
-    link = lambda l: {"id": l.id, "from_id": l.from_id, "to_id": l.to_id, "relation": l.relation}
-    return {"records": [_preview(r.record) | {"score": round(r.score, 6), "entry_id": r.entry_id,
-                                              "channels": list(r.channels), "path": [link(l) for l in r.path]}
-                        for r in result.records],
-            "evidence": result.evidence,
-            "issues": {"links": [link(l) | {"explanation": l.explanation} for l in result.issue_links],
-                       "open_questions": [_preview(q) for q in result.open_questions]},
-            "frontier": list(result.frontier), "coverage": result.coverage}
+    shown = {r.record.id for r in result.records}
+    records = []
+    for r in result.records:
+        item = _preview(r.record)
+        if r.path:  # Reached by walking: shorter text, and how it was reached.
+            item["text"] = _clip(r.record.text, 100)
+            # via names a record in this bundle, so a short prefix is enough to match it or pass it back.
+            item |= {"via": r.entry_id[:8], "path": [link.relation for link in r.path]}
+        else:
+            item["entry_channels"] = list(r.channels)
+        records.append(item)
+    evidence, cited = [], set()
+    for item in result.evidence:  # One quote per record keeps the bundle small.
+        if not cited.issuperset(item.record_ids):
+            cited.update(item.record_ids)
+            evidence.append({"source_id": item.source_id, "start_byte": item.start_byte, "end_byte": item.end_byte,
+                             "quote": _clip(item.quote, 240), "record_ids": [i[:8] for i in item.record_ids]})
+    frontier = [db.read(record_id) for record_id in result.frontier[:10]]
+    return {"records": records,
+            "evidence": evidence,
+            "issues": {"links": [{"from_id": l.from_id, "to_id": l.to_id, "relation": l.relation,
+                                  "explanation": _clip(l.explanation, 200)} for l in result.issue_links],
+                       "open_questions": [{"id": q.id, "text": _clip(q.text, 120), "status": q.attributes.get("status", "open")}
+                                          for q in result.open_questions if q.id not in shown]},
+            "frontier": [{"id": f.id, "kind": f.kind, "text": _clip(f.text, 80)} for f in frontier],
+            "coverage": result.coverage | {"evidence_omitted": len(result.evidence) - len(evidence),
+                                           "frontier_omitted": result.coverage["frontier_omitted"]
+                                           + max(0, len(result.frontier) - 10)}}
 
 
 def main(argv=None):
