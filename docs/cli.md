@@ -20,7 +20,7 @@ premisedb --db research.sqlite search "PowerFrame backlog" --kind Finding
 
 The counts left out are reported in `coverage`.
 
-`search`, `list` and `expand` print previews unless given `--full`. A preview holds the record's `id`, `kind`, the first 200 characters of `text`, any of the attributes `basis`, `status`, `key` and `value`, and `citations` as a count when the record cites sources. Use `get` for a complete record. Successful operations print one JSON object to stdout. Lists are under a named key: `records` from `search` and `list`, `excerpts` from `search-documents`, `matches` from `locate` and `relations` from `relations`. `connections` prints `links`, `has_more` and a `records` list of the records at the other ends. `source-text` prints a JSON string, `chunk` a passage count, and missing context `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
+`search`, `list`, `expand`, `connections` and `links` print previews unless given `--full`. A preview holds the record's `id`, `kind`, the first 200 characters of `text`, any of the attributes `basis`, `status`, `key` and `value`, and `citations` as a count when the record cites sources. Previews from `search`, `list` and `expand` end with the last editor's `author_id`, `created_by` when the creator differs, and `updated_at`. `connections` adds to each link an `other` preview of the record at its other end, and `links` adds `from` and `to` previews; `--full` returns links alone, with `connections` also listing the complete records. Use `get` for a complete record. Successful operations print one JSON object to stdout. Lists are under a named key: `records` from `search` and `list`, `links` from `connections` and `links`, `excerpts` from `search-documents`, `matches` from `locate` and `relations` from `relations`. `source-text` prints a JSON string, `chunk` a passage count, and missing context `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
 
 ## Commands
 
@@ -39,14 +39,15 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 | `get-link ID` | Read a link. |
 | `update-link ID --input FILE` | Replace a link's endpoints, relation and explanation. |
 | `patch-link ID --input FILE` | Change some of a link's endpoints, relation or explanation, keeping the rest. |
-| `connections ID [--direction both\|in\|out] [--relation NAME] [--limit N]` | Inspect one-hop links and the records they reach. |
+| `connections ID [--direction both\|in\|out] [--relation NAME] [--limit N] [--full]` | Inspect one-hop links, each with a preview of the record it reaches. |
+| `links [--relation NAME] [--author ID] [--created-by ID] [--since UTC_TIME] [--after LINK_ID] [--limit N] [--full]` | List links in creation order with previews of both ends. `--since` keeps links created or edited at or after a UTC date or time, so it shows the connections others have added. |
 | `list [--kind KIND] [--author ID] [--created-by ID] [--since UTC_TIME] [--where KEY=VALUE]... [--after ID] [--limit N] [--full]` | List records in creation order, optionally matching top-level attribute values. `--author` matches the last editor and `--created-by` the creator. `--since` keeps records created or edited at or after a UTC date or time, such as `2026-09-28T18:00`. Previews by default. |
 | `expand SEED_ID... [--depth 1\|2] [--direction both\|in\|out] [--relation NAME]... [--limit N] [--per-record N] [--full]` | Walk links from seed records, reporting each record reached and its path. Previews by default; `--full` returns complete records. |
 | `recall QUERY [--seed ID]... [--max-records N] [--full]` | Assemble connected research: records with paths, cited evidence, disagreements, open Questions and a frontier. Compact by default and capped at `--max-chars` (default 24,000, minimum 2,000) by dropping the lowest-ranked records with their evidence and issue links; `coverage.dropped_for_size` counts them. `--full` is uncapped. |
 | `relations` | Count links by relation and the record kinds they connect. |
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |
 | `source-text SOURCE_ID [--start-byte N] [--end-byte N]` | Read exact source text as a JSON string. |
-| `cited-by SOURCE_ID [--start-byte N] [--end-byte N] [--limit N]` | List records citing any part of a source range. |
+| `cited-by SOURCE_ID [--start-byte N] [--end-byte N] [--limit N]` | List records citing any part of a source range. An end past the text means the end. |
 | `locate SOURCE_ID QUOTE\|- [--limit N]` | Find exact byte ranges of a quotation for citations. |
 | `chunk SOURCE_ID [--max-chars N]` | Split source text into searchable passages. |
 | `search-documents QUERY [--source-id ID] [--limit N] [--max-tokens N]` | Return relevant excerpts with citations; repeat `--source-id` to scope to several sources. |
@@ -55,7 +56,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 
 ## Write payloads
 
-`--input` accepts a UTF-8 JSON file or `-` to read stdin. For records, supply `text`, `author_id` and optional `attributes` and `citations`. For `link`, supply `author_id` and optional `explanation`. For `update-link`, also supply `from_id`, `to_id` and `relation`.
+`--input` accepts a UTF-8 JSON file or `-` to read stdin. For records, supply `text`, `author_id` and optional `attributes` and `citations`. For `link`, supply `author_id` and optional `explanation`. For `update-link`, also supply `from_id`, `to_id` and `relation`. A link with the same ends and relation as an existing link is refused, and the error names that link; patch it instead.
 
 For `contribute`, supply `author_id`, a `records` list and a `links` list. Each record has a caller-chosen `ref` plus `kind`, `text` and optional `attributes` and `citations`; each link has `from_id`, `to_id`, `relation` and optional `explanation`, where either end can be a new record's `ref` or an existing record ID. The output maps each `ref` to its created record and lists the created links.
 
@@ -63,11 +64,11 @@ For `ingest`, supply `description`, `author_id` and optional `attributes`; the s
 
 Updates replace complete contents: omitted attributes/provenance become `{}`, and an omitted link explanation becomes empty. Preserve metadata you intend to keep. For `patch`, supply `author_id` and any of `text`, `attributes` (keys to set), `remove` (keys to delete) and `citations`; unnamed attributes are kept. Each command uses the existing store operation and its transaction semantics; a series of commands is not one transaction. After an interrupted create or ingestion, check whether it committed before retrying.
 
-Record searches return at most 10 hits by default. Connections cover both directions by default, return up to 100 links with the records at their other ends, and report `has_more`. `list` returns up to 100 records with `has_more`; continue with `--after` and the last ID. All three limits have a maximum of 1,000. The [research skill](../skills/premisedb-research/SKILL.md) explains how to use these operations during an investigation.
+Record searches return at most 10 hits by default. Connections cover both directions by default, return up to 100 links, and report `has_more`. `list` and `links` return up to 100 records or links with `has_more`; continue with `--after` and the last ID. These limits have a maximum of 1,000. The [research skill](../skills/premisedb-research/SKILL.md) explains how to use these operations during an investigation.
 
 ## Citations
 
-`locate SOURCE_ID QUOTE` returns the exact, nonoverlapping occurrences of a quotation in source order, each with `source_id`, `start_byte`, `end_byte` and `text`. Matching is exact: whitespace, line endings, quotation marks and Unicode forms must match the source, so copy the quote from `source-text` or `search-documents` output. Pass `-` as QUOTE to read it from stdin, which avoids shell quoting; one final newline, such as the one a heredoc adds, is removed. An empty array means no exact match. At most 10 matches are returned by default (maximum 1,000); lengthen the quote when several occurrences are ambiguous.
+`locate SOURCE_ID QUOTE` returns the exact, nonoverlapping occurrences of a quotation in source order, each with `source_id`, `start_byte`, `end_byte` and `text`. Matching is exact: whitespace, line endings, quotation marks and Unicode forms must match the source, so copy the quote from `source-text` or `search-documents` output. Pass `-` as QUOTE to read it from stdin, which avoids shell quoting; one final newline, such as the one a heredoc adds, is removed. An empty array means no exact match. At most 10 matches are returned by default (maximum 1,000); lengthen the quote when several occurrences are ambiguous. A write whose citation fails names it, for example `records[1] (ref 'f2'): citations[0]: ...`. When the source holds the quote with different spacing, line breaks, dashes or quotation marks, the error shows that exact source text and its `start_byte`; copy it into the quote.
 
 To cite while writing, add `citations` to a `create` or `update` payload, each `{"source_id": ..., "quote": ...}` or `{"source_id": ..., "start_byte": ..., "end_byte": ...}`. The [Python API guide](python-api.md#cite-evidence) describes how quotes are resolved and linked.
 

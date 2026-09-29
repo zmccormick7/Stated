@@ -69,6 +69,12 @@ class RecordPage:
 
 
 @dataclass(frozen=True)
+class LinkPage:
+    links: tuple[Link, ...]
+    has_more: bool
+
+
+@dataclass(frozen=True)
 class Citation:
     record: Record  # The citing record's current contents.
     source_id: str
@@ -128,6 +134,8 @@ class SourceSegment:
 
 
 KINDS = ("Entity", "Source", "Finding", "Question", "Model", "Variable")
+# Characters that extracted text often swaps for one another, used only to suggest a corrected quote.
+_LOOKALIKES = ("-\u2010\u2011\u2012\u2013\u2014\u2212", "'\u2018\u2019\u02bc\u2032", '"\u201c\u201d\u2033')
 
 
 def _check_limit(value: int, name: str = "limit") -> None:
@@ -547,8 +555,11 @@ class RecordStore:
         if any(not isinstance(ref, str) or not ref.strip() for ref in refs) or len(set(refs)) != len(refs):
             raise ValueError("record refs must be unique, nonblank strings")
         prepared = []
-        for record in records:
-            attributes, source_ids = self._cite(record.get("attributes"), record.get("citations"))
+        for index, record in enumerate(records):
+            try:
+                attributes, source_ids = self._cite(record.get("attributes"), record.get("citations"))
+            except ValueError as error:
+                raise ValueError(f"records[{index}] (ref {record['ref']!r}): {error}") from None
             prepared.append((record, self._encode(attributes), source_ids))
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
@@ -560,23 +571,29 @@ class RecordStore:
                 created[record["ref"]] = self._insert_record(record["kind"], record["text"], encoded, author_id)
                 self._link_sources(created[record["ref"]].id, source_ids, author_id)
             ids = {ref: record.id for ref, record in created.items()}
-            made = tuple(self._insert_link(ids.get(link["from_id"], link["from_id"]),
-                                           ids.get(link["to_id"], link["to_id"]), link["relation"],
-                                           link.get("explanation", ""), author_id) for link in links)
-        return Contribution(created, made)
+            made = []
+            for index, link in enumerate(links):
+                try:
+                    made.append(self._insert_link(ids.get(link["from_id"], link["from_id"]),
+                                                  ids.get(link["to_id"], link["to_id"]), link["relation"],
+                                                  link.get("explanation", ""), author_id))
+                except ValueError as error:
+                    raise ValueError(f"links[{index}]: {error}") from None
+        return Contribution(created, tuple(made))
 
     def update_link(self, link_id: str, *, from_id: str, to_id: str, relation: str,
                     author_id: str, explanation: str = "") -> Link:
         """Replace current link contents and refresh its last-edited timestamp."""
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            result = self._db.execute(
+            self.read_link(link_id)  # A missing link is reported before its new contents are checked.
+            values = self._link_values(from_id, to_id, relation, explanation, author_id)
+            self._refuse_duplicate_link(values, link_id)
+            self._db.execute(
                 """UPDATE links SET from_key = ?, to_key = ?, relation = ?, explanation = ?,
                    author_id = ?, updated_at = ? WHERE id = ?""",
-                (*self._link_values(from_id, to_id, relation, explanation, author_id), link_id),
+                (*values, link_id),
             )
-            if result.rowcount == 0:
-                raise KeyError(link_id)
             link = self.read_link(link_id)
         return link
 
@@ -589,14 +606,15 @@ class RecordStore:
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             current = self.read_link(link_id)
+            values = self._link_values(current.from_id if from_id is None else from_id,
+                                       current.to_id if to_id is None else to_id,
+                                       current.relation if relation is None else relation,
+                                       current.explanation if explanation is None else explanation, author_id)
+            self._refuse_duplicate_link(values, link_id)
             self._db.execute(
                 """UPDATE links SET from_key = ?, to_key = ?, relation = ?, explanation = ?,
                    author_id = ?, updated_at = ? WHERE id = ?""",
-                (*self._link_values(current.from_id if from_id is None else from_id,
-                                    current.to_id if to_id is None else to_id,
-                                    current.relation if relation is None else relation,
-                                    current.explanation if explanation is None else explanation,
-                                    author_id), link_id),
+                (*values, link_id),
             )
             link = self.read_link(link_id)
         return link
@@ -734,6 +752,28 @@ class RecordStore:
         ).fetchall()
         return RecordPage(tuple(self._decode_record(row) for row in rows[:limit]), len(rows) > limit)
 
+    def list_links(self, *, relation: str | None = None, author_id: str | None = None,
+                   created_by: str | None = None, since: str | None = None,
+                   after: str | None = None, limit: int = 100) -> LinkPage:
+        """Current links in creation order, optionally filtered; pass the last link ID as after to continue.
+
+        since keeps links created or edited at or after a UTC ISO timestamp or date, as in list_records.
+        """
+        for name, value in (("relation", relation), ("author_id", author_id), ("created_by", created_by),
+                            ("since", since)):
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"{name} must be a string or None")
+        _check_limit(limit)
+        start = 0 if after is None else self._db.execute(
+            "SELECT link_key FROM links WHERE id = ?", (self.resolve_id(after, link=True),)).fetchone()[0]
+        rows = self._db.execute(
+            _LINK_SELECT + """ WHERE l.link_key > ? AND (? IS NULL OR l.relation = ?)
+                AND (? IS NULL OR l.author_id = ?) AND (? IS NULL OR l.created_by = ?)
+                AND (? IS NULL OR l.updated_at >= ?) ORDER BY l.link_key LIMIT ?""",
+            (start, relation, relation, author_id, author_id, created_by, created_by, since, since, limit + 1),
+        ).fetchall()
+        return LinkPage(tuple(Link(**dict(row)) for row in rows[:limit]), len(rows) > limit)
+
     def cited_by(self, source_id: str, *, start_byte: int = 0, end_byte: int | None = None,
                  limit: int = 100) -> CitationPage:
         """Records whose citations overlap a half-open byte range of a source, in source order."""
@@ -743,8 +783,8 @@ class RecordStore:
         source_key = self._source_key(source_id)
         length = self._db.execute("SELECT length(text_utf8) FROM source_content WHERE source_key = ?",
                                   (source_key,)).fetchone()[0]
-        end_byte = length if end_byte is None else end_byte
-        if not 0 <= start_byte < end_byte <= length:
+        end_byte = length if end_byte is None else min(end_byte, length)  # "To the end" needs no length.
+        if not 0 <= start_byte < end_byte:
             raise ValueError("byte range is outside source text")
         rows = self._db.execute(
             """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at,
@@ -780,32 +820,51 @@ class RecordStore:
         if isinstance(citations, (str, bytes, dict)):
             raise ValueError("citations must be a list of objects")
         resolved = []
-        for citation in citations:
-            if (not isinstance(citation, dict) or "source_id" not in citation
-                    or not set(citation) <= {"source_id", "quote", "start_byte", "end_byte"}):
-                raise ValueError("each citation needs source_id and a quote or start_byte/end_byte")
-            source_id, quote = citation["source_id"], citation.get("quote")
-            if isinstance(source_id, str):
-                source_id = self.resolve_id(source_id)  # Citations always store the full Source ID.
-            start, end = citation.get("start_byte"), citation.get("end_byte")
-            if quote is None:
-                if start is None or end is None:
-                    raise ValueError("a citation without a quote needs start_byte and end_byte")
-                quote = self.read_source_text(source_id, start_byte=start, end_byte=end)
-                if not quote.strip():
-                    raise ValueError("a cited range must contain text")
-            else:
-                matches = [m for m in self.locate_source_text(source_id, quote, limit=1000)
-                           if start in (None, m.start_byte) and end in (None, m.end_byte)]
-                if len(matches) != 1:
-                    offsets = ", ".join(str(m.start_byte) for m in matches[:10])
-                    where = "" if start is None and end is None else " at the given offsets"
-                    raise ValueError(f"quote not found in source {source_id}{where}" if not matches else
-                                     f"quote occurs {len(matches)} times in source {source_id} "
-                                     f"(start_byte {offsets}); add start_byte to choose one")
-                start, end = matches[0].start_byte, matches[0].end_byte
-            resolved.append({"source_id": source_id, "start_byte": start, "end_byte": end, "quote": quote})
+        for index, citation in enumerate(citations):
+            try:
+                resolved.append(self._resolve_citation(citation))
+            except ValueError as error:
+                raise ValueError(f"citations[{index}]: {error}") from None
         return {**(attributes or {}), "citations": resolved}, tuple(dict.fromkeys(c["source_id"] for c in resolved))
+
+    def _resolve_citation(self, citation: object) -> dict[str, object]:
+        if (not isinstance(citation, dict) or "source_id" not in citation
+                or not set(citation) <= {"source_id", "quote", "start_byte", "end_byte"}):
+            raise ValueError("each citation needs source_id and a quote or start_byte/end_byte")
+        source_id, quote = citation["source_id"], citation.get("quote")
+        if isinstance(source_id, str):
+            source_id = self.resolve_id(source_id)  # Citations always store the full Source ID.
+        start, end = citation.get("start_byte"), citation.get("end_byte")
+        if quote is None:
+            if start is None or end is None:
+                raise ValueError("a citation without a quote needs start_byte and end_byte")
+            quote = self.read_source_text(source_id, start_byte=start, end_byte=end)
+            if not quote.strip():
+                raise ValueError("a cited range must contain text")
+        else:
+            matches = [m for m in self.locate_source_text(source_id, quote, limit=1000)
+                       if start in (None, m.start_byte) and end in (None, m.end_byte)]
+            if len(matches) != 1:
+                offsets = ", ".join(str(m.start_byte) for m in matches[:10])
+                where = "" if start is None and end is None else " at the given offsets"
+                raise ValueError(f"quote not found in source {source_id}{where}{self._near_quote(source_id, quote)}"
+                                 if not matches else f"quote occurs {len(matches)} times in source {source_id} "
+                                 f"(start_byte {offsets}); add start_byte to choose one")
+            start, end = matches[0].start_byte, matches[0].end_byte
+        return {"source_id": source_id, "start_byte": start, "end_byte": end, "quote": quote}
+
+    def _near_quote(self, source_id: str, quote: str) -> str:
+        """A hint naming source text that differs from the quote only in spacing, dashes or quote marks."""
+        pattern = ""
+        for part in re.findall(r"\s+|.", quote, re.S):
+            group = next((g for g in _LOOKALIKES if part in g), None)
+            pattern += r"\s+" if part.isspace() else f"[{re.escape(group)}]" if group else re.escape(part)
+        text = self.read_source_text(source_id)
+        match = re.search(pattern, text)
+        if match is None:
+            return ""
+        return (f"; the source has {match.group()!r} at start_byte {len(text[:match.start()].encode('utf-8'))}, "
+                "which differs only in spacing, dashes or quote marks; quote the source exactly")
 
     def _link_sources(self, record_id: str, source_ids: tuple[str, ...], author_id: str) -> None:
         """Add a supported_by link to each cited source that is not already linked."""
@@ -821,12 +880,21 @@ class RecordStore:
 
     def _insert_link(self, from_id: str, to_id: str, relation: str, explanation: str, author_id: str) -> Link:
         link_id = str(uuid4())
+        values = self._link_values(from_id, to_id, relation, explanation, author_id)
+        self._refuse_duplicate_link(values)
         self._db.execute(
             """INSERT INTO links (from_key, to_key, relation, explanation,
                author_id, updated_at, id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (*self._link_values(from_id, to_id, relation, explanation, author_id), link_id, author_id),
+            (*values, link_id, author_id),
         )
         return self.read_link(link_id)
+
+    def _refuse_duplicate_link(self, values: tuple, link_id: str | None = None) -> None:
+        """One link per endpoints and relation; a second would only repeat or split its explanation."""
+        row = self._db.execute("SELECT id FROM links WHERE from_key = ? AND to_key = ? AND relation = ? AND id IS NOT ?",
+                               (*values[:3], link_id)).fetchone()
+        if row is not None:
+            raise ValueError(f"an identical {values[2]} link already exists: {row[0]}; patch it instead")
 
     @staticmethod
     def _batch(items: Iterable[dict[str, object]], name: str, required: set[str],

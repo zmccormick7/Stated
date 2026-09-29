@@ -47,6 +47,23 @@ class CitationTests(unittest.TestCase):
         finding = self.db.create("Finding", text="Deferral", author_id="a", citations=[{**citation, "start_byte": 46}])
         self.assertEqual(finding.attributes["citations"][0]["start_byte"], 46)
 
+    def test_errors_name_the_failing_citation_and_suggest_near_matches(self):
+        source = self.db.ingest_source(description="10-Q", author_id="a",
+                                       document_text="Sales of AI\u2011optimized\nservers \u201cdoubled\u201d.")
+        good = {"source_id": source.id, "quote": "servers"}
+        records = [{"ref": "a", "kind": "Finding", "text": "Fine", "citations": [good]},
+                   {"ref": "b", "kind": "Finding", "text": "Typed", "citations": [
+                       good, {"source_id": source.id[:8], "quote": 'AI-optimized servers "doubled"'}]}]
+        with self.assertRaises(ValueError) as caught:
+            self.db.contribute(author_id="agent", records=records)
+        message = str(caught.exception)
+        self.assertTrue(message.startswith(f"records[1] (ref 'b'): citations[1]: quote not found in source {source.id}"))
+        self.assertIn("the source has 'AI\u2011optimized\\nservers \u201cdoubled\u201d' at start_byte 9", message)
+        self.assertEqual(self.db.search_records("Fine Typed"), ())
+        with self.assertRaisesRegex(ValueError, r"^citations\[0\]: quote not found in source [-0-9a-f]+$"):
+            self.db.create("Finding", text="Absent", author_id="agent",
+                           citations=[{"source_id": source.id, "quote": "tripled"}])
+
     def test_invalid_citations_write_nothing(self):
         before = self.counts()
         for citations, error in (

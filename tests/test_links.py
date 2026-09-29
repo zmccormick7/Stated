@@ -101,6 +101,43 @@ class LinkTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 self.db.list_records(where=bad)
 
+    def test_identical_links_are_refused(self):
+        link = self.db.create_link(self.a.id, self.b.id, "qualifies", author_id="alice", explanation="Why.")
+        with self.assertRaisesRegex(ValueError, f"identical qualifies link already exists: {link.id}"):
+            self.db.create_link(self.a.id, self.b.id[:8], "qualifies", author_id="bob")
+        self.db.create_link(self.b.id, self.a.id, "qualifies", author_id="bob")  # The reverse is a different link.
+        other = self.db.create_link(self.a.id, self.b.id, "corroborates", author_id="bob")
+        with self.assertRaisesRegex(ValueError, link.id):
+            self.db.patch_link(other.id, author_id="bob", relation="qualifies")
+        with self.assertRaisesRegex(ValueError, link.id):
+            self.db.update_link(other.id, from_id=self.a.id, to_id=self.b.id, relation="qualifies", author_id="bob")
+        self.assertEqual(self.db.patch_link(link.id, author_id="bob", explanation="Sharper.").explanation, "Sharper.")
+        with self.assertRaisesRegex(ValueError, r"^links\[1\]: an identical about link"):
+            self.db.contribute(author_id="carol", records=[{"ref": "n", "kind": "Finding", "text": "Newest"}],
+                               links=[{"from_id": "n", "to_id": self.a.id, "relation": "about"},
+                                      {"from_id": "n", "to_id": self.a.id, "relation": "about"}])
+        self.assertEqual(self.db.search_records("Newest"), ())  # The batch rolled back.
+
+    def test_list_links_filters_and_pages_in_creation_order(self):
+        ab = self.db.create_link(self.a.id, self.b.id, "depends_on", author_id="alice")
+        bc = self.db.create_link(self.b.id, self.c.id, "qualifies", author_id="bob")
+        ca = self.db.create_link(self.c.id, self.a.id, "depends_on", author_id="bob")
+        self.assertEqual(self.db.list_links().links, (ab, bc, ca))
+        self.assertEqual(self.db.list_links(relation="depends_on").links, (ab, ca))
+        page = self.db.list_links(limit=2)
+        self.assertEqual((page.links, page.has_more), ((ab, bc), True))
+        self.assertEqual(self.db.list_links(after=bc.id[:8]).links, (ca,))
+        edited = self.db.patch_link(ab.id, author_id="carol", explanation="Checked.")
+        self.assertEqual(self.db.list_links(since=edited.updated_at).links, (edited,))  # Edits count.
+        self.assertEqual((self.db.list_links(author_id="carol").links, self.db.list_links(created_by="alice").links),
+                         ((edited,), (edited,)))
+        self.assertEqual(self.db.list_links(since="2999-01-01").links, ())
+        with self.assertRaises(KeyError):
+            self.db.list_links(after="missing-link")
+        for options in ({"limit": 0}, {"since": 2026}, {"relation": 1}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                self.db.list_links(**options)
+
     def test_patch_link_changes_only_named_fields(self):
         link = self.db.create_link(self.a.id, self.b.id, "qualifies", author_id="alice", explanation="Why it matters.")
         relabelled = self.db.patch_link(link.id, author_id="bob", relation="corroborates")

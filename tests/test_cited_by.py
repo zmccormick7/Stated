@@ -61,7 +61,8 @@ class CitedByTests(unittest.TestCase):
         self.assertEqual(self.db.read(raw.id).attributes["citations"][5], "not an object")
 
     def test_invalid_lookups(self):
-        for kwargs in ({"start_byte": -1}, {"start_byte": 5, "end_byte": 5}, {"end_byte": 999},
+        self.assertEqual(self.db.cited_by(self.source.id, end_byte=999), self.db.cited_by(self.source.id))  # Clamped.
+        for kwargs in ({"start_byte": -1}, {"start_byte": 5, "end_byte": 5}, {"start_byte": 999},
                        {"start_byte": "0"}, {"limit": 0}, {"limit": 1001}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 self.db.cited_by(self.source.id, **kwargs)
