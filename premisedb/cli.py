@@ -10,6 +10,7 @@ import sys
 
 from .store import RecordStore
 from .reranking import OpenRouterReranker
+from .recall import recall
 from .retrieval import retrieve
 
 
@@ -77,6 +78,12 @@ def _parser():
     walk.add_argument("--per-record", dest="per_record_limit", type=int, default=50,
                       help="Maximum links followed from any one record.")
     walk.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
+    rec = command("recall", "recall", "Assemble connected research for a question: records with paths, cited evidence, "
+                  "disagreements and open Questions.", "query")
+    rec.add_argument("--seed", dest="seeds", action="append", default=[], metavar="RECORD_ID",
+                     help="Start from this record as well as search hits; repeatable.")
+    rec.add_argument("--max-records", type=int, default=40)
+    rec.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     command("relations", "relation_usage", "Count links by relation and the record kinds they connect.")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
@@ -151,6 +158,22 @@ def _compact(method, result):
             "capped": list(result.capped), "has_more": result.has_more}
 
 
+def _recall(db, options):
+    """Previews by default; evidence, issues and coverage are always included."""
+    full = options.pop("full")
+    result = recall(db, options.pop("query"), **options)
+    if full:
+        return result
+    link = lambda l: {"id": l.id, "from_id": l.from_id, "to_id": l.to_id, "relation": l.relation}
+    return {"records": [_preview(r.record) | {"score": round(r.score, 6), "entry_id": r.entry_id,
+                                              "channels": list(r.channels), "path": [link(l) for l in r.path]}
+                        for r in result.records],
+            "evidence": result.evidence,
+            "issues": {"links": [link(l) | {"explanation": l.explanation} for l in result.issue_links],
+                       "open_questions": [_preview(q) for q in result.open_questions]},
+            "frontier": list(result.frontier), "coverage": result.coverage}
+
+
 def main(argv=None):
     options = vars(_parser().parse_args(argv))
     path = Path(options.pop("db"))
@@ -182,7 +205,9 @@ def main(argv=None):
                     options[name] = db.resolve_id(options[name], link=name == "link_id")
             if "seed_ids" in options:
                 options["seed_ids"] = [db.resolve_id(seed) for seed in options["seed_ids"]]
-            if method == "search_documents":
+            if method == "recall":
+                result = _recall(db, options)
+            elif method == "search_documents":
                 result = _search_documents(db, options)
             else:
                 full = options.pop("full", True)
