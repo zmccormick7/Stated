@@ -79,8 +79,42 @@ class RecordStoreTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 self.store.resolve_id(invalid)
 
+    def test_creator_survives_edits_and_lists_filter_by_creator_and_time(self):
+        record = self.store.create("Finding", text="Ramp in June", author_id="alice")
+        other = self.store.create("Finding", text="Ramp in July", author_id="bob")
+        self.assertEqual((record.author_id, record.created_by), ("alice", "alice"))
+        patched = self.store.patch(record.id, author_id="carol", attributes={"basis": "inference"})
+        updated = self.store.update(record.id, text="Ramp in September", author_id="dave")
+        self.assertEqual([(r.author_id, r.created_by) for r in (patched, updated)], [("carol", "alice"), ("dave", "alice")])
+        link = self.store.create_link(record.id, other.id, "depends_on", author_id="erin")
+        moved = self.store.patch_link(link.id, author_id="frank", relation="qualifies")
+        self.assertEqual((moved.author_id, moved.created_by), ("frank", "erin"))
+        self.assertEqual(self.store.list_records(created_by="alice").records, (updated,))
+        self.assertEqual(self.store.list_records(author_id="dave").records, (updated,))
+        self.assertEqual(self.store.list_records(since=updated.updated_at).records, (updated,))  # Edits count.
+        self.assertEqual(len(self.store.list_records(since="2000-01-01").records), 2)
+        self.assertEqual(self.store.list_records(since="2999-01-01").records, ())
+        for options in ({"since": 2026}, {"created_by": 1}):
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                self.store.list_records(**options)
+
+    def test_payload_ids_accept_unique_prefixes(self):
+        source = self.store.ingest_source(description="Filing", document_text="Power is scarce.", author_id="a")
+        target = self.store.create("Entity", text="PowerFrame", author_id="a")
+        result = self.store.contribute(author_id="a", records=[{
+            "ref": "f", "kind": "Finding", "text": "Power binds",
+            "citations": [{"source_id": source.id[:8], "quote": "Power"}]}],
+            links=[{"from_id": "f", "to_id": target.id[:10], "relation": "about"}])
+        finding = result.records["f"]
+        self.assertEqual(finding.attributes["citations"][0]["source_id"], source.id)  # Stored in full.
+        self.assertEqual(result.links[0].to_id, target.id)
+        self.assertEqual(self.store.patch_link(result.links[0].id, author_id="b", to_id=source.id[:8]).to_id, source.id)
+        self.assertEqual(self.store.cited_by(source.id[:8]).citations[0].record.id, finding.id)
+        with self.assertRaises(KeyError):
+            self.store.create_link(finding.id, "abc", "about", author_id="a")  # Too short to be a prefix.
+
     def test_incompatible_schema_is_rejected_without_changing_file(self):
-        for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 11):
+        for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12):
             with self.subTest(version=version):
                 path = self.path.with_name(f"schema-{version}.sqlite")
                 with closing(sqlite3.connect(path, isolation_level=None)) as sql:

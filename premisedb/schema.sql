@@ -6,7 +6,8 @@ CREATE TABLE records (
     text TEXT NOT NULL,
     attributes TEXT NOT NULL CHECK (json_valid(attributes)
         AND json_type(attributes) = 'object'),
-    author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),
+    author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),  -- Last editor.
+    created_by TEXT NOT NULL CHECK (length(trim(created_by)) > 0),  -- Set once on insert.
     updated_at TEXT NOT NULL
 );
 
@@ -17,7 +18,8 @@ CREATE TABLE links (
     to_key INTEGER NOT NULL REFERENCES records (record_key),
     relation TEXT NOT NULL CHECK (length(trim(relation)) > 0),
     explanation TEXT NOT NULL,
-    author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),
+    author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),  -- Last editor.
+    created_by TEXT NOT NULL CHECK (length(trim(created_by)) > 0),  -- Set once on insert.
     updated_at TEXT NOT NULL
 );
 
@@ -47,6 +49,8 @@ CREATE TABLE source_content (
     text_utf8 BLOB NOT NULL CHECK (typeof(text_utf8) = 'blob' AND length(text_utf8) > 0),
     text_sha256 TEXT NOT NULL CHECK (length(text_sha256) = 64)
 );
+-- Finds an already-ingested copy of the same text without reading document bodies.
+CREATE INDEX source_content_sha256 ON source_content (text_sha256);
 CREATE TRIGGER source_content_kind BEFORE INSERT ON source_content
 WHEN (SELECT kind FROM records WHERE record_key = new.source_key) != 'Source'
 BEGIN
