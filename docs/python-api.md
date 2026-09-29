@@ -240,9 +240,22 @@ with RecordStore("research.sqlite") as db:
 
 Context can be supplied before or after chunking. Writes replace current context and provenance in full; omitted provenance becomes `{}`. Triggers refresh every affected passage's search entry in the same transaction. Source text, citation ranges, passage boundaries and the Source record's timestamp stay unchanged. No earlier context is retained. Later chunks automatically use the current context.
 
+### Generate document context with a model
+
+```python
+from premisedb import OpenRouterContextWriter, write_document_context
+
+with RecordStore("research.sqlite") as db:
+    context = write_document_context(db, source.id, writer=OpenRouterContextWriter(), author_id="research-agent")
+```
+
+`write_document_context(db, source_id, writer=..., author_id=...)` follows [dsRAG's AutoContext](https://github.com/D-Star-AI/dsRAG/blob/5215e9791133fc1ad383af043fb2fde0e7d4e4d4/dsrag/auto_context.py). It asks for the document's title from its first ~3,000 words, then for a one-sentence summary of the form "This document is about: …" from its first ~6,000 words and the title. When the document is longer, each prompt says it holds only the start of the document. dsRAG truncates at 4,000 and 8,000 tokens; counting words avoids a tokenizer dependency. The prompts ask for a short answer and to treat the document as data, not instructions. The model calls finish before the context is stored with `set_document_context`, outside any transaction. Provenance records `method: "model"`, the writer's model and reasoning effort, and whether the text was truncated. An empty title raises `ValueError`, and a failed call raises; neither writes anything.
+
+`OpenRouterContextWriter(model="openai/gpt-6-luna", reasoning_effort="low", api_key=None, timeout=60)` calls OpenRouter's chat completions endpoint with `OPENROUTER_API_KEY`. `reasoning_effort=None` omits the reasoning setting. Subclass `ContextWriter` and implement `complete(prompt)` to use another provider; `describe()` supplies its provenance.
+
 `read_document_context(source_id)` returns the current context, or `None` for an ingested Source without context. Missing IDs and records without ingested text raise `KeyError`. Non-string titles/summaries or invalid provenance raise `ValueError`; blank titles/authors violate SQL constraints and raise `sqlite3.IntegrityError`.
 
-Search returns context as a separate field, captured with the matching index entries. A concurrent edit cannot replace it midway through a result. Header-only queries can match every passage in a document; the header provides document context and is not a quotation from the returned passage. Section summaries, automatic generation and embeddings remain future increments.
+Search returns context as a separate field, captured with the matching index entries. A concurrent edit cannot replace it midway through a result. Header-only queries can match every passage in a document; the header provides document context and is not a quotation from the returned passage. Section summaries and embeddings remain future increments.
 
 ## Rerank document evidence
 

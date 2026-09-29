@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 import sys
 
+from .context import OpenRouterContextWriter, write_document_context
 from .store import RecordStore
 from .reranking import OpenRouterReranker
 from .recall import recall
@@ -109,6 +110,8 @@ def _parser():
     ingest = command("ingest", "ingest_source", "Ingest an extracted UTF-8 text file without normalization.",
                      payload="description, author_id, optional attributes")
     ingest.add_argument("source_file", help="Path to the extracted text file")
+    ingest.add_argument("--auto-context", action="store_true",
+                        help="Also write a model-generated document title and summary (see auto-context).")
     source = command("source-text", "read_source_text", "Read source text as a JSON string; offsets are UTF-8 bytes.", "source_id")
     source.add_argument("--start-byte", type=int, default=0)
     source.add_argument("--end-byte", type=int)
@@ -131,7 +134,16 @@ def _parser():
     command("set-context", "set_document_context", "Set a document's title and summary, separately from evidence.",
             "source_id", payload="title, summary, author_id, optional provenance")
     command("get-context", "read_document_context", "Read document context, or null if absent.", "source_id")
+    auto = command("auto-context", "auto_context", "Write a model-generated document title and one-sentence summary.",
+                   "source_id")
+    auto.add_argument("--author", dest="author_id", required=True, help="Author ID recorded on the context.")
     return parser
+
+
+def _context_writer():
+    """The configured model for document context; created before any write so a missing key fails early."""
+    return OpenRouterContextWriter(os.environ.get("PREMISEDB_CONTEXT_MODEL", "openai/gpt-6-luna"),
+                                   reasoning_effort=os.environ.get("PREMISEDB_CONTEXT_REASONING", "low"))
 
 
 def _search_documents(db, options):
@@ -280,8 +292,11 @@ def main(argv=None):
                     options[name] = db.resolve_id(options[name], link=name == "link_id")
             if "seed_ids" in options:
                 options["seed_ids"] = [db.resolve_id(seed) for seed in options["seed_ids"]]
+            writer = _context_writer() if method == "auto_context" or options.pop("auto_context", False) else None
             if method == "recall":
                 result = _recall(db, options)
+            elif method == "auto_context":
+                result = write_document_context(db, options["source_id"], writer=writer, author_id=options["author_id"])
             elif method == "search_documents":
                 result = _search_documents(db, options)
             else:
@@ -290,6 +305,12 @@ def main(argv=None):
                           else {"database": str(path.resolve())})
                 if not full:
                     result = _compact(db, method, result, options)
+                if writer is not None:  # ingest --auto-context: the Source is committed first.
+                    try:
+                        write_document_context(db, result.id, writer=writer, author_id=payload["author_id"])
+                    except (ValueError, RuntimeError) as error:
+                        raise RuntimeError(f"Source {result.id} was ingested, but its document context "
+                                           f"was not written: {error}. Run auto-context to retry.") from None
         print(json.dumps(_shape(method, result), default=asdict, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError, sqlite3.Error) as error:
