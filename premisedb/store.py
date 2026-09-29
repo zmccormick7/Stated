@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 import json
+import math
 import re
 import sqlite3
 import unicodedata
@@ -124,6 +125,19 @@ class SourceSegment:
     document_context: DocumentContext | None = None
 
 
+KINDS = ("Entity", "Source", "Finding", "Question", "Model", "Variable")
+
+
+def _check_limit(value: int, name: str = "limit") -> None:
+    if type(value) is not int or not 1 <= value <= 1000:
+        raise ValueError(f"{name} must be an integer from 1 to 1000")
+
+
+def _check_kind(kind: str | None) -> None:
+    if kind is not None and kind not in KINDS:
+        raise ValueError("kind must be a record kind or None")
+
+
 _LINK_SELECT = """
     SELECT l.id, f.id AS from_id, t.id AS to_id, l.relation,
            l.explanation, l.author_id, l.updated_at
@@ -197,10 +211,8 @@ class RecordStore:
                        limit: int = 10) -> tuple[Record, ...]:
         """Match any plain-text query word; return current records in BM25 order."""
         expression = self._search_expression(query)
-        if kind is not None and kind not in ("Entity", "Source", "Finding", "Question", "Model", "Variable"):
-            raise ValueError("kind must be a record kind or None")
-        if type(limit) is not int or not 1 <= limit <= 1000:
-            raise ValueError("limit must be an integer from 1 to 1000")
+        _check_kind(kind)
+        _check_limit(limit)
         if not expression:
             return ()
         rows = self._db.execute(
@@ -216,8 +228,7 @@ class RecordStore:
                          limit: int = 10) -> tuple[SourceSegment, ...]:
         """Rank passage headers/bodies; return exact source text with separate context."""
         expression = self._search_expression(query)
-        if type(limit) is not int or not 1 <= limit <= 1000:
-            raise ValueError("limit must be an integer from 1 to 1000")
+        _check_limit(limit)
         source_keys = None
         if source_ids is not None:
             if isinstance(source_ids, (str, bytes)) or not isinstance(source_ids, Iterable):
@@ -368,8 +379,7 @@ class RecordStore:
         """Find exact, nonoverlapping occurrences of a quotation as UTF-8 byte ranges."""
         if not isinstance(quote, str) or not quote.strip():
             raise ValueError("quote must be a nonblank string")
-        if type(limit) is not int or not 1 <= limit <= 1000:
-            raise ValueError("limit must be an integer from 1 to 1000")
+        _check_limit(limit)
         needle = quote.encode("utf-8")
         with self._db.blobopen("source_content", "text_utf8", self._source_key(source_id),
                                readonly=True) as content:
@@ -418,8 +428,7 @@ class RecordStore:
         """Read current passage locators in source order, starting at an inclusive ordinal."""
         if type(start_ordinal) is not int or start_ordinal < 0:
             raise ValueError("start_ordinal must be a nonnegative integer")
-        if type(limit) is not int or not 1 <= limit <= 1000:
-            raise ValueError("limit must be an integer from 1 to 1000")
+        _check_limit(limit)
         rows = self._db.execute(
             """SELECT ordinal, start_byte, end_byte FROM passages
                WHERE source_key = ? AND ordinal >= ? ORDER BY ordinal LIMIT ?""",
@@ -539,6 +548,27 @@ class RecordStore:
             link = self.read_link(link_id)
         return link
 
+    def patch_link(self, link_id: str, *, author_id: str, from_id: str | None = None,
+                   to_id: str | None = None, relation: str | None = None,
+                   explanation: str | None = None) -> Link:
+        """Change only the given link fields in one transaction; the rest of the link is kept."""
+        if from_id is None and to_id is None and relation is None and explanation is None:
+            raise ValueError("patch_link needs from_id, to_id, relation or explanation")
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            current = self.read_link(link_id)
+            self._db.execute(
+                """UPDATE links SET from_key = ?, to_key = ?, relation = ?, explanation = ?,
+                   author_id = ?, updated_at = ? WHERE id = ?""",
+                (*self._link_values(current.from_id if from_id is None else from_id,
+                                    current.to_id if to_id is None else to_id,
+                                    current.relation if relation is None else relation,
+                                    current.explanation if explanation is None else explanation,
+                                    author_id), link_id),
+            )
+            link = self.read_link(link_id)
+        return link
+
     def connections(self, record_id: str, *, direction: str = "both",
                     relation: str | None = None, limit: int = 100) -> Connections:
         """Current one-hop links and the records they reach, in link creation order.
@@ -577,8 +607,7 @@ class RecordStore:
             if not relations or any(not isinstance(name, str) or not name.strip() for name in relations):
                 raise ValueError("relations must be a nonempty list of relation names")
         self._check_walk(direction, limit)
-        if type(per_record_limit) is not int or not 1 <= per_record_limit <= 1000:
-            raise ValueError("per_record_limit must be an integer from 1 to 1000")
+        _check_limit(per_record_limit, "per_record_limit")
         with self._db:
             self._db.execute("BEGIN")  # One read snapshot for the whole walk.
             reached = {seed: Reached(self.read(seed), 0, ()) for seed in seeds}
@@ -609,8 +638,7 @@ class RecordStore:
     def _check_walk(direction: str, limit: int) -> None:
         if direction not in ("out", "in", "both"):
             raise ValueError("direction must be 'out', 'in' or 'both'")
-        if type(limit) is not int or not 1 <= limit <= 1000:
-            raise ValueError("limit must be an integer from 1 to 1000")
+        _check_limit(limit)
 
     def _links_of(self, record_id: str, direction: str, relations: tuple[str, ...] | None,
                   limit: int, exclude: Iterable[str] = ()) -> tuple[tuple[Link, ...], bool]:
@@ -632,20 +660,41 @@ class RecordStore:
         return tuple(Link(**dict(row)) for row in rows[:limit]), len(rows) > limit
 
     def list_records(self, *, kind: str | None = None, author_id: str | None = None,
+                     where: dict[str, str | int | float | bool | None] | None = None,
                      after: str | None = None, limit: int = 100) -> RecordPage:
-        """Current records in creation order, optionally filtered; pass the last ID as after to continue."""
-        if kind is not None and kind not in ("Entity", "Source", "Finding", "Question", "Model", "Variable"):
-            raise ValueError("kind must be a record kind or None")
+        """Current records in creation order, optionally filtered; pass the last ID as after to continue.
+
+        where matches top-level attributes exactly: every named key must be present with that
+        JSON scalar value.
+        """
+        _check_kind(kind)
         if author_id is not None and not isinstance(author_id, str):
             raise ValueError("author_id must be a string or None")
-        if type(limit) is not int or not 1 <= limit <= 1000:
-            raise ValueError("limit must be an integer from 1 to 1000")
+        _check_limit(limit)
+        if where is not None and not isinstance(where, dict):
+            raise ValueError("where must be an object of attribute values")
+        conditions, values = [], []
+        for key, value in (where or {}).items():
+            if not isinstance(key, str) or not key or '"' in key:
+                raise ValueError("where keys must be nonempty attribute names without quotes")
+            if not (value is None or isinstance(value, (str, int, float, bool))) or (
+                    isinstance(value, float) and not math.isfinite(value)):
+                raise ValueError("where values must be strings, finite numbers, booleans or null")
+            # Match the JSON type as well as the value, so 1, 1.0, true and "1" stay distinct.
+            path = f'$."{key}"'
+            if value is None or isinstance(value, bool):
+                conditions.append("json_type(attributes, ?) = ?")
+                values += [path, "null" if value is None else str(value).lower()]
+            else:
+                conditions.append("json_type(attributes, ?) = ? AND json_extract(attributes, ?) = ?")
+                values += [path, {str: "text", int: "integer", float: "real"}[type(value)], path, value]
         start = 0 if after is None else self._record_key(after)
         rows = self._db.execute(
-            """SELECT id, kind, text, attributes, author_id, updated_at FROM records
+            f"""SELECT id, kind, text, attributes, author_id, updated_at FROM records
                WHERE record_key > ? AND (? IS NULL OR kind = ?) AND (? IS NULL OR author_id = ?)
+               {"".join(" AND " + condition for condition in conditions)}
                ORDER BY record_key LIMIT ?""",
-            (start, kind, kind, author_id, author_id, limit + 1),
+            (start, kind, kind, author_id, author_id, *values, limit + 1),
         ).fetchall()
         return RecordPage(tuple(self._decode_record(row) for row in rows[:limit]), len(rows) > limit)
 
@@ -654,8 +703,7 @@ class RecordStore:
         """Records whose citations overlap a half-open byte range of a source, in source order."""
         if type(start_byte) is not int or (end_byte is not None and type(end_byte) is not int):
             raise ValueError("byte offsets must be integers")
-        if type(limit) is not int or not 1 <= limit <= 1000:
-            raise ValueError("limit must be an integer from 1 to 1000")
+        _check_limit(limit)
         source_key = self._source_key(source_id)
         length = self._db.execute("SELECT length(text_utf8) FROM source_content WHERE source_key = ?",
                                   (source_key,)).fetchone()[0]

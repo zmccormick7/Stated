@@ -49,6 +49,9 @@ class CLITests(unittest.TestCase):
                          {"records": [question], "has_more": False})
         self.assertEqual(self.call("list", "--after", finding["id"], "--limit", "1"),
                          {"records": [question], "has_more": False})
+        self.assertEqual(self.call("list", "--where", "basis=inference")["records"], [finding])
+        self.assertEqual(self.call("list", "--where", "basis=\"inference\"", "--where", "status=open")["records"], [])
+        self.assertEqual(self.run_cli("list", "--where", "novalue").returncode, 2)
         walked = self.call("expand", question["id"], "--relation", "raises")
         self.assertEqual(walked["reached"][1], {
             "id": finding["id"], "kind": "Finding", "text": finding["text"], "depth": 1,
@@ -59,6 +62,8 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.run_cli("expand", question["id"], "--depth", "3").returncode, 2)
         self.assertEqual(self.call("relations"),
                          [{"relation": "raises", "from_kind": "Finding", "to_kind": "Question", "links": 1}])
+        relabelled = self.call("patch-link", link["id"], "--input", "-", payload={"author_id": "agent-b", "relation": "qualifies"})
+        self.assertEqual((relabelled["relation"], relabelled["explanation"]), ("qualifies", link["explanation"]))
         changed = self.call("update", finding["id"], "--input", "-",
                             payload={"text": "PowerFrame ramp delayed.", "author_id": "agent-b"})
         self.assertEqual((changed["id"], changed["attributes"], changed["author_id"]),

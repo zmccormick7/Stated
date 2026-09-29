@@ -30,8 +30,9 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. JSON k
 | `link FROM TO RELATION --input FILE` | Connect two existing records. |
 | `get-link ID` | Read a link. |
 | `update-link ID --input FILE` | Replace a link's endpoints, relation and explanation. |
+| `patch-link ID --input FILE` | Change some of a link's endpoints, relation or explanation, keeping the rest. |
 | `connections ID [--direction both\|in\|out] [--relation NAME] [--limit N]` | Inspect one-hop links and the records they reach. |
-| `list [--kind KIND] [--author ID] [--after ID] [--limit N]` | List records in creation order. |
+| `list [--kind KIND] [--author ID] [--where KEY=VALUE]... [--after ID] [--limit N]` | List records in creation order, optionally matching top-level attribute values. |
 | `expand SEED_ID... [--depth 1\|2] [--direction both\|in\|out] [--relation NAME]... [--limit N] [--per-record N] [--full]` | Walk links from seed records, reporting each record reached and its path. Previews by default; `--full` returns complete records. |
 | `relations` | Count links by relation and the record kinds they connect. |
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |

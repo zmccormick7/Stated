@@ -13,6 +13,17 @@ from .reranking import OpenRouterReranker
 from .retrieval import retrieve
 
 
+def _where_item(text):
+    """KEY=VALUE, with VALUE read as JSON when it is valid JSON and as a string otherwise."""
+    key, separator, raw = text.partition("=")
+    if not separator or not key:
+        raise argparse.ArgumentTypeError("use KEY=VALUE")
+    try:
+        return key, json.loads(raw)
+    except ValueError:
+        return key, raw
+
+
 def _parser():
     parser = argparse.ArgumentParser(prog="premisedb", description=__doc__)
     parser.add_argument("--db", default=os.environ.get("PREMISEDB_DB") or "research.sqlite",
@@ -47,6 +58,8 @@ def _parser():
     command("link", "create_link", "Connect two records with a named relationship.",
             "from_id", "to_id", "relation", payload="author_id, optional explanation")
     command("get-link", "read_link", "Read a current link.", "link_id")
+    command("patch-link", "patch_link", "Change some of a link's fields, keeping the rest.", "link_id",
+            payload="author_id, optional from_id, to_id, relation, explanation")
     command("update-link", "update_link", "Replace a link's endpoints, relation and explanation.",
             "link_id", payload="from_id, to_id, relation, author_id, optional explanation")
     connections = command("connections", "connections",
@@ -67,6 +80,8 @@ def _parser():
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--kind")
     listing.add_argument("--author", dest="author_id")
+    listing.add_argument("--where", action="append", type=_where_item, metavar="KEY=VALUE",
+                         help="Match a top-level attribute exactly; repeatable. VALUE is read as JSON when valid.")
     listing.add_argument("--after", metavar="RECORD_ID")
     listing.add_argument("--limit", type=int, default=100)
     ingest = command("ingest", "ingest_source", "Ingest an extracted UTF-8 text file without normalization.",
@@ -125,6 +140,8 @@ def _expand(db, options):
 def main(argv=None):
     options = vars(_parser().parse_args(argv))
     path = Path(options.pop("db"))
+    if options.get("where") is not None:
+        options["where"] = dict(options["where"])
     method = options.pop("method")
     options.pop("command")
     try:
