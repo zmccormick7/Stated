@@ -30,13 +30,9 @@ Fresh scoring cost $0.058849176: 353 Jev requests and 20 batch requests each for
 
 ## Reproduce
 
-Use the [pinned FinQA test.json](https://raw.githubusercontent.com/czyssrs/FinQA/0f16e2867befa6840783e58be38c9efb9229d742/dataset/test.json), SHA-256 `831dbfb2e785dbc227f895ce3f24046433467aec67b09db2bd6ac7692a8a30dc`. Install optional evaluation dependencies and export `OPENROUTER_API_KEY`. Collection makes paid calls; evaluation is offline after the tokenizer vocabulary is cached. API responses may vary between runs.
+The collection and evaluation scripts for this check were removed from the repository. They remain at commit [`4930cfe`](https://github.com/Implied-Capital/PremiseDB/tree/4930cfe6aa6efaaef59af8b33efade0b9aec5dfb/experiments). They used the [pinned FinQA test.json](https://raw.githubusercontent.com/czyssrs/FinQA/0f16e2867befa6840783e58be38c9efb9229d742/dataset/test.json), SHA-256 `831dbfb2e785dbc227f895ce3f24046433467aec67b09db2bd6ac7692a8a30dc`, and made paid OpenRouter calls to collect scores. The numerical and behavioral checks above still run in the test suite:
 
 ```sh
 python -m pip install -e '.[evaluation]'
-python -m experiments.collect_rse_scores .cache/finqa-test.json .cache/test.json --split test --collect
-python -m experiments.evaluate_rse .cache/test.json .cache/report.json
 python -m unittest discover -s tests -v
 ```
-
-The collector refuses to overwrite a saved run. The evaluator compares raw scores and the production adapter transforms under identical RSE settings; it does not fit parameters or use support labels to modify scoring.
