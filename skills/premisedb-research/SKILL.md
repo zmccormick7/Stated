@@ -73,7 +73,7 @@ premisedb list --kind Question --where status=open
   - **Keep model numbers in Variables.** A Finding, Question or link explanation that copies a model's current value goes stale silently when the model changes. Instead, link to the Variable with `depends_on` and state the conclusion in words, such as "demand, not supply, limits fiscal 2028 revenue in the base case". If a conclusion needs a figure derived from model outputs, such as a threshold or a unit conversion, add it to the model as an output with its own Variable rather than computing it in prose. When a record must state a model value, as a revision decision does, say that it is the value at that revision.
   - **Values across periods.** When a quantity spans several periods, one Variable can hold the row. Store `value`, and `low` and `high` if present, as lists aligned with a `periods` list such as `["2026", "2027", "2028"]`, using `null` where a period does not apply.
 
-Write a Finding together with its citations, Questions and links in one `contribute` call. Name new records with your own `ref` and use it in links; use record IDs for existing records. The whole contribution commits or nothing does, so fix the reported problem and resend it. Refs are resolved only in links; they are not replaced inside text or attributes, so refer to a new record in text only after it exists. Choose an author identifier for the actual contributor:
+Write a Finding together with its citations, Questions and links in one `contribute` call. Name new records with your own `ref` and use it in links; use record IDs for existing records. The whole contribution commits or nothing does, so fix the reported problem and resend it. To mention a new record in a Finding's text or a link's explanation, write `{ref:NAME}`; PremiseDB replaces it with that record's ID. A placeholder that names no record in the call fails the whole call, so a typo can't leave a placeholder in the graph. Attributes are stored as written, and other commands refuse `{ref:...}`: use record IDs there. Choose an author identifier for the actual contributor:
 
 ```bash
 premisedb contribute --input - <<'JSON'
@@ -85,7 +85,7 @@ premisedb contribute --input - <<'JSON'
   {"ref":"q1","kind":"Question","text":"Could grid delays lead PowerFrame's customers to defer deliveries?"}],
  "links":[
   {"from_id":"f1","to_id":"ENTITY_ID","relation":"about"},
-  {"from_id":"f1","to_id":"q1","relation":"raises","explanation":"Deferral rights make revenue timing depend on customers' readiness."}]}
+  {"from_id":"f1","to_id":"q1","relation":"raises","explanation":"Deferral rights make revenue timing depend on customers' readiness; {ref:q1} asks whether grid delays trigger them."}]}
 JSON
 ```
 

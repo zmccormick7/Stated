@@ -1,5 +1,6 @@
 from contextlib import closing
 from pathlib import Path
+import re
 import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
@@ -43,6 +44,41 @@ class ContributeTests(unittest.TestCase):
                          [(self.source.id, "supported_by"), (self.company.id, "about"), (question.id, "raises")])
         self.assertEqual(self.db.read(question.id), question)
         self.assertEqual(self.contribute(), Contribution({}, ()))
+
+    def test_text_and_explanations_name_new_records_by_ref(self):
+        result = self.db.contribute(author_id="agent", records=[
+            {"ref": "f1", "kind": "Finding", "text": "Deferrals raise {ref:q1}; this is {ref:f1}.",
+             "attributes": {"note": "{ref:q1} stays literal"}},
+            {"ref": "q1", "kind": "Question", "text": "Will deferrals grow?"}],
+            links=[{"from_id": "f1", "to_id": "q1", "relation": "raises", "explanation": "See {ref:q1} and {ref:f1}."}])
+        finding, question = result.records["f1"], result.records["q1"]
+        self.assertEqual(finding.text, f"Deferrals raise {question.id}; this is {finding.id}.")
+        self.assertEqual(finding.attributes, {"note": "{ref:q1} stays literal"})  # Attributes are data, kept verbatim.
+        self.assertEqual(result.links[0].explanation, f"See {question.id} and {finding.id}.")
+        self.assertEqual(self.db.search_records("Deferrals raise", kind="Finding"), (finding,))
+        for records, links, where in (
+                ([{"ref": "f", "kind": "Finding", "text": "Cites {ref:q_circ}."}], [], "records[0] (ref 'f')"),
+                ([{"ref": "f", "kind": "Finding", "text": "Fine"}],
+                 [{"from_id": "f", "to_id": self.company.id, "relation": "about", "explanation": "{ref:F}"}], "links[0]")):
+            with self.subTest(where=where), self.assertRaisesRegex(ValueError, f"^{re.escape(where)}: {{ref:"):
+                self.db.contribute(author_id="agent", records=records, links=links)
+        self.assertEqual(self.db.search_records("Cites Fine"), ())
+
+    def test_writes_outside_contribute_refuse_placeholders(self):
+        finding = self.db.create("Finding", text="Plain", author_id="agent")
+        link = self.db.create_link(finding.id, self.company.id, "about", author_id="agent")
+        writes = (lambda: self.db.create("Finding", text="See {ref:q1}", author_id="agent"),
+                  lambda: self.db.update(finding.id, text="See {ref:q1}", author_id="agent"),
+                  lambda: self.db.patch(finding.id, text="See {ref:q1}", author_id="agent"),
+                  lambda: self.db.create_link(self.company.id, finding.id, "about", author_id="agent",
+                                              explanation="{ref:q1}"),
+                  lambda: self.db.update_link(link.id, from_id=finding.id, to_id=self.company.id, relation="about",
+                                              author_id="agent", explanation="{ref:q1}"),
+                  lambda: self.db.patch_link(link.id, author_id="agent", explanation="{ref:q1}"))
+        for write in writes:
+            with self.assertRaisesRegex(ValueError, "resolved only in contribute"):
+                write()
+        self.assertEqual((self.db.read(finding.id), self.db.read_link(link.id)), (finding, link))
 
     def test_any_failure_rolls_back_the_whole_contribution(self):
         records = [{"ref": "f1", "kind": "Finding", "text": "Claim"}]

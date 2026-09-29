@@ -134,6 +134,8 @@ class SourceSegment:
 
 
 KINDS = ("Entity", "Source", "Finding", "Question", "Model", "Variable")
+# A new record named by its contribute ref inside text or an explanation, replaced by the record's ID.
+_REF = re.compile(r"\{ref:([^{}]+)\}")
 # Characters that extracted text often swaps for one another, used only to suggest a corrected quote.
 _LOOKALIKES = ("-\u2010\u2011\u2012\u2013\u2014\u2212", "'\u2018\u2019\u02bc\u2032", '"\u201c\u201d\u2033')
 
@@ -141,6 +143,23 @@ _LOOKALIKES = ("-\u2010\u2011\u2012\u2013\u2014\u2212", "'\u2018\u2019\u02bc\u20
 def _check_limit(value: int, name: str = "limit") -> None:
     if type(value) is not int or not 1 <= value <= 1000:
         raise ValueError(f"{name} must be an integer from 1 to 1000")
+
+
+def _refuse_refs(text: object) -> None:
+    """Keep {ref:NAME} placeholders out of writes that have no refs to resolve them."""
+    if isinstance(text, str) and _REF.search(text):
+        raise ValueError("{ref:NAME} placeholders are resolved only in contribute; use the record ID")
+
+
+def _fill_refs(text: object, ids: dict[str, str], where: str) -> object:
+    """Replace each {ref:NAME} with the ID of the record contributed under that ref."""
+    if not isinstance(text, str):
+        return text  # The write itself reports the invalid type.
+    def replace(match: re.Match) -> str:
+        if match.group(1) not in ids:
+            raise ValueError(f"{where}: {match.group(0)} names no record in this contribution")
+        return ids[match.group(1)]
+    return _REF.sub(replace, text)
 
 
 def _check_kind(kind: str | None) -> None:
@@ -360,6 +379,7 @@ class RecordStore:
                attributes: dict[str, object] | None = None,
                citations: Iterable[dict[str, object]] | None = None) -> Record:
         """Create a record; citations are resolved and linked supported_by in the same transaction."""
+        _refuse_refs(text)
         attributes, source_ids = self._cite(attributes, citations)
         encoded = self._encode(attributes)
         with self._db:
@@ -484,6 +504,7 @@ class RecordStore:
         Citations replace attributes["citations"] and add missing supported_by links;
         existing links are kept.
         """
+        _refuse_refs(text)
         attributes, source_ids = self._cite(attributes, citations)
         encoded = self._encode(attributes)
         with self._db:
@@ -516,6 +537,7 @@ class RecordStore:
             raise ValueError("remove must be a list of attribute names")
         if text is None and not attributes and not remove and citations is None:
             raise ValueError("patch needs text, attributes, remove or citations")
+        _refuse_refs(text)
         changes, source_ids = self._cite(attributes or {}, citations)
         if set(changes) & set(remove):
             raise ValueError("an attribute cannot be both set and removed")
@@ -541,6 +563,7 @@ class RecordStore:
 
     def create_link(self, from_id: str, to_id: str, relation: str, *, author_id: str,
                     explanation: str = "") -> Link:
+        _refuse_refs(explanation)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             link = self._insert_link(from_id, to_id, relation, explanation, author_id)
@@ -548,35 +571,43 @@ class RecordStore:
 
     def contribute(self, *, author_id: str, records: Iterable[dict[str, object]] = (),
                    links: Iterable[dict[str, object]] = ()) -> Contribution:
-        """Create records and links in one transaction; links may name new records by ref."""
+        """Create records and links in one transaction.
+
+        Links may name new records by ref, and record text and link explanations may name them as
+        {ref:NAME}, which is replaced by the new record's ID.
+        """
         records = self._batch(records, "records", {"ref", "kind", "text"}, {"attributes", "citations"})
         links = self._batch(links, "links", {"from_id", "to_id", "relation"}, {"explanation"})
         refs = [record["ref"] for record in records]
         if any(not isinstance(ref, str) or not ref.strip() for ref in refs) or len(set(refs)) != len(refs):
             raise ValueError("record refs must be unique, nonblank strings")
+        ids = {ref: str(uuid4()) for ref in refs}  # Known before writing, so text can name any new record.
         prepared = []
         for index, record in enumerate(records):
+            where = f"records[{index}] (ref {record['ref']!r})"
             try:
                 attributes, source_ids = self._cite(record.get("attributes"), record.get("citations"))
             except ValueError as error:
-                raise ValueError(f"records[{index}] (ref {record['ref']!r}): {error}") from None
-            prepared.append((record, self._encode(attributes), source_ids))
+                raise ValueError(f"{where}: {error}") from None
+            prepared.append((record, _fill_refs(record["text"], ids, where), self._encode(attributes), source_ids))
+        explanations = [_fill_refs(link.get("explanation", ""), ids, f"links[{index}]")
+                        for index, link in enumerate(links)]
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             if refs and self._db.execute(f"SELECT 1 FROM records WHERE id IN ({','.join('?' * len(refs))})",
                                          refs).fetchone():
                 raise ValueError("record refs must not be existing record IDs")
             created = {}
-            for record, encoded, source_ids in prepared:
-                created[record["ref"]] = self._insert_record(record["kind"], record["text"], encoded, author_id)
+            for record, text, encoded, source_ids in prepared:
+                created[record["ref"]] = self._insert_record(record["kind"], text, encoded, author_id,
+                                                             ids[record["ref"]])
                 self._link_sources(created[record["ref"]].id, source_ids, author_id)
-            ids = {ref: record.id for ref, record in created.items()}
             made = []
-            for index, link in enumerate(links):
+            for index, (link, explanation) in enumerate(zip(links, explanations)):
                 try:
                     made.append(self._insert_link(ids.get(link["from_id"], link["from_id"]),
                                                   ids.get(link["to_id"], link["to_id"]), link["relation"],
-                                                  link.get("explanation", ""), author_id))
+                                                  explanation, author_id))
                 except ValueError as error:
                     raise ValueError(f"links[{index}]: {error}") from None
         return Contribution(created, tuple(made))
@@ -584,6 +615,7 @@ class RecordStore:
     def update_link(self, link_id: str, *, from_id: str, to_id: str, relation: str,
                     author_id: str, explanation: str = "") -> Link:
         """Replace current link contents and refresh its last-edited timestamp."""
+        _refuse_refs(explanation)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             self.read_link(link_id)  # A missing link is reported before its new contents are checked.
@@ -603,6 +635,7 @@ class RecordStore:
         """Change only the given link fields in one transaction; the rest of the link is kept."""
         if from_id is None and to_id is None and relation is None and explanation is None:
             raise ValueError("patch_link needs from_id, to_id, relation or explanation")
+        _refuse_refs(explanation)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             current = self.read_link(link_id)
@@ -930,8 +963,9 @@ class RecordStore:
             raise KeyError(source_id)
         return row[0]
 
-    def _insert_record(self, kind: str, text: str, encoded: str, author_id: str) -> Record:
-        record_id = str(uuid4())
+    def _insert_record(self, kind: str, text: str, encoded: str, author_id: str,
+                       record_id: str | None = None) -> Record:
+        record_id = record_id or str(uuid4())
         self._db.execute(
             """INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
