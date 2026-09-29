@@ -84,6 +84,37 @@ class LinkTests(unittest.TestCase):
                       [(u.relation, u.from_kind, u.to_kind, u.links) for u in self.db.relation_usage()])
         self.assertNotIn("Question", {u.from_kind for u in self.db.relation_usage() if u.relation == "depends_on"})
 
+    def test_list_records_where_matches_attribute_type_and_value(self):
+        make = lambda text, **attributes: self.db.create("Question", text=text, author_id="a", attributes=attributes)
+        open_q, answered, number, integer, flag, empty = (
+            make("Open", status="open", owner="nvda"), make("Answered", status="answered"),
+            make("Float", value=0.45), make("Integer", value=1), make("Flag", value=True), make("Null", value=None))
+        text_one = make("Text one", value="1")
+        where = lambda **conditions: [r.text for r in self.db.list_records(kind="Question", where=conditions).records]
+        self.assertEqual(where(status="open"), ["Open"])
+        self.assertEqual(where(status="open", owner="nvda"), ["Open"])
+        self.assertEqual(where(status="open", owner="mu"), [])
+        self.assertEqual((where(value=0.45), where(value=1), where(value=True), where(value=None), where(value="1")),
+                         (["Float"], ["Integer"], ["Flag"], ["Null"], ["Text one"]))
+        self.assertEqual(where(missing=None), [])
+        for bad in ([], {"": 1}, {'a"b': 1}, {"value": [1]}, {"value": {"a": 1}}, {"value": float("nan")}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.db.list_records(where=bad)
+
+    def test_patch_link_changes_only_named_fields(self):
+        link = self.db.create_link(self.a.id, self.b.id, "qualifies", author_id="alice", explanation="Why it matters.")
+        relabelled = self.db.patch_link(link.id, author_id="bob", relation="corroborates")
+        self.assertEqual((relabelled.from_id, relabelled.to_id, relabelled.relation, relabelled.explanation,
+                          relabelled.author_id), (self.a.id, self.b.id, "corroborates", "Why it matters.", "bob"))
+        moved = self.db.patch_link(link.id, author_id="carol", to_id=self.c.id, explanation="")
+        self.assertEqual((moved.to_id, moved.relation, moved.explanation), (self.c.id, "corroborates", ""))
+        for kwargs, error in (({}, ValueError), ({"to_id": "missing"}, KeyError), ({"relation": " "}, sqlite3.IntegrityError)):
+            with self.subTest(kwargs=kwargs), self.assertRaises(error):
+                self.db.patch_link(link.id, author_id="dan", **kwargs)
+        with self.assertRaises(KeyError):
+            self.db.patch_link("missing", author_id="dan", relation="about")
+        self.assertEqual(self.db.read_link(link.id), moved)
+
     def test_update_retargets_in_place_and_survives_reopening(self):
         first = self.db.create_link(self.a.id, self.b.id, "about", author_id="alice")
         before = datetime.now(UTC)
