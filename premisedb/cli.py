@@ -8,6 +8,7 @@ from pathlib import Path
 import sqlite3
 import sys
 
+from .context import OpenRouterContextWriter, write_document_context
 from .store import RecordStore
 from .reranking import OpenRouterReranker
 from .recall import recall
@@ -132,6 +133,22 @@ def _parser():
             "source_id", payload="title, summary, author_id, optional provenance")
     command("get-context", "read_document_context", "Read document context, or null if absent.", "source_id")
     return parser
+
+
+def _add_document_context(db, source, author_id):
+    """Give a newly ingested Source a model-written title and summary when OpenRouter is configured.
+
+    The Source is already committed, so a failed call only warns; context is a retrieval aid, not evidence.
+    """
+    if not os.environ.get("OPENROUTER_API_KEY", "").strip():
+        return
+    try:
+        writer = OpenRouterContextWriter(os.environ.get("PREMISEDB_CONTEXT_MODEL", "openai/gpt-6-luna"),
+                                         reasoning_effort=os.environ.get("PREMISEDB_CONTEXT_REASONING", "low"))
+        write_document_context(db, source.id, writer=writer, author_id=author_id)
+    except (ValueError, RuntimeError) as error:
+        print(json.dumps({"warning": f"Source {source.id} was ingested without document context: {error}"}),
+              file=sys.stderr)
 
 
 def _search_documents(db, options):
@@ -290,6 +307,8 @@ def main(argv=None):
                           else {"database": str(path.resolve())})
                 if not full:
                     result = _compact(db, method, result, options)
+                if method == "ingest_source":
+                    _add_document_context(db, result, payload["author_id"])
         print(json.dumps(_shape(method, result), default=asdict, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError, sqlite3.Error) as error:

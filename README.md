@@ -78,7 +78,7 @@ Open a new agent session in your research workspace and ask:
 
 > Use the premisedb-research skill and research.sqlite to investigate this company's exposure to customer project delays. Build on existing findings, inspect the evidence, and save the important conclusions and open questions.
 
-Make the installed `premisedb` executable available in the agent's shell, or give it the absolute path to this checkout's `.venv/bin/premisedb`. Set `PREMISEDB_DB` to the workspace database's absolute path so every session uses the same graph. For document search, configure `OPENROUTER_API_KEY` in that environment once. The agent asks a research question and receives relevant excerpts with citations; PremiseDB handles the retrieval pipeline. The [CLI guide](docs/cli.md) documents commands and setup. The skill guides the research; the agent uses its existing tools to find new sources.
+Make the installed `premisedb` executable available in the agent's shell, or give it the absolute path to this checkout's `.venv/bin/premisedb`. Set `PREMISEDB_DB` to the workspace database's absolute path so every session uses the same graph. For document search and model-written document context, configure `OPENROUTER_API_KEY` in that environment once. The agent asks a research question and receives relevant excerpts with citations; PremiseDB handles the retrieval pipeline. The [CLI guide](docs/cli.md) documents commands and setup. The skill guides the research; the agent uses its existing tools to find new sources.
 
 ### Try the Python API
 

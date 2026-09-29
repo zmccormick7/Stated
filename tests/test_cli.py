@@ -13,7 +13,8 @@ class CLITests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
         self.path = self.directory / "research.sqlite"
-        self.env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+        # No OpenRouter key, so ingest makes no model calls; test_context covers document context.
+        self.env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1]), "OPENROUTER_API_KEY": ""}
         self.call("init")
 
     def run_cli(self, *arguments, stdin=None):
