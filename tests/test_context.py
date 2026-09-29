@@ -1,15 +1,15 @@
-from io import BytesIO
+from contextlib import redirect_stderr, redirect_stdout
+from io import BytesIO, StringIO
 import json
 import os
 from pathlib import Path
-import subprocess
-import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
 from premisedb import ContextWriter, OpenRouterContextWriter, RecordStore, write_document_context
+from premisedb.cli import main
 
 
 class ScriptedWriter(ContextWriter):
@@ -93,22 +93,34 @@ class DocumentContextTests(unittest.TestCase):
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}), self.assertRaises(ValueError):
             OpenRouterContextWriter()
 
-    def test_cli_requires_a_key_before_ingesting(self):
-        environment = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1]), "OPENROUTER_API_KEY": ""}
+    def test_cli_ingest_adds_context_without_being_asked(self):
         text_file = self.path.parent / "note.txt"
-        text_file.write_text("A note long enough to ingest.", encoding="utf-8")
-        run = lambda *arguments, stdin=None: subprocess.run(
-            [sys.executable, "-m", "premisedb", "--db", str(self.path), *arguments], input=stdin, text=True,
-            capture_output=True, env=environment)
-        result = run("ingest", str(text_file), "--auto-context", "--input", "-",
-                     stdin=json.dumps({"description": "Note", "author_id": "agent"}))
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("OPENROUTER_API_KEY", json.loads(result.stderr)["error"])
-        self.assertEqual(self.db.list_records(kind="Source").records, ())  # Nothing ingested.
-        source = self.ingest("Another note.")
-        self.assertEqual(run("auto-context", source.id[:8], "--author", "agent").returncode, 1)
-        self.assertEqual(run("auto-context", source.id).returncode, 2)  # --author is required.
-
+        text_file.write_text("PowerFrame Q2 2026 results. Backlog rose.", encoding="utf-8")
+        environment = {k: v for k, v in os.environ.items() if not k.startswith("PREMISEDB_CONTEXT_")}  # Defaults.
+        def ingest(description, key, response):
+            stdout, stderr = StringIO(), StringIO()
+            with patch.dict(os.environ, {**environment, "OPENROUTER_API_KEY": key}, clear=True), \
+                    patch("sys.stdin", StringIO(json.dumps({"description": description, "author_id": "agent"}))), \
+                    patch("premisedb.context.urlopen", **response) as request, \
+                    redirect_stdout(stdout), redirect_stderr(stderr):
+                code = main(["--db", str(self.path), "ingest", str(text_file), "--input", "-"])
+            return code, json.loads(stdout.getvalue()), stderr.getvalue(), request
+        answers = [BytesIO(json.dumps({"choices": [{"message": {"content": text}}]}).encode())
+                   for text in ("PowerFrame Q2 2026 results", "This document is about: PowerFrame's Q2 2026 results.")]
+        code, source, stderr, request = ingest("Note", "key", {"side_effect": answers})
+        self.assertEqual((code, stderr, request.call_count), (0, "", 2))
+        context = self.db.read_document_context(source["id"])
+        self.assertEqual((context.title, context.author_id, context.provenance["model"]),
+                         ("PowerFrame Q2 2026 results", "agent", "openai/gpt-6-luna"))
+        text_file.write_text("A second note.", encoding="utf-8")
+        code, source, stderr, _ = ingest("Second", "key", {"side_effect": HTTPError("u", 429, "", {}, BytesIO())})
+        self.assertEqual(code, 0)  # The Source is kept; context is only a retrieval aid.
+        self.assertIn("ingested without document context: OpenRouter HTTP 429", json.loads(stderr)["warning"])
+        self.assertIsNone(self.db.read_document_context(source["id"]))
+        text_file.write_text("A third note.", encoding="utf-8")
+        code, source, stderr, request = ingest("Third", "", {})
+        self.assertEqual((code, stderr, request.call_count), (0, "", 0))  # No key: no calls, no warning.
+        self.assertIsNone(self.db.read_document_context(source["id"]))
 
 if __name__ == "__main__":
     unittest.main()
