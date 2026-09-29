@@ -110,6 +110,22 @@ class CLITests(unittest.TestCase):
                                    "basis": "assumption", "key": "growth", "value": [0.1, 0.2]})
         self.assertEqual(self.call("list", "--kind", "Variable", "--full")["records"], [variable])
 
+    def test_recall_returns_records_evidence_and_issues(self):
+        finding = self.create("Finding", "Backlog may slip.")
+        question = self.create("Question", "Can customers defer?")
+        link = self.call("link", finding["id"], question["id"], "raises", "--input", "-", payload={"author_id": "agent-a"})
+        result = self.call("recall", "backlog", "--max-records", "5")
+        self.assertEqual([(r["id"], r["path"]) for r in result["records"]],
+                         [(finding["id"], []), (question["id"], [{"id": link["id"], "from_id": finding["id"],
+                                                                  "to_id": question["id"], "relation": "raises"}])])
+        self.assertEqual(result["records"][0]["channels"], ["search"])
+        self.assertEqual([q["id"] for q in result["issues"]["open_questions"]], [question["id"]])
+        self.assertEqual((result["evidence"], result["issues"]["links"], result["frontier"]), ([], [], []))
+        seeded = self.call("recall", "nothing", "--seed", question["id"][:8], "--max-records", "1")
+        self.assertEqual((seeded["records"][0]["id"], seeded["coverage"]["truncated"]), (question["id"], True))
+        full = self.call("recall", "backlog", "--full")
+        self.assertEqual(full["records"][0]["record"], finding)
+
     def test_connection_limits_and_link_updates(self):
         finding = self.create("Finding", "Capacity depends on power.")
         question = self.create("Question", "Is power available?")

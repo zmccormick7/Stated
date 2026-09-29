@@ -65,6 +65,38 @@ with RecordStore("research.sqlite") as db:
 
 `list_records` returns a `RecordPage` of current records in creation order, optionally filtered by exact `kind`, `author_id` (the last editor) and `where`, a dict of top-level attribute values that must all match. `where` values are strings, finite numbers, booleans or `None`, and match only the same JSON type: `1`, `1.0`, `True` and `"1"` are distinct, and `None` matches an explicit null, not a missing key. Pass the last returned ID as `after` to continue; `has_more` reports whether more matching records follow. The default limit is 100 and the maximum is 1,000. Invalid kinds, limits or author types raise `ValueError`, and an unknown `after` ID raises `KeyError`. Records created after a page is read appear on later pages.
 
+## Recall connected research
+
+```python
+from premisedb import RecordStore, recall
+
+with RecordStore("research.sqlite") as db:
+    result = recall(db, "utility approval construction", seeds=[company.id])
+    for item in result.records:
+        print(item.score, item.record.text, [link.relation for link in item.path])
+    for evidence in result.evidence:
+        print(evidence.quote, evidence.record_ids)
+```
+
+`recall(db, query, seeds=(), max_records=40, entry_limit=10)` assembles connected research in one call, without provider calls ([design](connected-recall.md)).
+
+1. **Entry points.** Record-search hits (up to `entry_limit`) and `seeds` are combined by reciprocal rank fusion, with seeds weighted double.
+2. **Walk.** From each entry point it walks two hops along reasoning relations and one hop along `about`. It does not walk `in_layer` or `supported_by`.
+3. **Scoring.** A reached record scores its entry point's score times `RELATION_WEIGHTS[relation] × HOP_DISCOUNT` per hop, keeping the best path. The top `max_records` (1–100) become `records`, as `Recalled(record, score, entry_id, channels, path)`.
+
+The result is a `Recall`:
+
+| Field | Contents |
+| --- | --- |
+| `records` | The selected records, best first. |
+| `evidence` | The deduplicated cited ranges of selected records with their quotes. Older citations without quotes are read from the source by byte range. |
+| `issue_links` | `contradicts`, `qualifies` and `updates` links touching selected records. |
+| `open_questions` | Questions with status `open` or `partly_answered`, linked to selected records through reasoning relations, or selected themselves. |
+| `frontier` | Up to 50 records reached but not selected, then records whose links were capped. |
+| `coverage` | Counts and whether the result is truncated. |
+
+Each step reads the current graph separately, so concurrent writes may appear partially.
+
 ## Search for a starting point
 
 ```python

@@ -17,6 +17,15 @@ Run `premisedb --help` or `premisedb COMMAND --help` for arguments and write-pay
 
 Find a few entry points, then walk the graph from them. Much of what matters is reachable only through links, not by search.
 
+**Start with `recall`.** `recall "KEY TERMS OF THE QUESTION"` returns in one call:
+- the records connected to the question, each with the path from its entry point;
+- the cited quotes behind them;
+- `contradicts`, `qualifies` and `updates` links;
+- open or partly answered Questions;
+- a `frontier` of records it reached but did not include.
+
+Add `--seed ID` (repeatable) for records you already know are relevant; seeds rank first. Record search matches any query word, so key terms give better entry points than a long question. Read the evidence and issues before concluding. Use the steps below to go further: search other terms, `expand` from frontier records, or check cited passages.
+
 `search`, `list` and `expand` show previews: each record's ID, kind, the start of its text, its `basis`, `status`, `key` and `value` where present, and how many sources it cites. That is usually enough to tell a disclosed fact from an inference, or an open Question from an answered one, without fetching the record.
 
 **1. Find entry points.**
