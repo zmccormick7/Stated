@@ -20,11 +20,11 @@ premisedb --db research.sqlite search "PowerFrame backlog" --kind Finding
 
 The counts left out are reported in `coverage`.
 
-`search`, `list` and `expand` print previews unless given `--full`. A preview holds the record's `id`, `kind`, the first 200 characters of `text`, any of the attributes `basis`, `status`, `key` and `value`, and `citations` as a count when the record cites sources. Use `get` for a complete record. Successful operations print one JSON value to stdout: record/link/context objects, arrays of search results, a connection object with `links` and `has_more`, a passage count from `chunk`, a JSON string from `source-text`, or an absolute database path object from `init`. Missing context returns `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
+`search`, `list` and `expand` print previews unless given `--full`. A preview holds the record's `id`, `kind`, the first 200 characters of `text`, any of the attributes `basis`, `status`, `key` and `value`, and `citations` as a count when the record cites sources. Use `get` for a complete record. Successful operations print one JSON object to stdout. Lists are under a named key: `records` from `search` and `list`, `excerpts` from `search-documents`, `matches` from `locate` and `relations` from `relations`. `connections` prints `links`, `has_more` and a `records` list of the records at the other ends. `source-text` prints a JSON string, `chunk` a passage count, and missing context `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
 
 ## Commands
 
-Run `premisedb COMMAND --help` for flags and the expected payload fields. Positional record and link IDs can be full IDs or unique prefixes of at least 8 characters; IDs inside JSON payloads must be complete. A missing ID reports `Not found: ID`, and an ambiguous prefix asks for more characters. JSON keys are the existing [Python API](python-api.md) argument names; unknown keys and keys that duplicate positional arguments are errors.
+Run `premisedb COMMAND --help` for flags and the expected payload fields. Positional record and link IDs can be full IDs or unique prefixes of at least 8 characters; The same prefixes work for IDs inside JSON payloads, including link ends and citation `source_id`s, which are stored as full IDs. A missing ID reports `Not found: ID`, and an ambiguous prefix asks for more characters. JSON keys are the existing [Python API](python-api.md) argument names; unknown keys and keys that duplicate positional arguments are errors.
 
 | Command | Purpose |
 | --- | --- |
@@ -40,9 +40,9 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 | `update-link ID --input FILE` | Replace a link's endpoints, relation and explanation. |
 | `patch-link ID --input FILE` | Change some of a link's endpoints, relation or explanation, keeping the rest. |
 | `connections ID [--direction both\|in\|out] [--relation NAME] [--limit N]` | Inspect one-hop links and the records they reach. |
-| `list [--kind KIND] [--author ID] [--where KEY=VALUE]... [--after ID] [--limit N] [--full]` | List records in creation order, optionally matching top-level attribute values. Previews by default. |
+| `list [--kind KIND] [--author ID] [--created-by ID] [--since UTC_TIME] [--where KEY=VALUE]... [--after ID] [--limit N] [--full]` | List records in creation order, optionally matching top-level attribute values. `--author` matches the last editor and `--created-by` the creator. `--since` keeps records created or edited at or after a UTC date or time, such as `2026-09-28T18:00`. Previews by default. |
 | `expand SEED_ID... [--depth 1\|2] [--direction both\|in\|out] [--relation NAME]... [--limit N] [--per-record N] [--full]` | Walk links from seed records, reporting each record reached and its path. Previews by default; `--full` returns complete records. |
-| `recall QUERY [--seed ID]... [--max-records N] [--full]` | Assemble connected research: records with paths, cited evidence, disagreements, open Questions and a frontier. Compact by default, sized to stay within about 25 KB at 40 records. |
+| `recall QUERY [--seed ID]... [--max-records N] [--full]` | Assemble connected research: records with paths, cited evidence, disagreements, open Questions and a frontier. Compact by default and capped at `--max-chars` (default 24,000, minimum 2,000) by dropping the lowest-ranked records; `coverage.dropped_for_size` counts them. `--full` is uncapped. |
 | `relations` | Count links by relation and the record kinds they connect. |
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |
 | `source-text SOURCE_ID [--start-byte N] [--end-byte N]` | Read exact source text as a JSON string. |
@@ -59,7 +59,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 
 For `contribute`, supply `author_id`, a `records` list and a `links` list. Each record has a caller-chosen `ref` plus `kind`, `text` and optional `attributes` and `citations`; each link has `from_id`, `to_id`, `relation` and optional `explanation`, where either end can be a new record's `ref` or an existing record ID. The output maps each `ref` to its created record and lists the created links.
 
-For `ingest`, supply `description`, `author_id` and optional `attributes`; the separate text file is read without newline or Unicode normalization. Ingestion creates a new Source on every call and does not chunk it automatically. For `set-context`, supply `title`, `summary`, `author_id` and optional `provenance`.
+For `ingest`, supply `description`, `author_id` and optional `attributes`; the separate text file is read without newline or Unicode normalization. Ingestion refuses text identical to an existing Source's and names that Source; pass `"allow_duplicate": true` to create another. It does not chunk automatically. For `set-context`, supply `title`, `summary`, `author_id` and optional `provenance`.
 
 Updates replace complete contents: omitted attributes/provenance become `{}`, and an omitted link explanation becomes empty. Preserve metadata you intend to keep. For `patch`, supply `author_id` and any of `text`, `attributes` (keys to set), `remove` (keys to delete) and `citations`; unnamed attributes are kept. Each command uses the existing store operation and its transaction semantics; a series of commands is not one transaction. After an interrupted create or ingestion, check whether it committed before retrying.
 

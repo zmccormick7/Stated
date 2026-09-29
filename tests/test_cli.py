@@ -40,15 +40,15 @@ class CLITests(unittest.TestCase):
         link = self.call("link", finding["id"], question["id"], "raises", "--input", "-",
                          payload={"author_id": "agent-a", "explanation": "Investigate customer timing."})
         preview = {"id": finding["id"], "kind": "Finding", "text": finding["text"], "basis": "inference"}
-        self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding"), [preview])
-        self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding", "--full"), [finding])
+        self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding"), {"records": [preview]})
+        self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding", "--full"), {"records": [finding]})
         self.assertEqual(self.call("get", finding["id"]), finding)
         self.assertEqual(self.call("get", finding["id"][:8]), finding)
         self.assertEqual(self.call("connections", question["id"][:10])["links"], [link])
         self.assertEqual(self.call("get", "00000000", status=1), {"error": "Not found: 00000000"})
         self.assertEqual(self.call("get-link", link["id"]), link)
         self.assertEqual(self.call("connections", question["id"]),
-                         {"links": [link], "has_more": False, "records": {finding["id"]: finding}})
+                         {"links": [link], "has_more": False, "records": [finding]})
         self.assertEqual(self.call("connections", question["id"], "--direction", "out")["links"], [])
         self.assertEqual(self.call("list", "--kind", "Question", "--author", "agent-a", "--full"),
                          {"records": [question], "has_more": False})
@@ -67,14 +67,14 @@ class CLITests(unittest.TestCase):
         self.assertEqual((full["reached"][1]["record"], full["reached"][1]["path"]), (finding, [link]))
         self.assertEqual(self.run_cli("expand", question["id"], "--depth", "3").returncode, 2)
         self.assertEqual(self.call("relations"),
-                         [{"relation": "raises", "from_kind": "Finding", "to_kind": "Question", "links": 1}])
+                         {"relations": [{"relation": "raises", "from_kind": "Finding", "to_kind": "Question", "links": 1}]})
         relabelled = self.call("patch-link", link["id"], "--input", "-", payload={"author_id": "agent-b", "relation": "qualifies"})
         self.assertEqual((relabelled["relation"], relabelled["explanation"]), ("qualifies", link["explanation"]))
         changed = self.call("update", finding["id"], "--input", "-",
                             payload={"text": "PowerFrame ramp delayed.", "author_id": "agent-b"})
         self.assertEqual((changed["id"], changed["attributes"], changed["author_id"]),
                          (finding["id"], {}, "agent-b"))
-        self.assertEqual(self.call("search", "backlog"), [])
+        self.assertEqual(self.call("search", "backlog"), {"records": []})
         patched = self.call("patch", finding["id"], "--input", "-", payload={
             "author_id": "agent-c", "attributes": {"basis": "inference", "status": "draft"}, "remove": ["absent"]})
         self.assertEqual((patched["text"], patched["attributes"], patched["author_id"]),
@@ -99,7 +99,7 @@ class CLITests(unittest.TestCase):
         self.call("contribute", "--input", "-", status=1, payload={
             "author_id": "agent-a", "records": [{"ref": "g", "kind": "Finding", "text": "Orphan"}],
             "links": [{"from_id": "g", "to_id": "missing", "relation": "about"}]})
-        self.assertEqual(self.call("search", "Orphan"), [])
+        self.assertEqual(self.call("search", "Orphan"), {"records": []})
 
     def test_previews_show_telling_attributes_and_truncate_text(self):
         text = "Growth input " + "x" * 300
@@ -136,6 +136,15 @@ class CLITests(unittest.TestCase):
         self.assertEqual(seeded["issues"]["open_questions"], [])  # The Question is already a record.
         full = self.call("recall", "backlog", "--full")
         self.assertEqual(full["records"][0]["record"], finding)
+        self.call("contribute", "--input", "-", payload={"author_id": "agent-a", "records": [
+            {"ref": str(n), "kind": "Finding", "text": f"Deferral clause {n}. " * 10} for n in range(12)], "links": [
+            {"from_id": finding["id"][:8], "to_id": str(n), "relation": "depends_on"} for n in range(12)]})
+        small = self.call("recall", "backlog", "--max-chars", "2000")
+        self.assertLessEqual(len(json.dumps(small)), 2000)
+        self.assertGreater(small["coverage"]["dropped_for_size"], 0)
+        self.assertTrue(small["coverage"]["truncated"])
+        self.assertEqual(small["records"][0]["id"], finding["id"])
+        self.assertEqual(self.run_cli("recall", "backlog", "--max-chars", "100").returncode, 1)
 
     def test_connection_limits_and_link_updates(self):
         finding = self.create("Finding", "Capacity depends on power.")
@@ -143,7 +152,7 @@ class CLITests(unittest.TestCase):
         links = [self.call("link", finding["id"], question["id"], relation, "--input", "-",
                            payload={"author_id": "agent-a"}) for relation in ("raises", "depends_on")]
         self.assertEqual(self.call("connections", finding["id"], "--limit", "1"),
-                         {"links": links[:1], "has_more": True, "records": {question["id"]: question}})
+                         {"links": links[:1], "has_more": True, "records": [question]})
         self.assertEqual(self.call("connections", finding["id"], "--relation", "depends_on")["links"], links[1:])
         fields = {"from_id": finding["id"], "to_id": question["id"], "relation": "concerns", "author_id": "agent-b"}
         changed = self.call("update-link", links[0]["id"], "--input", "-", payload=fields)
@@ -169,10 +178,10 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("source-text", sid), text)
         match = {"source_id": sid, "start_byte": 16, "end_byte": 30, "text": "approval is pe",
                  "document_context": None}
-        self.assertEqual(self.call("locate", sid, "approval is pe"), [match])
-        self.assertEqual(self.call("locate", sid, "approval  is"), [])
+        self.assertEqual(self.call("locate", sid, "approval is pe"), {"matches": [match]})
+        self.assertEqual(self.call("locate", sid, "approval  is"), {"matches": []})
         stdin = self.run_cli("locate", sid, "-", stdin="Z\r\nGrid approval\n")
-        self.assertEqual([(m["start_byte"], m["end_byte"]) for m in json.loads(stdin.stdout)], [(8, 24)])
+        self.assertEqual([(m["start_byte"], m["end_byte"]) for m in json.loads(stdin.stdout)["matches"]], [(8, 24)])
         self.call("locate", sid, " ", status=1)
         finding = self.call("create", "Finding", "--input", "-", payload={
             "text": "Approval is pending.", "author_id": "agent-a",
@@ -180,7 +189,7 @@ class CLITests(unittest.TestCase):
         self.assertEqual(finding["attributes"]["citations"],
                          [{"source_id": sid, "start_byte": 11, "end_byte": 36, "quote": "Grid approval is pending."}])
         self.assertEqual(self.call("search", "Approval pending", "--kind", "Finding"),
-                         [{"id": finding["id"], "kind": "Finding", "text": "Approval is pending.", "citations": 1}])
+                         {"records": [{"id": finding["id"], "kind": "Finding", "text": "Approval is pending.", "citations": 1}]})
         self.assertEqual([link["to_id"] for link in self.call("connections", finding["id"])["links"]], [sid])
         cited = self.call("cited-by", sid, "--start-byte", "20", "--end-byte", "24")
         self.assertEqual(cited, {"citations": [{"record": finding, "source_id": sid, "start_byte": 11, "end_byte": 36}],
@@ -197,7 +206,7 @@ class CLITests(unittest.TestCase):
         self.assertEqual(invalid.returncode, 1)
         self.assertEqual(invalid.stdout, "")
         self.assertTrue(json.loads(invalid.stderr)["error"])
-        self.assertEqual(self.call("search", "Claim Missing"), [])
+        self.assertEqual(self.call("search", "Claim Missing"), {"records": []})
         self.call("create", "Finding", "--input", "absent.json", status=1)
         self.call("get", "missing", status=1)
         usage = self.run_cli("search", "claim", "--limit", "invalid")
@@ -220,7 +229,7 @@ class CLITests(unittest.TestCase):
             [sys.executable, "-m", "premisedb", *arguments], text=True, capture_output=True,
             cwd=self.directory, env={**self.env, "PREMISEDB_DB": path})
         self.assertEqual(json.loads(run("init").stdout), {"database": str(shared.resolve())})
-        self.assertEqual(json.loads(run("search", "anything").stdout), [])
+        self.assertEqual(json.loads(run("search", "anything").stdout), {"records": []})
         self.assertIn("does not exist", run("--db", "other.sqlite", "search", "x").stderr)
         self.assertEqual(json.loads(run("init", path="").stdout),
                          {"database": str((self.directory / "research.sqlite").resolve())})

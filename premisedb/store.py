@@ -15,7 +15,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 10
+_SCHEMA_VERSION = 11
 
 
 @dataclass(frozen=True)
@@ -24,7 +24,8 @@ class Record:
     kind: str
     text: str
     attributes: dict[str, object]
-    author_id: str
+    author_id: str  # Last editor.
+    created_by: str  # The record's creator; updates never change it.
     updated_at: str
 
 
@@ -35,7 +36,8 @@ class Link:
     to_id: str
     relation: str
     explanation: str
-    author_id: str
+    author_id: str  # Last editor.
+    created_by: str
     updated_at: str
 
 
@@ -140,7 +142,7 @@ def _check_kind(kind: str | None) -> None:
 
 _LINK_SELECT = """
     SELECT l.id, f.id AS from_id, t.id AS to_id, l.relation,
-           l.explanation, l.author_id, l.updated_at
+           l.explanation, l.author_id, l.created_by, l.updated_at
     FROM links l JOIN records f ON f.record_key = l.from_key
     JOIN records t ON t.record_key = l.to_key
 """
@@ -200,7 +202,7 @@ class RecordStore:
     def read(self, record_id: str) -> Record:
         """Read current contents; a missing record raises KeyError."""
         row = self._db.execute(
-            "SELECT id, kind, text, attributes, author_id, updated_at FROM records WHERE id = ?",
+            "SELECT id, kind, text, attributes, author_id, created_by, updated_at FROM records WHERE id = ?",
             (record_id,),
         ).fetchone()
         if row is None:
@@ -235,7 +237,7 @@ class RecordStore:
         if not expression:
             return ()
         rows = self._db.execute(
-            """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.updated_at
+            """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at
                FROM records_fts JOIN records r ON r.record_key = records_fts.rowid
                WHERE records_fts MATCH ? AND (? IS NULL OR r.kind = ?)
                ORDER BY bm25(records_fts), r.record_key LIMIT ?""",
@@ -359,15 +361,26 @@ class RecordStore:
         return record
 
     def ingest_source(self, *, description: str, document_text: str, author_id: str,
-                      attributes: dict[str, object] | None = None) -> Record:
-        """Atomically create a Source record and its fixed canonical UTF-8 text."""
+                      attributes: dict[str, object] | None = None, allow_duplicate: bool = False) -> Record:
+        """Atomically create a Source record and its fixed canonical UTF-8 text.
+
+        Text identical to an ingested Source is refused, naming that Source, unless allow_duplicate.
+        """
         if not isinstance(document_text, str) or not document_text:
             raise ValueError("document_text must be a nonempty string")
         encoded = self._encode(attributes)
         content = document_text.encode("utf-8")
         digest = sha256(content).hexdigest()
+        if type(allow_duplicate) is not bool:
+            raise ValueError("allow_duplicate must be a boolean")
         with self._db:
-            self._db.execute("BEGIN IMMEDIATE")
+            self._db.execute("BEGIN IMMEDIATE")  # The duplicate check and insert share one write lock.
+            existing = self._db.execute(
+                """SELECT r.id FROM source_content s JOIN records r ON r.record_key = s.source_key
+                   WHERE s.text_sha256 = ? ORDER BY s.source_key LIMIT 1""", (digest,)).fetchone()
+            if existing and not allow_duplicate:
+                raise ValueError(f"identical text is already ingested as Source {existing[0]}; "
+                                 "reuse it, or pass allow_duplicate")
             source = self._insert_record("Source", description, encoded, author_id)
             self._db.execute(
                 "INSERT INTO source_content (source_key, text_utf8, text_sha256) VALUES (?, ?, ?)",
@@ -599,7 +612,7 @@ class RecordStore:
         # Records are never deleted, so every linked record can be read.
         ids = dict.fromkeys(link.from_id if link.to_id == record_id else link.to_id for link in links)
         found = {row["id"]: self._decode_record(row) for row in self._db.execute(
-            """SELECT id, kind, text, attributes, author_id, updated_at FROM records
+            """SELECT id, kind, text, attributes, author_id, created_by, updated_at FROM records
                WHERE id IN (SELECT value FROM json_each(?))""", (json.dumps(list(ids)),))}
         return Connections(links, has_more, {record: found[record] for record in ids})
 
@@ -679,16 +692,19 @@ class RecordStore:
         return tuple(Link(**dict(row)) for row in rows[:limit]), len(rows) > limit
 
     def list_records(self, *, kind: str | None = None, author_id: str | None = None,
+                     created_by: str | None = None, since: str | None = None,
                      where: dict[str, str | int | float | bool | None] | None = None,
                      after: str | None = None, limit: int = 100) -> RecordPage:
         """Current records in creation order, optionally filtered; pass the last ID as after to continue.
 
         where matches top-level attributes exactly: every named key must be present with that
-        JSON scalar value.
+        JSON scalar value. since keeps records created or edited at or after a UTC ISO timestamp
+        or date, such as "2026-09-28" or "2026-09-28T18:00".
         """
         _check_kind(kind)
-        if author_id is not None and not isinstance(author_id, str):
-            raise ValueError("author_id must be a string or None")
+        for name, value in (("author_id", author_id), ("created_by", created_by), ("since", since)):
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"{name} must be a string or None")
         _check_limit(limit)
         if where is not None and not isinstance(where, dict):
             raise ValueError("where must be an object of attribute values")
@@ -709,11 +725,12 @@ class RecordStore:
                 values += [path, {str: "text", int: "integer", float: "real"}[type(value)], path, value]
         start = 0 if after is None else self._record_key(after)
         rows = self._db.execute(
-            f"""SELECT id, kind, text, attributes, author_id, updated_at FROM records
+            f"""SELECT id, kind, text, attributes, author_id, created_by, updated_at FROM records
                WHERE record_key > ? AND (? IS NULL OR kind = ?) AND (? IS NULL OR author_id = ?)
+                 AND (? IS NULL OR created_by = ?) AND (? IS NULL OR updated_at >= ?)
                {"".join(" AND " + condition for condition in conditions)}
                ORDER BY record_key LIMIT ?""",
-            (start, kind, kind, author_id, author_id, *values, limit + 1),
+            (start, kind, kind, author_id, author_id, created_by, created_by, since, since, *values, limit + 1),
         ).fetchall()
         return RecordPage(tuple(self._decode_record(row) for row in rows[:limit]), len(rows) > limit)
 
@@ -730,7 +747,7 @@ class RecordStore:
         if not 0 <= start_byte < end_byte <= length:
             raise ValueError("byte range is outside source text")
         rows = self._db.execute(
-            """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.updated_at,
+            """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at,
                       c.start_byte AS cited_start, c.end_byte AS cited_end
                FROM citations c JOIN records r ON r.record_key = c.record_key
                WHERE c.source_key = ? AND c.start_byte < ? AND c.end_byte > ?
@@ -738,7 +755,7 @@ class RecordStore:
             (source_key, end_byte, start_byte, limit + 1),
         ).fetchall()
         citations = tuple(Citation(Record(row["id"], row["kind"], row["text"], json.loads(row["attributes"]),
-                                          row["author_id"], row["updated_at"]),
+                                          row["author_id"], row["created_by"], row["updated_at"]),
                                    source_id, row["cited_start"], row["cited_end"]) for row in rows[:limit])
         return CitationPage(citations, len(rows) > limit)
 
@@ -768,6 +785,8 @@ class RecordStore:
                     or not set(citation) <= {"source_id", "quote", "start_byte", "end_byte"}):
                 raise ValueError("each citation needs source_id and a quote or start_byte/end_byte")
             source_id, quote = citation["source_id"], citation.get("quote")
+            if isinstance(source_id, str):
+                source_id = self.resolve_id(source_id)  # Citations always store the full Source ID.
             start, end = citation.get("start_byte"), citation.get("end_byte")
             if quote is None:
                 if start is None or end is None:
@@ -796,16 +815,16 @@ class RecordStore:
                                    AND relation = 'supported_by'""", values[:2]).fetchone() is None:
                 self._db.execute(
                     """INSERT INTO links (from_key, to_key, relation, explanation,
-                       author_id, updated_at, id) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (*values, str(uuid4())),
+                       author_id, updated_at, id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (*values, str(uuid4()), author_id),
                 )
 
     def _insert_link(self, from_id: str, to_id: str, relation: str, explanation: str, author_id: str) -> Link:
         link_id = str(uuid4())
         self._db.execute(
             """INSERT INTO links (from_key, to_key, relation, explanation,
-               author_id, updated_at, id) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (*self._link_values(from_id, to_id, relation, explanation, author_id), link_id),
+               author_id, updated_at, id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (*self._link_values(from_id, to_id, relation, explanation, author_id), link_id, author_id),
         )
         return self.read_link(link_id)
 
@@ -824,17 +843,21 @@ class RecordStore:
         return items
 
     def _record_key(self, record_id: str) -> int:
+        """Key for an exact ID or a unique prefix of 8+ characters, so payload IDs can be short."""
         row = self._db.execute("SELECT record_key FROM records WHERE id = ?", (record_id,)).fetchone()
         if row is None:
-            raise KeyError(record_id)
+            if not isinstance(record_id, str):
+                raise KeyError(record_id)
+            row = self._db.execute("SELECT record_key FROM records WHERE id = ?",
+                                   (self.resolve_id(record_id),)).fetchone()
         return row[0]
 
     def _source_key(self, source_id: str) -> int:
-        row = self._db.execute(
-            """SELECT s.source_key FROM source_content s
-               JOIN records r ON r.record_key = s.source_key WHERE r.id = ?""",
-            (source_id,),
-        ).fetchone()
+        query = """SELECT s.source_key FROM source_content s
+                   JOIN records r ON r.record_key = s.source_key WHERE r.id = ?"""
+        row = self._db.execute(query, (source_id,)).fetchone()
+        if row is None and isinstance(source_id, str) and len(source_id) >= 8:
+            row = self._db.execute(query, (self.resolve_id(source_id),)).fetchone()
         if row is None:
             raise KeyError(source_id)
         return row[0]
@@ -842,9 +865,9 @@ class RecordStore:
     def _insert_record(self, kind: str, text: str, encoded: str, author_id: str) -> Record:
         record_id = str(uuid4())
         self._db.execute(
-            """INSERT INTO records (id, kind, text, attributes, author_id, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (record_id, kind, text, encoded, author_id, datetime.now(UTC).isoformat()),
+            """INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (record_id, kind, text, encoded, author_id, author_id, datetime.now(UTC).isoformat()),
         )
         return self.read(record_id)
 

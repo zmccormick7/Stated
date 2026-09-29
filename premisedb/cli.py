@@ -83,12 +83,16 @@ def _parser():
     rec.add_argument("--seed", dest="seeds", action="append", default=[], metavar="RECORD_ID",
                      help="Start from this record as well as search hits; repeatable.")
     rec.add_argument("--max-records", type=int, default=40)
+    rec.add_argument("--max-chars", type=int, default=24000,
+                     help="Drop the lowest-ranked records until compact output fits (default 24000).")
     rec.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     command("relations", "relation_usage", "Count links by relation and the record kinds they connect.")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     listing.add_argument("--kind")
-    listing.add_argument("--author", dest="author_id")
+    listing.add_argument("--author", dest="author_id", help="Last editor.")
+    listing.add_argument("--created-by", help="Creator, which edits never change.")
+    listing.add_argument("--since", metavar="UTC_TIME", help="Created or edited at or after this UTC time or date.")
     listing.add_argument("--where", action="append", type=_where_item, metavar="KEY=VALUE",
                          help="Match a top-level attribute exactly; repeatable. VALUE is read as JSON when valid.")
     listing.add_argument("--after", metavar="RECORD_ID")
@@ -158,13 +162,28 @@ def _compact(method, result):
             "capped": list(result.capped), "has_more": result.has_more}
 
 
+# Every result is a JSON object; collections sit under a named key so parsers can rely on one shape.
+LIST_KEYS = {"search_records": "records", "search_documents": "excerpts", "locate_source_text": "matches",
+             "relation_usage": "relations"}
+
+
+def _shape(method, result):
+    if method in LIST_KEYS and isinstance(result, (list, tuple)):
+        return {LIST_KEYS[method]: list(result)}
+    if method == "connections":  # Connected records as a list, like every other command.
+        return {"links": result.links, "has_more": result.has_more, "records": list(result.records.values())}
+    return result
+
+
 def _clip(text, limit):
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
 def _recall(db, options):
     """Compact by default, so the whole bundle fits in an agent's view; --full returns everything."""
-    full = options.pop("full")
+    full, max_chars = options.pop("full"), options.pop("max_chars")
+    if max_chars < 2000:
+        raise ValueError("max_chars must be at least 2000")
     result = recall(db, options.pop("query"), **options)
     if full:
         return result
@@ -186,7 +205,7 @@ def _recall(db, options):
             evidence.append({"source_id": item.source_id, "start_byte": item.start_byte, "end_byte": item.end_byte,
                              "quote": _clip(item.quote, 240), "record_ids": [i[:8] for i in item.record_ids]})
     frontier = [db.read(record_id) for record_id in result.frontier[:10]]
-    return {"records": records,
+    bundle = {"records": records,
             "evidence": evidence,
             "issues": {"links": [{"from_id": l.from_id, "to_id": l.to_id, "relation": l.relation,
                                   "explanation": _clip(l.explanation, 200)} for l in result.issue_links],
@@ -195,7 +214,14 @@ def _recall(db, options):
             "frontier": [{"id": f.id, "kind": f.kind, "text": _clip(f.text, 80)} for f in frontier],
             "coverage": result.coverage | {"evidence_omitted": len(result.evidence) - len(evidence),
                                            "frontier_omitted": result.coverage["frontier_omitted"]
-                                           + max(0, len(result.frontier) - 10)}}
+                                           + max(0, len(result.frontier) - 10), "dropped_for_size": 0}}
+    # A hard size cap, so the bundle stays readable however large the graph grows.
+    while len(json.dumps(bundle, default=asdict)) > max_chars and len(bundle["records"]) > 1:
+        dropped = bundle["records"].pop()["id"][:8]
+        bundle["evidence"] = [e for e in bundle["evidence"] if set(e["record_ids"]) != {dropped}]
+        bundle["coverage"]["dropped_for_size"] += 1
+        bundle["coverage"]["truncated"] = True
+    return bundle
 
 
 def main(argv=None):
@@ -239,7 +265,7 @@ def main(argv=None):
                           else {"database": str(path.resolve())})
                 if not full:
                     result = _compact(method, result)
-        print(json.dumps(result, default=asdict, allow_nan=False))
+        print(json.dumps(_shape(method, result), default=asdict, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError, sqlite3.Error) as error:
         message = f"Not found: {error.args[0]}" if isinstance(error, KeyError) and error.args else str(error)

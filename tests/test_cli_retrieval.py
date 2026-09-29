@@ -49,7 +49,11 @@ class CLIRetrievalTests(unittest.TestCase):
             code = main(["--db", str(self.path), "search-documents", *arguments])
         self.assertEqual(code, status, stderr.getvalue())
         self.assertEqual(stderr.getvalue() if status == 0 else stdout.getvalue(), "")
-        return json.loads(stdout.getvalue() if status == 0 else stderr.getvalue())
+        if status:
+            return json.loads(stderr.getvalue())
+        result = json.loads(stdout.getvalue())
+        self.assertEqual(list(result), ["excerpts"])  # Every command prints one JSON object.
+        return result["excerpts"]
 
     def respond(self, endpoint, payload):
         if endpoint == "alpha/decisions":

@@ -65,6 +65,17 @@ class SourceTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.db.locate_source_text("missing", "ramp")
 
+    def test_identical_text_is_refused_unless_allowed(self):
+        first = self.ingest("Energization delayed.")
+        with self.assertRaisesRegex(ValueError, f"already ingested as Source {first.id}"):
+            self.ingest("Energization delayed.")
+        second = self.db.ingest_source(description="Copy", document_text="Energization delayed.", author_id="bob",
+                                       allow_duplicate=True)
+        self.assertNotEqual(second.id, first.id)
+        with self.assertRaises(ValueError):
+            self.db.ingest_source(description="Bad", document_text="Other text.", author_id="bob", allow_duplicate="yes")
+        self.assertEqual(len(self.db.search_records("supplier copy bad", kind="Source")), 2)
+
     def test_record_edits_leave_canonical_text_fixed(self):
         source = self.ingest()
         self.db.update(source.id, text="Corrected description", author_id="bob")
