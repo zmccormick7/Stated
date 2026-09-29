@@ -217,8 +217,10 @@ def _recall(db, options):
                                            + max(0, len(result.frontier) - 10), "dropped_for_size": 0}}
     # A hard size cap, so the bundle stays readable however large the graph grows.
     while len(json.dumps(bundle, default=asdict)) > max_chars and len(bundle["records"]) > 1:
-        dropped = bundle["records"].pop()["id"][:8]
-        bundle["evidence"] = [e for e in bundle["evidence"] if set(e["record_ids"]) != {dropped}]
+        dropped = bundle["records"].pop()["id"]
+        kept = {r["id"] for r in bundle["records"]}
+        bundle["evidence"] = [e for e in bundle["evidence"] if set(e["record_ids"]) != {dropped[:8]}]
+        bundle["issues"]["links"] = [l for l in bundle["issues"]["links"] if {l["from_id"], l["to_id"]} & kept]
         bundle["coverage"]["dropped_for_size"] += 1
         bundle["coverage"]["truncated"] = True
     return bundle

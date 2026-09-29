@@ -138,12 +138,17 @@ class CLITests(unittest.TestCase):
         self.assertEqual(full["records"][0]["record"], finding)
         self.call("contribute", "--input", "-", payload={"author_id": "agent-a", "records": [
             {"ref": str(n), "kind": "Finding", "text": f"Deferral clause {n}. " * 10} for n in range(12)], "links": [
-            {"from_id": finding["id"][:8], "to_id": str(n), "relation": "depends_on"} for n in range(12)]})
+            {"from_id": finding["id"][:8], "to_id": str(n), "relation": "depends_on"} for n in range(12)] + [
+            {"from_id": str(n), "to_id": str((n + 1) % 12), "relation": "qualifies", "explanation": "Terms vary. " * 15}
+            for n in range(12)]})
         small = self.call("recall", "backlog", "--max-chars", "2000")
         self.assertLessEqual(len(json.dumps(small)), 2000)
         self.assertGreater(small["coverage"]["dropped_for_size"], 0)
         self.assertTrue(small["coverage"]["truncated"])
         self.assertEqual(small["records"][0]["id"], finding["id"])
+        kept = {r["id"] for r in small["records"]}
+        self.assertTrue(small["issues"]["links"])
+        self.assertTrue(all({l["from_id"], l["to_id"]} & kept for l in small["issues"]["links"]))  # Dropped with records.
         self.assertEqual(self.run_cli("recall", "backlog", "--max-chars", "100").returncode, 1)
 
     def test_connection_limits_and_link_updates(self):
