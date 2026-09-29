@@ -162,6 +162,12 @@ def main(argv=None):
         if options.keys() & payload.keys():
             raise ValueError("JSON input must not repeat arguments supplied by the command")
         with RecordStore(path) as db:
+            # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
+            for name in ("record_id", "source_id", "from_id", "to_id", "link_id"):
+                if name in options:
+                    options[name] = db.resolve_id(options[name], link=name == "link_id")
+            if "seed_ids" in options:
+                options["seed_ids"] = [db.resolve_id(seed) for seed in options["seed_ids"]]
             if method == "search_documents":
                 result = _search_documents(db, options)
             elif method == "expand":
@@ -172,5 +178,6 @@ def main(argv=None):
         print(json.dumps(result, default=asdict, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError, sqlite3.Error) as error:
-        print(json.dumps({"error": str(error)}), file=sys.stderr)
+        message = f"Not found: {error.args[0]}" if isinstance(error, KeyError) and error.args else str(error)
+        print(json.dumps({"error": message}), file=sys.stderr)
         return 1

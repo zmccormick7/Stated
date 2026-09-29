@@ -16,7 +16,7 @@ Successful operations print one JSON value to stdout: record/link/context object
 
 ## Commands
 
-Run `premisedb COMMAND --help` for flags and the expected payload fields. JSON keys are the existing [Python API](python-api.md) argument names; unknown keys and keys that duplicate positional arguments are errors.
+Run `premisedb COMMAND --help` for flags and the expected payload fields. Positional record and link IDs can be full IDs or unique prefixes of at least 8 characters; IDs inside JSON payloads must be complete. A missing ID reports `Not found: ID`, and an ambiguous prefix asks for more characters. JSON keys are the existing [Python API](python-api.md) argument names; unknown keys and keys that duplicate positional arguments are errors.
 
 | Command | Purpose |
 | --- | --- |
