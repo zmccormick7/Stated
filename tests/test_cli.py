@@ -30,6 +30,11 @@ class CLITests(unittest.TestCase):
     def create(self, kind, text):
         return self.call("create", kind, "--input", "-", payload={"text": text, "author_id": "agent-a"})
 
+    @staticmethod
+    def edits(record):
+        """The edit details a preview ends with."""
+        return {"author_id": record["author_id"], "updated_at": record["updated_at"]}
+
     def test_recall_and_revision_across_processes(self):
         text = "PowerFrame's backlog may slip.\n€5 and $HOME stay literal."
         data = {"text": text, "attributes": {"basis": "inference"}, "author_id": "agent-a"}
@@ -39,21 +44,25 @@ class CLITests(unittest.TestCase):
         question = self.create("Question", "Could grid delays cause deferrals?")
         link = self.call("link", finding["id"], question["id"], "raises", "--input", "-",
                          payload={"author_id": "agent-a", "explanation": "Investigate customer timing."})
-        preview = {"id": finding["id"], "kind": "Finding", "text": finding["text"], "basis": "inference"}
+        linked = {"id": finding["id"], "kind": "Finding", "text": finding["text"], "basis": "inference"}
+        preview = linked | self.edits(finding)
         self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding"), {"records": [preview]})
         self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding", "--full"), {"records": [finding]})
         self.assertEqual(self.call("get", finding["id"]), finding)
         self.assertEqual(self.call("get", finding["id"][:8]), finding)
-        self.assertEqual(self.call("connections", question["id"][:10])["links"], [link])
+        self.assertEqual(self.call("connections", question["id"][:10], "--full")["links"], [link])
         self.assertEqual(self.call("get", "00000000", status=1), {"error": "Not found: 00000000"})
         self.assertEqual(self.call("get-link", link["id"]), link)
         self.assertEqual(self.call("connections", question["id"]),
+                         {"links": [link | {"other": linked}], "has_more": False})
+        self.assertEqual(self.call("connections", question["id"], "--full"),
                          {"links": [link], "has_more": False, "records": [finding]})
         self.assertEqual(self.call("connections", question["id"], "--direction", "out")["links"], [])
         self.assertEqual(self.call("list", "--kind", "Question", "--author", "agent-a", "--full"),
                          {"records": [question], "has_more": False})
         self.assertEqual(self.call("list", "--after", finding["id"], "--limit", "1"),
-                         {"records": [{"id": question["id"], "kind": "Question", "text": question["text"]}],
+                         {"records": [{"id": question["id"], "kind": "Question", "text": question["text"],
+                                       **self.edits(question)}],
                           "has_more": False})
         self.assertEqual(self.call("list", "--where", "basis=inference")["records"], [preview])
         self.assertEqual(self.call("list", "--where", "basis=\"inference\"", "--where", "status=open")["records"], [])
@@ -107,8 +116,11 @@ class CLITests(unittest.TestCase):
             "attributes": {"key": "growth", "value": [0.1, 0.2], "basis": "assumption", "model_ref": "m.py"}})
         preview = self.call("list", "--kind", "Variable")["records"][0]
         self.assertEqual(preview, {"id": variable["id"], "kind": "Variable", "text": text[:199] + "…",
-                                   "basis": "assumption", "key": "growth", "value": [0.1, 0.2]})
+                                   "basis": "assumption", "key": "growth", "value": [0.1, 0.2], **self.edits(variable)})
         self.assertEqual(self.call("list", "--kind", "Variable", "--full")["records"], [variable])
+        edited = self.call("patch", variable["id"], "--input", "-", payload={"author_id": "agent-b", "attributes": {"value": 1}})
+        self.assertEqual(self.call("list", "--kind", "Variable")["records"][0], {
+            **preview, "value": 1, "author_id": "agent-b", "created_by": "agent-a", "updated_at": edited["updated_at"]})
 
     def test_recall_returns_records_evidence_and_issues(self):
         text = "A€ backlog note. Customers may defer deliveries."
@@ -156,13 +168,24 @@ class CLITests(unittest.TestCase):
         question = self.create("Question", "Is power available?")
         links = [self.call("link", finding["id"], question["id"], relation, "--input", "-",
                            payload={"author_id": "agent-a"}) for relation in ("raises", "depends_on")]
-        self.assertEqual(self.call("connections", finding["id"], "--limit", "1"),
+        self.assertEqual(self.call("connections", finding["id"], "--limit", "1", "--full"),
                          {"links": links[:1], "has_more": True, "records": [question]})
-        self.assertEqual(self.call("connections", finding["id"], "--relation", "depends_on")["links"], links[1:])
+        self.assertEqual(self.call("connections", question["id"], "--limit", "1")["links"][0]["other"],
+                         {"id": finding["id"], "kind": "Finding", "text": finding["text"]})
+        self.assertEqual(self.call("connections", finding["id"], "--relation", "depends_on", "--full")["links"], links[1:])
         fields = {"from_id": finding["id"], "to_id": question["id"], "relation": "concerns", "author_id": "agent-b"}
         changed = self.call("update-link", links[0]["id"], "--input", "-", payload=fields)
         self.call("update-link", changed["id"], "--input", "-", payload={**fields, "to_id": "missing"}, status=1)
         self.assertEqual(self.call("get-link", changed["id"]), changed)
+        listed = self.call("links", "--since", changed["updated_at"], "--relation", "concerns")
+        self.assertEqual(listed, {"links": [changed | {"from": {"id": finding["id"], "kind": "Finding", "text": finding["text"]},
+                                                       "to": {"id": question["id"], "kind": "Question", "text": question["text"]}}],
+                                  "has_more": False})
+        self.assertEqual(self.call("links", "--created-by", "agent-a", "--after", links[0]["id"][:8], "--full"),
+                         {"links": links[1:], "has_more": False})
+        self.assertEqual(self.call("link", finding["id"], question["id"], "depends_on", "--input", "-",
+                                   payload={"author_id": "agent-b"}, status=1),
+                         {"error": f"an identical depends_on link already exists: {links[1]['id']}; patch it instead"})
 
     def test_exact_source_ingestion_and_context(self):
         text = "A€🙂Z\r\nGrid approval is pending.\n"
@@ -194,7 +217,8 @@ class CLITests(unittest.TestCase):
         self.assertEqual(finding["attributes"]["citations"],
                          [{"source_id": sid, "start_byte": 11, "end_byte": 36, "quote": "Grid approval is pending."}])
         self.assertEqual(self.call("search", "Approval pending", "--kind", "Finding"),
-                         {"records": [{"id": finding["id"], "kind": "Finding", "text": "Approval is pending.", "citations": 1}]})
+                         {"records": [{"id": finding["id"], "kind": "Finding", "text": "Approval is pending.", "citations": 1,
+                                       **self.edits(finding)}]})
         self.assertEqual([link["to_id"] for link in self.call("connections", finding["id"])["links"]], [sid])
         cited = self.call("cited-by", sid, "--start-byte", "20", "--end-byte", "24")
         self.assertEqual(cited, {"citations": [{"record": finding, "source_id": sid, "start_byte": 11, "end_byte": 36}],

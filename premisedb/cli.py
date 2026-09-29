@@ -65,7 +65,8 @@ def _parser():
     command("update-link", "update_link", "Replace a link's endpoints, relation and explanation.",
             "link_id", payload="from_id, to_id, relation, author_id, optional explanation")
     connections = command("connections", "connections",
-                          "Read one-hop links, the records they reach and a has_more flag.", "record_id")
+                          "Read one-hop links, each with a preview of the record at its other end.", "record_id")
+    connections.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     connections.add_argument("--direction", choices=("both", "in", "out"), default="both")
     connections.add_argument("--relation")
     connections.add_argument("--limit", type=int, default=100)
@@ -97,6 +98,14 @@ def _parser():
                          help="Match a top-level attribute exactly; repeatable. VALUE is read as JSON when valid.")
     listing.add_argument("--after", metavar="RECORD_ID")
     listing.add_argument("--limit", type=int, default=100)
+    links = command("links", "list_links", "List links in creation order; continue with --after LAST_LINK_ID.")
+    links.add_argument("--full", action="store_true", help="Return links without previews of their ends.")
+    links.add_argument("--relation")
+    links.add_argument("--author", dest="author_id", help="Last editor.")
+    links.add_argument("--created-by", help="Creator, which edits never change.")
+    links.add_argument("--since", metavar="UTC_TIME", help="Created or edited at or after this UTC time or date.")
+    links.add_argument("--after", metavar="LINK_ID")
+    links.add_argument("--limit", type=int, default=100)
     ingest = command("ingest", "ingest_source", "Ingest an extracted UTF-8 text file without normalization.",
                      payload="description, author_id, optional attributes")
     ingest.add_argument("source_file", help="Path to the extracted text file")
@@ -140,22 +149,36 @@ def _search_documents(db, options):
 PREVIEW_ATTRIBUTES = ("basis", "status", "key", "value")
 
 
-def _preview(record):
-    """ID, kind, the start of the text, a few telling attributes and the number of citations."""
+def _preview(record, *, edits=True):
+    """ID, kind, the start of the text, a few telling attributes, the number of citations and, with
+    edits, who last edited the record (and created it, when that differs) and when."""
     preview = {"id": record.id, "kind": record.kind,
                "text": record.text if len(record.text) <= 200 else record.text[:199] + "…"}
     preview |= {name: record.attributes[name] for name in PREVIEW_ATTRIBUTES if name in record.attributes}
     if isinstance(citations := record.attributes.get("citations"), list) and citations:
         preview["citations"] = len(citations)
+    if edits:
+        preview["author_id"] = record.author_id
+        if record.created_by != record.author_id:
+            preview["created_by"] = record.created_by
+        preview["updated_at"] = record.updated_at
     return preview
 
 
-def _compact(method, result):
-    """Previews in place of full records for search, list and expand."""
+def _compact(db, method, result, options):
+    """Previews in place of full records for search, list and expand; linked records previewed on each link."""
     if method == "search_records":
         return [_preview(record) for record in result]
     if method == "list_records":
         return {"records": [_preview(record) for record in result.records], "has_more": result.has_more}
+    if method == "connections":  # The other end of each link sits beside it, so no second lookup is needed.
+        other = lambda link: link.from_id if link.to_id == options["record_id"] else link.to_id
+        return {"links": [asdict(link) | {"other": _preview(result.records[other(link)], edits=False)}
+                          for link in result.links], "has_more": result.has_more}
+    if method == "list_links":
+        return {"links": [asdict(link) | {"from": _preview(db.read(link.from_id), edits=False),
+                                          "to": _preview(db.read(link.to_id), edits=False)}
+                          for link in result.links], "has_more": result.has_more}
     return {"reached": [_preview(r.record) | {"depth": r.depth, "path": [
                 {"id": link.id, "from_id": link.from_id, "to_id": link.to_id, "relation": link.relation}
                 for link in r.path]} for r in result.reached],
@@ -170,7 +193,7 @@ LIST_KEYS = {"search_records": "records", "search_documents": "excerpts", "locat
 def _shape(method, result):
     if method in LIST_KEYS and isinstance(result, (list, tuple)):
         return {LIST_KEYS[method]: list(result)}
-    if method == "connections":  # Connected records as a list, like every other command.
+    if method == "connections" and not isinstance(result, dict):  # --full: connected records as a list.
         return {"links": result.links, "has_more": result.has_more, "records": list(result.records.values())}
     return result
 
@@ -190,7 +213,7 @@ def _recall(db, options):
     shown = {r.record.id for r in result.records}
     records = []
     for r in result.records:
-        item = _preview(r.record)
+        item = _preview(r.record, edits=False)  # Edit details would crowd out records.
         if r.path:  # Reached by walking: shorter text, and how it was reached.
             item["text"] = _clip(r.record.text, 100)
             # via names a record in this bundle, so a short prefix is enough to match it or pass it back.
@@ -266,7 +289,7 @@ def main(argv=None):
                 result = (getattr(db, method)(**options, **payload) if method
                           else {"database": str(path.resolve())})
                 if not full:
-                    result = _compact(method, result)
+                    result = _compact(db, method, result, options)
         print(json.dumps(_shape(method, result), default=asdict, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError, sqlite3.Error) as error:
