@@ -15,20 +15,37 @@ Run `premisedb --help` or `premisedb COMMAND --help` for arguments and write-pay
 
 ## Recall
 
-- Search before contributing. Start with relevant company names, aliases and business concepts; one empty result does not establish that something is absent. Record search matches whole words in record text, not attributes: `TSM` does not find `TSMC`. Try several names before creating an Entity, and reuse existing Entity identities when they refer to the same thing.
-- Follow `connections`. By default it returns links in both directions together with the connected records, so one call shows a record's evidence, dependents and open questions. Links keep their stored direction: check `from_id` and `to_id`, since incoming links can reveal findings or model assumptions that depend on the record. Inspect each relationship's explanation and the connected record before treating it as useful context; use `get` for a record you reached another way.
-- Follow evidence, contradictory findings and material open questions even when their wording differs from the original query. Choose connections that could change the answer rather than expanding every branch.
-- To inspect document evidence, ask `search-documents "RESEARCH QUESTION"`, optionally scoped with `--source-id SOURCE_ID`. It returns selected excerpts with exact source locators and separate document context. Use those excerpts to assess the claim; a document search can return no suitable evidence.
-- To survey what exists, `list --kind Question` (optionally `--author ID`) pages through records in creation order; keep calling with `--after LAST_ID` while `has_more` is true. `--where KEY=VALUE` (repeatable) keeps records whose top-level attribute equals the value, for example `list --kind Question --where status=open` or `list --kind Variable --where key=acie_growth_fy28`. Values are read as JSON when valid, so quote a string that looks like a number: `--where 'period="2027"'`.
-- To see a record's neighbourhood in one call, `expand ID --depth 2` walks two hops and reports each record reached with the links that lead to it. Add `--relation` (repeatable) to follow only certain relations, for example `expand ENTITY_ID --depth 2 --relation about --relation depends_on` to go from a company to Findings about it and on to the model Variables that depend on them. Output shows each record's ID, kind, the start of its text and the path; `get` the records you need, or add `--full` for complete records. Records listed as `capped` had more links than were followed; inspect them with `connections`.
-- To find what the graph already concludes from a passage, run `cited-by SOURCE_ID --start-byte START --end-byte END` with a `search-documents` excerpt's range. It lists the records citing any part of it; follow their `connections` to the Findings, Variables and Questions that depend on them. A passage nobody has cited returns nothing, which is itself a sign of unexamined evidence.
-- Results are bounded: `connections` and `list` expose `has_more`; searches return limited results without a completeness flag. Narrow the question, scope or relationship when needed. Do not claim an exhaustive graph review from a truncated lookup.
+Find a few entry points, then walk the graph from them. Much of what matters is reachable only through links, not by search.
+
+**1. Find entry points.**
+- `search` record text with company names, aliases and business concepts. Record search matches whole words in record text, not attributes: `TSM` does not find `TSMC`. One empty result does not establish that something is absent. Try several names before creating an Entity, and reuse existing Entity identities when they refer to the same thing.
+- `list` surveys records by kind in creation order. `--where KEY=VALUE` (repeatable) keeps records whose top-level attribute equals the value, for example `list --kind Question --where status=open` or `list --kind Variable --where key=acie_growth_fy28`. Values are read as JSON when valid, so quote a string that looks like a number: `--where 'period="2027"'`. Continue with `--after LAST_ID` while `has_more` is true.
+- `search-documents "RESEARCH QUESTION"`, optionally scoped with `--source-id SOURCE_ID`, returns source excerpts with exact locators and separate document context. A document search can return no suitable evidence.
+
+**2. Walk from them with `expand`.** This is the main way to see what connects to your entry points.
+- `expand ID [ID ...] --depth 2` walks one or two hops from one or more records. It lists each record reached with its ID, kind, the start of its text and the chain of links that leads to it.
+- Add `--relation` (repeatable) to follow only certain relations. For example, `expand ENTITY_ID --depth 2 --relation about --relation depends_on` goes from a company to Findings about it and on to the model Variables that depend on them. `--relation contradicts --relation qualifies` surfaces disagreements and caveats.
+- `capped` lists records with more links than were followed.
+
+**3. From a passage to existing research, use `cited-by`.** `cited-by SOURCE_ID --start-byte START --end-byte END` with a `search-documents` excerpt's range lists the records citing any part of it; walk on from them with `expand`. A passage nobody has cited is itself a sign of unexamined evidence.
+
+**4. Focus on the records that matter.**
+- `connections ID` shows every link of one record, in both directions, with each relationship's explanation.
+- `get ID` shows a record's full contents and citations.
+- Links keep their stored direction: incoming `depends_on` links reveal Findings and model Variables that rest on a record.
+- Inspect each explanation and the connected record before treating it as useful context.
+- IDs can be given in full or as a unique prefix of 8 or more characters, like the short IDs in reports.
+
+Follow evidence, contradictory Findings and material open Questions even when their wording differs from the original query. Choose branches that could change the answer rather than expanding everything.
+
+Results are bounded: `expand` reports `capped` and `has_more`, `connections` and `list` report `has_more`, and searches return limited results without a completeness flag. Narrow the question, scope or relationships when needed, and do not claim an exhaustive graph review from a truncated lookup.
 
 ```bash
 premisedb search "PowerFrame backlog" --kind Finding
-premisedb connections RECORD_ID
-premisedb connections RECORD_ID --relation depends_on
-premisedb list --kind Question
+premisedb expand FINDING_ID --depth 2
+premisedb connections FINDING_ID
+premisedb get CONNECTED_ID
+premisedb list --kind Question --where status=open
 ```
 
 ## Contribute

@@ -60,6 +60,25 @@ class RecordStoreTests(unittest.TestCase):
             with self.subTest(attributes=attributes), self.assertRaises(ValueError):
                 self.store.create("Finding", text="x", author_id="alice", attributes=attributes)
 
+    def test_resolve_id_accepts_exact_ids_and_unique_prefixes(self):
+        ids = ["abcdef12-0000-4000-8000-000000000001", "abcdef12-9999-4000-8000-000000000002",
+               "abcdef13-0000-4000-8000-000000000003", "a1111111-0000-4000-8000-000000000004"]
+        with patch("premisedb.store.uuid4", side_effect=ids):
+            first, second, third = [self.store.create("Finding", text=t, author_id="a") for t in "ABC"]
+            link = self.store.create_link(first.id, third.id, "about", author_id="a")
+        self.assertEqual(self.store.resolve_id(first.id), first.id)
+        self.assertEqual(self.store.resolve_id("abcdef13"), third.id)
+        self.assertEqual(self.store.resolve_id("abcdef12-9"), second.id)
+        self.assertEqual(self.store.resolve_id("a1111111", link=True), link.id)
+        with self.assertRaisesRegex(ValueError, "matches more than one record"):
+            self.store.resolve_id("abcdef12")
+        for missing in ("abcdef1", "abcdef14", "a1111111", "zzzzzzzz"):
+            with self.subTest(missing=missing), self.assertRaises(KeyError):
+                self.store.resolve_id(missing)
+        for invalid in ("", None, 7):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.store.resolve_id(invalid)
+
     def test_incompatible_schema_is_rejected_without_changing_file(self):
         for version in (1, 2, 3, 4, 5, 6, 7, 8, 9, 11):
             with self.subTest(version=version):

@@ -207,6 +207,25 @@ class RecordStore:
             raise KeyError(record_id)
         return self._decode_record(row)
 
+    def resolve_id(self, value: str, *, link: bool = False) -> str:
+        """Return the full record ID, or link ID, for an exact ID or a unique prefix of 8+ characters."""
+        table = "links" if link else "records"
+        if not isinstance(value, str) or not value:
+            raise ValueError("an ID must be a nonempty string")
+        if self._db.execute(f"SELECT 1 FROM {table} WHERE id = ?", (value,)).fetchone():
+            return value
+        if len(value) < 8:
+            raise KeyError(value)
+        # IDs sharing the prefix sort between it and the prefix with its last character incremented.
+        rows = self._db.execute(f"SELECT id FROM {table} WHERE id >= ? AND id < ? ORDER BY id LIMIT 2",
+                                (value, value[:-1] + chr(ord(value[-1]) + 1))).fetchall()
+        if not rows:
+            raise KeyError(value)
+        if len(rows) > 1:
+            raise ValueError(f"ID prefix {value} matches more than one {'link' if link else 'record'}; "
+                             "use more characters")
+        return rows[0][0]
+
     def search_records(self, query: str, *, kind: str | None = None,
                        limit: int = 10) -> tuple[Record, ...]:
         """Match any plain-text query word; return current records in BM25 order."""

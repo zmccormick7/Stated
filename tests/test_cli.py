@@ -41,6 +41,9 @@ class CLITests(unittest.TestCase):
                          payload={"author_id": "agent-a", "explanation": "Investigate customer timing."})
         self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding"), [finding])
         self.assertEqual(self.call("get", finding["id"]), finding)
+        self.assertEqual(self.call("get", finding["id"][:8]), finding)
+        self.assertEqual(self.call("connections", question["id"][:10])["links"], [link])
+        self.assertEqual(self.call("get", "00000000", status=1), {"error": "Not found: 00000000"})
         self.assertEqual(self.call("get-link", link["id"]), link)
         self.assertEqual(self.call("connections", question["id"]),
                          {"links": [link], "has_more": False, "records": {finding["id"]: finding}})
