@@ -39,7 +39,9 @@ class CLITests(unittest.TestCase):
         question = self.create("Question", "Could grid delays cause deferrals?")
         link = self.call("link", finding["id"], question["id"], "raises", "--input", "-",
                          payload={"author_id": "agent-a", "explanation": "Investigate customer timing."})
-        self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding"), [finding])
+        preview = {"id": finding["id"], "kind": "Finding", "text": finding["text"], "basis": "inference"}
+        self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding"), [preview])
+        self.assertEqual(self.call("search", "PowerFrame backlog", "--kind", "Finding", "--full"), [finding])
         self.assertEqual(self.call("get", finding["id"]), finding)
         self.assertEqual(self.call("get", finding["id"][:8]), finding)
         self.assertEqual(self.call("connections", question["id"][:10])["links"], [link])
@@ -48,16 +50,17 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("connections", question["id"]),
                          {"links": [link], "has_more": False, "records": {finding["id"]: finding}})
         self.assertEqual(self.call("connections", question["id"], "--direction", "out")["links"], [])
-        self.assertEqual(self.call("list", "--kind", "Question", "--author", "agent-a"),
+        self.assertEqual(self.call("list", "--kind", "Question", "--author", "agent-a", "--full"),
                          {"records": [question], "has_more": False})
         self.assertEqual(self.call("list", "--after", finding["id"], "--limit", "1"),
-                         {"records": [question], "has_more": False})
-        self.assertEqual(self.call("list", "--where", "basis=inference")["records"], [finding])
+                         {"records": [{"id": question["id"], "kind": "Question", "text": question["text"]}],
+                          "has_more": False})
+        self.assertEqual(self.call("list", "--where", "basis=inference")["records"], [preview])
         self.assertEqual(self.call("list", "--where", "basis=\"inference\"", "--where", "status=open")["records"], [])
         self.assertEqual(self.run_cli("list", "--where", "novalue").returncode, 2)
         walked = self.call("expand", question["id"], "--relation", "raises")
         self.assertEqual(walked["reached"][1], {
-            "id": finding["id"], "kind": "Finding", "text": finding["text"], "depth": 1,
+            **preview, "depth": 1,
             "path": [{"id": link["id"], "from_id": finding["id"], "to_id": question["id"], "relation": "raises"}]})
         self.assertEqual((walked["reached"][0]["depth"], walked["capped"], walked["has_more"]), (0, [], False))
         full = self.call("expand", question["id"], "--relation", "raises", "--full")
@@ -97,6 +100,15 @@ class CLITests(unittest.TestCase):
             "author_id": "agent-a", "records": [{"ref": "g", "kind": "Finding", "text": "Orphan"}],
             "links": [{"from_id": "g", "to_id": "missing", "relation": "about"}]})
         self.assertEqual(self.call("search", "Orphan"), [])
+
+    def test_previews_show_telling_attributes_and_truncate_text(self):
+        text = "Growth input " + "x" * 300
+        variable = self.call("create", "Variable", "--input", "-", payload={"text": text, "author_id": "agent-a",
+            "attributes": {"key": "growth", "value": [0.1, 0.2], "basis": "assumption", "model_ref": "m.py"}})
+        preview = self.call("list", "--kind", "Variable")["records"][0]
+        self.assertEqual(preview, {"id": variable["id"], "kind": "Variable", "text": text[:199] + "…",
+                                   "basis": "assumption", "key": "growth", "value": [0.1, 0.2]})
+        self.assertEqual(self.call("list", "--kind", "Variable", "--full")["records"], [variable])
 
     def test_connection_limits_and_link_updates(self):
         finding = self.create("Finding", "Capacity depends on power.")
@@ -140,6 +152,8 @@ class CLITests(unittest.TestCase):
             "citations": [{"source_id": sid, "quote": "Grid approval is pending."}]})
         self.assertEqual(finding["attributes"]["citations"],
                          [{"source_id": sid, "start_byte": 11, "end_byte": 36, "quote": "Grid approval is pending."}])
+        self.assertEqual(self.call("search", "Approval pending", "--kind", "Finding"),
+                         [{"id": finding["id"], "kind": "Finding", "text": "Approval is pending.", "citations": 1}])
         self.assertEqual([link["to_id"] for link in self.call("connections", finding["id"])["links"]], [sid])
         cited = self.call("cited-by", sid, "--start-byte", "20", "--end-byte", "24")
         self.assertEqual(cited, {"citations": [{"record": finding, "source_id": sid, "start_byte": 11, "end_byte": 36}],

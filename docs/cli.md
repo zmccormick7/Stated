@@ -12,7 +12,7 @@ premisedb --db research.sqlite search "PowerFrame backlog" --kind Finding
 
 `--db` is a global option placed **before** the command. Without it, the CLI uses `PREMISEDB_DB` when set, otherwise `research.sqlite` in the current directory. Set `PREMISEDB_DB` in the agent's environment so every session uses the shared workspace regardless of its working directory. Only `init` creates a missing database, and it safely reopens an existing one. Parent directories must exist. Use a persistent local file and the same path across agent sessions.
 
-Successful operations print one JSON value to stdout: record/link/context objects, arrays of search results, a connection object with `links` and `has_more`, a passage count from `chunk`, a JSON string from `source-text`, or an absolute database path object from `init`. Missing context returns `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
+`search`, `list` and `expand` print previews unless given `--full`. A preview holds the record's `id`, `kind`, the first 200 characters of `text`, any of the attributes `basis`, `status`, `key` and `value`, and `citations` as a count when the record cites sources. Use `get` for a complete record. Successful operations print one JSON value to stdout: record/link/context objects, arrays of search results, a connection object with `links` and `has_more`, a passage count from `chunk`, a JSON string from `source-text`, or an absolute database path object from `init`. Missing context returns `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
 
 ## Commands
 
@@ -25,14 +25,14 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 | `get ID` | Read current record contents. |
 | `update ID --input FILE` | Replace text and attributes, retaining identity and kind. |
 | `patch ID --input FILE` | Change text or some top-level attributes, keeping the rest. |
-| `search QUERY [--kind KIND] [--limit N]` | Search record text. |
+| `search QUERY [--kind KIND] [--limit N] [--full]` | Search record text. Previews by default; `--full` returns complete records. |
 | `contribute --input FILE` | Create several records and links in one transaction. |
 | `link FROM TO RELATION --input FILE` | Connect two existing records. |
 | `get-link ID` | Read a link. |
 | `update-link ID --input FILE` | Replace a link's endpoints, relation and explanation. |
 | `patch-link ID --input FILE` | Change some of a link's endpoints, relation or explanation, keeping the rest. |
 | `connections ID [--direction both\|in\|out] [--relation NAME] [--limit N]` | Inspect one-hop links and the records they reach. |
-| `list [--kind KIND] [--author ID] [--where KEY=VALUE]... [--after ID] [--limit N]` | List records in creation order, optionally matching top-level attribute values. |
+| `list [--kind KIND] [--author ID] [--where KEY=VALUE]... [--after ID] [--limit N] [--full]` | List records in creation order, optionally matching top-level attribute values. Previews by default. |
 | `expand SEED_ID... [--depth 1\|2] [--direction both\|in\|out] [--relation NAME]... [--limit N] [--per-record N] [--full]` | Walk links from seed records, reporting each record reached and its path. Previews by default; `--full` returns complete records. |
 | `relations` | Count links by relation and the record kinds they connect. |
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |

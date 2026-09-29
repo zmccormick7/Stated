@@ -50,6 +50,7 @@ def _parser():
     command("patch", "patch", "Change text or some top-level attributes, keeping the rest.", "record_id",
             payload="author_id, optional text, attributes (keys to set), remove (keys to delete), citations")
     search = command("search", "search_records", "Search record text; any query word can match.", "query")
+    search.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     search.add_argument("--kind")
     search.add_argument("--limit", type=int, default=10)
     command("contribute", "contribute", "Create records and links in one transaction; links can name new records by ref.",
@@ -78,6 +79,7 @@ def _parser():
     walk.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     command("relations", "relation_usage", "Count links by relation and the record kinds they connect.")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
+    listing.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     listing.add_argument("--kind")
     listing.add_argument("--author", dest="author_id")
     listing.add_argument("--where", action="append", type=_where_item, metavar="KEY=VALUE",
@@ -124,16 +126,28 @@ def _search_documents(db, options):
     return [{**asdict(excerpt.segment), "token_count": excerpt.token_count} for excerpt in result.excerpts]
 
 
-def _expand(db, options):
-    """Previews by default: ID, kind, the start of the text, depth and the linking path."""
-    full = options.pop("full")
-    result = db.expand(**options)
-    if full:
-        return result
-    preview = lambda text: text if len(text) <= 200 else text[:199] + "…"
-    return {"reached": [{"id": r.record.id, "kind": r.record.kind, "text": preview(r.record.text), "depth": r.depth,
-                         "path": [{"id": link.id, "from_id": link.from_id, "to_id": link.to_id,
-                                   "relation": link.relation} for link in r.path]} for r in result.reached],
+PREVIEW_ATTRIBUTES = ("basis", "status", "key", "value")
+
+
+def _preview(record):
+    """ID, kind, the start of the text, a few telling attributes and the number of citations."""
+    preview = {"id": record.id, "kind": record.kind,
+               "text": record.text if len(record.text) <= 200 else record.text[:199] + "…"}
+    preview |= {name: record.attributes[name] for name in PREVIEW_ATTRIBUTES if name in record.attributes}
+    if isinstance(citations := record.attributes.get("citations"), list) and citations:
+        preview["citations"] = len(citations)
+    return preview
+
+
+def _compact(method, result):
+    """Previews in place of full records for search, list and expand."""
+    if method == "search_records":
+        return [_preview(record) for record in result]
+    if method == "list_records":
+        return {"records": [_preview(record) for record in result.records], "has_more": result.has_more}
+    return {"reached": [_preview(r.record) | {"depth": r.depth, "path": [
+                {"id": link.id, "from_id": link.from_id, "to_id": link.to_id, "relation": link.relation}
+                for link in r.path]} for r in result.reached],
             "capped": list(result.capped), "has_more": result.has_more}
 
 
@@ -170,11 +184,12 @@ def main(argv=None):
                 options["seed_ids"] = [db.resolve_id(seed) for seed in options["seed_ids"]]
             if method == "search_documents":
                 result = _search_documents(db, options)
-            elif method == "expand":
-                result = _expand(db, options)
             else:
+                full = options.pop("full", True)
                 result = (getattr(db, method)(**options, **payload) if method
                           else {"database": str(path.resolve())})
+                if not full:
+                    result = _compact(method, result)
         print(json.dumps(result, default=asdict, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError, sqlite3.Error) as error:

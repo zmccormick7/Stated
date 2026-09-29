@@ -17,13 +17,15 @@ Run `premisedb --help` or `premisedb COMMAND --help` for arguments and write-pay
 
 Find a few entry points, then walk the graph from them. Much of what matters is reachable only through links, not by search.
 
+`search`, `list` and `expand` show previews: each record's ID, kind, the start of its text, its `basis`, `status`, `key` and `value` where present, and how many sources it cites. That is usually enough to tell a disclosed fact from an inference, or an open Question from an answered one, without fetching the record.
+
 **1. Find entry points.**
 - `search` record text with company names, aliases and business concepts. Record search matches whole words in record text, not attributes: `TSM` does not find `TSMC`. One empty result does not establish that something is absent. Try several names before creating an Entity, and reuse existing Entity identities when they refer to the same thing.
 - `list` surveys records by kind in creation order. `--where KEY=VALUE` (repeatable) keeps records whose top-level attribute equals the value, for example `list --kind Question --where status=open` or `list --kind Variable --where key=acie_growth_fy28`. Values are read as JSON when valid, so quote a string that looks like a number: `--where 'period="2027"'`. Continue with `--after LAST_ID` while `has_more` is true.
 - `search-documents "RESEARCH QUESTION"`, optionally scoped with `--source-id SOURCE_ID`, returns source excerpts with exact locators and separate document context. A document search can return no suitable evidence.
 
 **2. Walk from them with `expand`.** This is the main way to see what connects to your entry points.
-- `expand ID [ID ...] --depth 2` walks one or two hops from one or more records. It lists each record reached with its ID, kind, the start of its text and the chain of links that leads to it.
+- `expand ID [ID ...] --depth 2` walks one or two hops from one or more records. It lists each record reached with the chain of links that leads to it.
 - Add `--relation` (repeatable) to follow only certain relations. For example, `expand ENTITY_ID --depth 2 --relation about --relation depends_on` goes from a company to Findings about it and on to the model Variables that depend on them. `--relation contradicts --relation qualifies` surfaces disagreements and caveats.
 - `capped` lists records with more links than were followed.
 
@@ -31,7 +33,7 @@ Find a few entry points, then walk the graph from them. Much of what matters is 
 
 **4. Focus on the records that matter.**
 - `connections ID` shows every link of one record, in both directions, with each relationship's explanation.
-- `get ID` shows a record's full contents and citations.
+- `get ID` shows a record's full contents and citations; fetch only the records whose details you need. Add `--full` to `search`, `list` or `expand` for complete records.
 - Links keep their stored direction: incoming `depends_on` links reveal Findings and model Variables that rest on a record.
 - Inspect each explanation and the connected record before treating it as useful context.
 - IDs can be given in full or as a unique prefix of 8 or more characters, like the short IDs in reports.
