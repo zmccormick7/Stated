@@ -78,7 +78,7 @@ with RecordStore("research.sqlite") as db:
         print(evidence.quote, evidence.record_ids)
 ```
 
-`recall(db, query, seeds=(), max_records=40, entry_limit=10)` assembles connected research in one call, without provider calls ([design](connected-recall.md)).
+`recall(db, query, seeds=(), max_records=40, entry_limit=10)` assembles connected research in one call, without provider calls.
 
 1. **Entry points.** Record-search hits (up to `entry_limit`) and `seeds` are combined by reciprocal rank fusion, with seeds weighted double.
 2. **Walk.** From each entry point it walks two hops along reasoning relations and one hop along `about`. It does not walk `in_layer` or `supported_by`.

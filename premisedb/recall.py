@@ -1,6 +1,6 @@
 """Connected recall: entry points → bounded walk → selected records with evidence and issues.
 
-Increment 1 of docs/connected-recall.md: graph-only, deterministic and without provider calls.
+Graph-only and deterministic; it makes no provider calls.
 """
 
 from collections.abc import Iterable
