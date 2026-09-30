@@ -31,6 +31,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 | `init [--layer NAME]` | Create or open the database. `--layer` names the workspace's own layer when creating it (default `workspace`) and is ignored for an existing database. |
 | `layers` | List layers: the workspace's own writable layer first, then any attached read-only layers, each with its `version`, `content_sha256` and `exported_at` when published. |
 | `export-layer PATH --version LABEL` | Publish the workspace's own layer as a new database file at PATH (never overwritten). |
+| `attach-layer PATH` | Attach a published layer file as a read-only layer, or bring an attached layer to the file's version. |
 | `create KIND --input FILE` | Create one of the six record types. |
 | `get ID` | Read current record contents. |
 | `update ID --input FILE` | Replace text and attributes, retaining identity and kind. |
@@ -66,7 +67,9 @@ For `ingest`, supply `description`, `author_id` and optional `attributes`; the s
 
 Updates replace complete contents: omitted attributes/provenance become `{}`, and an omitted link explanation becomes empty. Preserve metadata you intend to keep. For `patch`, supply `author_id` and any of `text`, `attributes` (keys to set), `remove` (keys to delete) and `citations`; unnamed attributes are kept. Each command uses the existing store operation and its transaction semantics; a series of commands is not one transaction. After an interrupted create or ingestion, check whether it committed before retrying.
 
-Records and links report their `layer`. Writes go to the workspace's own layer; a record or link in an attached read-only layer cannot be edited, and the error says so: add your own record or link that points at it instead. Attaching layers is not implemented yet.
+Records and links report their `layer`. Writes go to the workspace's own layer; a record or link in an attached read-only layer cannot be edited, and the error says so: add your own record or link that points at it instead. Your records and links may point at attached records in either direction.
+
+`attach-layer` verifies the file's manifest hash, then copies its rows into the workspace in one transaction, or updates the attached layer in place when a newer version of it is attached: records keep their identity across versions, so your links and citations to them stay valid. The output counts records and links added, updated and removed, and `review` lists what your own layer should reassess: `changed_linked_records`, attached records you link to whose contents changed, and `removed_upstream_but_linked`, records the new version dropped that stay in the workspace because you still link to or cite them. A version that withdraws a Source's text removes the text and everything derived from it; one that changes a Source's text is refused, since source text is fixed. Attaching the same version again changes nothing.
 
 `export-layer` copies the workspace's own records, links, source text, passages and document context verbatim into a new PremiseDB database whose single layer is sealed and carries the version label, a content hash and the export time, so every read command works on the published file. A Source whose attributes hold `"redistributable": false` is published without its text, passages or context; the file records its text hash instead. A layer whose links reach records in attached layers cannot be exported yet.
 

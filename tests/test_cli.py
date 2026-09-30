@@ -261,6 +261,14 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("search", "PowerFrame")["records"][0]["layer"], "base")
         self.assertIn("layer", self.call("create", "Entity", "--input", "-",
                                          payload={"text": "Nope", "author_id": "a"}, status=1)["error"])
+        self.path = self.directory / "fund.sqlite"
+        self.call("init", "--layer", "fund")
+        attached = self.call("attach-layer", str(published))
+        self.assertEqual((attached["name"], attached["version"], attached["records"]["added"], attached["review"]),
+                         ("base", "2026.09.30", 1, {}))
+        self.assertEqual([layer["name"] for layer in self.call("layers")["layers"]], ["fund", "base"])
+        self.assertEqual(self.call("search", "PowerFrame")["records"][0]["layer"], "base")
+        self.assertEqual(self.create("Question", "Which plants?")["layer"], "fund")
 
     def test_only_init_creates_a_database(self):
         self.path = self.directory / "typo.sqlite"

@@ -51,6 +51,8 @@ def _parser():
                      "Publish the workspace's own layer as a new database file that other workspaces can attach.",
                      "path")
     export.add_argument("--version", required=True, help="Version label recorded in the file, such as 2026.09.30.")
+    command("attach-layer", "attach_layer",
+            "Attach a published layer file read-only, or update an attached layer to the file's version.", "path")
     command("create", "create", "Create an Entity, Source, Finding, Question, Model or Variable.",
             "kind", payload=record)
     command("get", "read", "Read a current record.", "record_id")

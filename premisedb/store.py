@@ -262,6 +262,11 @@ class RecordStore:
         from .layers import export_layer
         return export_layer(self, path, version=version)
 
+    def attach_layer(self, path: str | Path) -> "LayerAttachment":
+        """Attach a published layer file read-only, or bring an attached layer to the file's version."""
+        from .layers import attach_layer
+        return attach_layer(self, path)
+
     def read(self, record_id: str) -> Record:
         """Read current contents; a missing record raises KeyError."""
         row = self._db.execute(_RECORD_SELECT + " WHERE r.id = ?", (record_id,)).fetchone()

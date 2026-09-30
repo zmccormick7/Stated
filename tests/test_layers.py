@@ -174,3 +174,131 @@ class ExportTests(unittest.TestCase):
         self.db.create_link(self.finding.id, published.id, "corroborates", author_id="a")
         with self.assertRaisesRegex(ValueError, "1 links reach records in other layers"):
             self.db.export_layer(self.directory / "crossing.sqlite", version="2")
+
+
+class AttachTests(unittest.TestCase):
+    """A publisher's workspace exports versions; a subscriber's workspace attaches them and builds on them."""
+
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+        self.publisher = RecordStore(self.directory / "publisher.sqlite", layer="base")
+        self.addCleanup(self.publisher.close)
+        self.terms = self.publisher.ingest_source(description="Terms", document_text="Deliveries may be rescheduled.",
+                                                  author_id="p")
+        self.publisher.chunk_source(self.terms.id)
+        self.publisher.set_document_context(self.terms.id, title="Delivery terms", summary="", author_id="p")
+        self.finding = self.publisher.create("Finding", text="Backlog may slip.", author_id="p",
+                                             citations=[{"source_id": self.terms.id, "quote": "rescheduled"}])
+        self.dropped = self.publisher.create("Question", text="Dropped later.", author_id="p")
+        self.orphan = self.publisher.create("Question", text="Dropped later, unlinked.", author_id="p")
+        self.raises = self.publisher.create_link(self.finding.id, self.dropped.id, "raises", author_id="p")
+        self.v1 = self.directory / "base-1.sqlite"
+        self.publisher.export_layer(self.v1, version="1")
+        self.subscriber = RecordStore(self.directory / "fund.sqlite", layer="fund")
+        self.addCleanup(self.subscriber.close)
+
+    def test_attach_copies_the_layer_read_only_and_the_workspace_builds_on_it(self):
+        attachment = self.subscriber.attach_layer(self.v1)
+        self.assertEqual((attachment.name, attachment.version, attachment.records, attachment.links, attachment.review),
+                         ("base", "1", {"added": 4, "updated": 0, "removed": 0, "kept": 0},
+                          {"added": 2, "updated": 0, "removed": 0}, {}))
+        own, base = self.subscriber.layers()
+        self.assertEqual((own.name, own.writable, base.name, base.version, base.writable), ("fund", True, "base", "1", False))
+        self.assertEqual(base.content_sha256, attachment.content_sha256)
+        self.assertEqual(self.subscriber.read(self.finding.id), self.finding)
+        self.assertEqual(self.subscriber.read_link(self.raises.id), self.raises)
+        self.assertEqual(self.subscriber.read_source_text(self.terms.id), "Deliveries may be rescheduled.")
+        self.assertEqual(self.subscriber.read_document_context(self.terms.id).title, "Delivery terms")
+        self.assertEqual([c.record.id for c in self.subscriber.cited_by(self.terms.id).citations], [self.finding.id])
+        self.assertEqual(self.subscriber.search_records("backlog")[0].layer, "base")
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "read-only layer"):
+            self.subscriber.patch(self.finding.id, author_id="f", text="Edited")
+        challenge = self.subscriber.create("Finding", text="Customers rarely defer.", author_id="f",
+                                           citations=[{"source_id": self.terms.id, "quote": "may be"}])
+        link = self.subscriber.create_link(challenge.id, self.finding.id, "contradicts", author_id="f")
+        self.assertEqual((challenge.layer, link.layer), ("fund", "fund"))
+        # Attaching the same version again changes nothing.
+        again = self.subscriber.attach_layer(self.v1)
+        self.assertEqual((again.records, again.links), ({"added": 0, "updated": 0, "removed": 0, "kept": 0},
+                                                        {"added": 0, "updated": 0, "removed": 0}))
+
+    def test_a_new_version_updates_in_place_and_reports_what_to_review(self):
+        self.subscriber.attach_layer(self.v1)
+        challenge = self.subscriber.create("Finding", text="Customers rarely defer.", author_id="f",
+                                           citations=[{"source_id": self.terms.id, "quote": "may be"}])
+        self.subscriber.create_link(challenge.id, self.finding.id, "contradicts", author_id="f")
+        self.subscriber.create_link(challenge.id, self.dropped.id, "partly_answers", author_id="f")
+        key_before = self.subscriber._record_key(self.finding.id)
+        # Version 2: the finding is revised, one question is added, two are dropped, the raises link changes.
+        self.publisher.patch(self.finding.id, author_id="p", text="Backlog may slip a quarter.")
+        added = self.publisher.create("Question", text="Added in version 2.", author_id="p")
+        self.publisher.patch_link(self.raises.id, author_id="p", to_id=added.id)
+        sql = self.publisher._db
+        for record in (self.dropped, self.orphan):
+            sql.execute("DELETE FROM records WHERE id = ?", (record.id,))
+        v2 = self.directory / "base-2.sqlite"
+        self.publisher.export_layer(v2, version="2")
+
+        attachment = self.subscriber.attach_layer(v2)
+        self.assertEqual(attachment.records, {"added": 1, "updated": 1, "removed": 1, "kept": 1})
+        self.assertEqual(attachment.links, {"added": 0, "updated": 1, "removed": 0})
+        self.assertEqual(attachment.review, {"changed_linked_records": [self.finding.id],
+                                             "removed_upstream_but_linked": [self.dropped.id]})
+        self.assertEqual(self.subscriber.layers()[1].version, "2")
+        self.assertEqual(self.subscriber.read(self.finding.id).text, "Backlog may slip a quarter.")
+        self.assertEqual(self.subscriber._record_key(self.finding.id), key_before)  # Keys survive versions.
+        self.assertEqual(self.subscriber.read_link(self.raises.id).to_id, added.id)
+        self.assertEqual(self.subscriber.read(self.dropped.id).layer, "base")
+        with self.assertRaises(KeyError):
+            self.subscriber.read(self.orphan.id)
+        self.assertEqual({c.record.id for c in self.subscriber.cited_by(self.terms.id).citations},
+                         {self.finding.id, challenge.id})
+        self.assertEqual(self.subscriber.search_records("quarter")[0].id, self.finding.id)
+
+    def test_withdrawn_text_leaves_and_changed_text_is_refused(self):
+        self.subscriber.attach_layer(self.v1)
+        cite = self.subscriber.create("Finding", text="Cites terms.", author_id="f",
+                                      citations=[{"source_id": self.terms.id, "quote": "may be"}])
+        self.publisher.patch(self.terms.id, author_id="p", attributes={"redistributable": False})
+        v2 = self.directory / "base-2.sqlite"
+        self.publisher.export_layer(v2, version="2")
+        self.subscriber.attach_layer(v2)
+        for read in (self.subscriber.read_source_text, self.subscriber.read_document_context):
+            with self.assertRaises(KeyError):  # No text, so nothing derived from it either.
+                read(self.terms.id)
+        self.assertEqual(self.subscriber.read(cite.id).attributes["citations"][0]["source_id"], self.terms.id)
+        self.assertEqual(self.subscriber._db.execute("SELECT count(*) FROM passages").fetchone()[0], 0)
+        # A different text under the same Source ID can never replace the fixed copy.
+        other = RecordStore(self.directory / "other.sqlite", layer="base")
+        self.addCleanup(other.close)
+        other._db.execute("INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, layer_key)"
+                          " VALUES (?, 'Source', 'Terms', '{}', 'p', 'p', 'now', 1)", (self.terms.id,))
+        other._db.execute("INSERT INTO source_content (source_key, text_utf8, text_sha256) VALUES (1, ?, ?)",
+                          (b"Different.", sha256(b"Different.").hexdigest()))
+        v3 = self.directory / "base-3.sqlite"
+        other.export_layer(v3, version="3")
+        fresh = RecordStore(self.directory / "fresh.sqlite")
+        self.addCleanup(fresh.close)
+        fresh.attach_layer(self.v1)
+        with self.assertRaisesRegex(ValueError, "text differs"):
+            fresh.attach_layer(v3)
+        self.assertEqual(fresh.layers()[1].version, "1")  # Nothing changed.
+
+    def test_attach_refuses_bad_files_and_the_workspace_own_layer(self):
+        with self.assertRaisesRegex(ValueError, "not a file"):
+            self.subscriber.attach_layer(self.directory / "missing.sqlite")
+        with self.assertRaisesRegex(ValueError, "exactly one sealed layer"):
+            self.subscriber.attach_layer(self.directory / "publisher.sqlite")
+        with self.assertRaisesRegex(ValueError, "own layer"):
+            self.publisher.attach_layer(self.v1)
+        altered = self.directory / "altered.sqlite"
+        altered.write_bytes(self.v1.read_bytes())
+        with RecordStore(altered) as file:
+            file._db.execute("UPDATE layers SET writable = 1")
+            file.patch(self.orphan.id, author_id="x", text="tampered")
+            file._db.execute("UPDATE layers SET writable = 0")
+        with self.assertRaisesRegex(ValueError, "manifest hash"):
+            self.subscriber.attach_layer(altered)
+        self.assertEqual(len(self.subscriber.layers()), 1)
