@@ -15,7 +15,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 11
+_SCHEMA_VERSION = 12
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,7 @@ class Record:
     author_id: str  # Last editor.
     created_by: str  # The record's creator; updates never change it.
     updated_at: str
+    layer: str  # The layer that owns the record; only the workspace's own layer accepts edits.
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,14 @@ class Link:
     author_id: str  # Last editor.
     created_by: str
     updated_at: str
+    layer: str
+
+
+@dataclass(frozen=True)
+class Layer:
+    name: str
+    version: str  # Empty for the workspace's own layer.
+    writable: bool
 
 
 @dataclass(frozen=True)
@@ -167,16 +176,27 @@ def _check_kind(kind: str | None) -> None:
         raise ValueError("kind must be a record kind or None")
 
 
+_RECORD_SELECT = """
+    SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at, y.name AS layer
+    FROM records r JOIN layers y ON y.layer_key = r.layer_key
+"""
+
 _LINK_SELECT = """
     SELECT l.id, f.id AS from_id, t.id AS to_id, l.relation,
-           l.explanation, l.author_id, l.created_by, l.updated_at
+           l.explanation, l.author_id, l.created_by, l.updated_at, y.name AS layer
     FROM links l JOIN records f ON f.record_key = l.from_key
-    JOIN records t ON t.record_key = l.to_key
+    JOIN records t ON t.record_key = l.to_key JOIN layers y ON y.layer_key = l.layer_key
 """
+
+# New rows join the workspace's own layer, the only one that accepts writes.
+_WRITABLE_LAYER = "(SELECT layer_key FROM layers WHERE writable = 1)"
 
 
 class RecordStore:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, *, layer: str = "workspace"):
+        """Open a store, creating it with `layer` as the name of its own writable layer if new."""
+        if not isinstance(layer, str) or not layer.strip():
+            raise ValueError("layer must be a nonblank string")
         if sqlite3.sqlite_version_info < (3, 51, 3):
             raise RuntimeError("SQLite 3.51.3+ is required for the WAL-reset fix")
         self._db = sqlite3.connect(path, isolation_level=None, timeout=5.0)
@@ -187,7 +207,7 @@ class RecordStore:
             self._db.execute("PRAGMA synchronous = FULL")
             self._db.execute("PRAGMA foreign_keys = ON")
             if version == 0:
-                self._initialize()
+                self._initialize(layer)
         except BaseException:
             self._db.close()
             raise
@@ -201,7 +221,7 @@ class RecordStore:
             )
         return version
 
-    def _initialize(self) -> None:
+    def _initialize(self, layer: str) -> None:
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             if self._schema_version() == _SCHEMA_VERSION:
@@ -215,6 +235,7 @@ class RecordStore:
                     statement = ""
             if statement.strip():
                 raise ValueError("Incomplete statement in schema.sql")
+            self._db.execute("INSERT INTO layers (name, version, writable) VALUES (?, '', 1)", (layer,))
             self._db.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
 
     def close(self) -> None:
@@ -226,12 +247,15 @@ class RecordStore:
     def __exit__(self, *_):
         self.close()
 
+    def layers(self) -> tuple[Layer, ...]:
+        """The workspace's own layer first, then attached layers in attachment order."""
+        rows = self._db.execute(
+            "SELECT name, version, writable FROM layers ORDER BY writable DESC, layer_key").fetchall()
+        return tuple(Layer(row["name"], row["version"], bool(row["writable"])) for row in rows)
+
     def read(self, record_id: str) -> Record:
         """Read current contents; a missing record raises KeyError."""
-        row = self._db.execute(
-            "SELECT id, kind, text, attributes, author_id, created_by, updated_at FROM records WHERE id = ?",
-            (record_id,),
-        ).fetchone()
+        row = self._db.execute(_RECORD_SELECT + " WHERE r.id = ?", (record_id,)).fetchone()
         if row is None:
             raise KeyError(record_id)
         return self._decode_record(row)
@@ -264,8 +288,7 @@ class RecordStore:
         if not expression:
             return ()
         rows = self._db.execute(
-            """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at
-               FROM records_fts JOIN records r ON r.record_key = records_fts.rowid
+            _RECORD_SELECT + """JOIN records_fts ON records_fts.rowid = r.record_key
                WHERE records_fts MATCH ? AND (? IS NULL OR r.kind = ?)
                ORDER BY bm25(records_fts), r.record_key LIMIT ?""",
             (expression, kind, kind, limit),
@@ -663,8 +686,7 @@ class RecordStore:
         # Records are never deleted, so every linked record can be read.
         ids = dict.fromkeys(link.from_id if link.to_id == record_id else link.to_id for link in links)
         found = {row["id"]: self._decode_record(row) for row in self._db.execute(
-            """SELECT id, kind, text, attributes, author_id, created_by, updated_at FROM records
-               WHERE id IN (SELECT value FROM json_each(?))""", (json.dumps(list(ids)),))}
+            _RECORD_SELECT + " WHERE r.id IN (SELECT value FROM json_each(?))", (json.dumps(list(ids)),))}
         return Connections(links, has_more, {record: found[record] for record in ids})
 
     def expand(self, seed_ids: Iterable[str], *, depth: int = 1, direction: str = "both",
@@ -769,18 +791,18 @@ class RecordStore:
             # Match the JSON type as well as the value, so 1, 1.0, true and "1" stay distinct.
             path = f'$."{key}"'
             if value is None or isinstance(value, bool):
-                conditions.append("json_type(attributes, ?) = ?")
+                conditions.append("json_type(r.attributes, ?) = ?")
                 values += [path, "null" if value is None else str(value).lower()]
             else:
-                conditions.append("json_type(attributes, ?) = ? AND json_extract(attributes, ?) = ?")
+                conditions.append("json_type(r.attributes, ?) = ? AND json_extract(r.attributes, ?) = ?")
                 values += [path, {str: "text", int: "integer", float: "real"}[type(value)], path, value]
         start = 0 if after is None else self._record_key(after)
         rows = self._db.execute(
-            f"""SELECT id, kind, text, attributes, author_id, created_by, updated_at FROM records
-               WHERE record_key > ? AND (? IS NULL OR kind = ?) AND (? IS NULL OR author_id = ?)
-                 AND (? IS NULL OR created_by = ?) AND (? IS NULL OR updated_at >= ?)
+            _RECORD_SELECT + f"""WHERE r.record_key > ? AND (? IS NULL OR r.kind = ?)
+                 AND (? IS NULL OR r.author_id = ?) AND (? IS NULL OR r.created_by = ?)
+                 AND (? IS NULL OR r.updated_at >= ?)
                {"".join(" AND " + condition for condition in conditions)}
-               ORDER BY record_key LIMIT ?""",
+               ORDER BY r.record_key LIMIT ?""",
             (start, kind, kind, author_id, author_id, created_by, created_by, since, since, *values, limit + 1),
         ).fetchall()
         return RecordPage(tuple(self._decode_record(row) for row in rows[:limit]), len(rows) > limit)
@@ -821,14 +843,15 @@ class RecordStore:
             raise ValueError("byte range is outside source text")
         rows = self._db.execute(
             """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at,
-                      c.start_byte AS cited_start, c.end_byte AS cited_end
+                      y.name AS layer, c.start_byte AS cited_start, c.end_byte AS cited_end
                FROM citations c JOIN records r ON r.record_key = c.record_key
+               JOIN layers y ON y.layer_key = r.layer_key
                WHERE c.source_key = ? AND c.start_byte < ? AND c.end_byte > ?
                ORDER BY c.start_byte, c.end_byte, c.record_key, c.ordinal LIMIT ?""",
             (source_key, end_byte, start_byte, limit + 1),
         ).fetchall()
         citations = tuple(Citation(Record(row["id"], row["kind"], row["text"], json.loads(row["attributes"]),
-                                          row["author_id"], row["created_by"], row["updated_at"]),
+                                          row["author_id"], row["created_by"], row["updated_at"], row["layer"]),
                                    source_id, row["cited_start"], row["cited_end"]) for row in rows[:limit])
         return CitationPage(citations, len(rows) > limit)
 
@@ -906,8 +929,8 @@ class RecordStore:
             if self._db.execute("""SELECT 1 FROM links WHERE from_key = ? AND to_key = ?
                                    AND relation = 'supported_by'""", values[:2]).fetchone() is None:
                 self._db.execute(
-                    """INSERT INTO links (from_key, to_key, relation, explanation,
-                       author_id, updated_at, id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    f"""INSERT INTO links (from_key, to_key, relation, explanation, author_id,
+                        updated_at, id, created_by, layer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
                     (*values, str(uuid4()), author_id),
                 )
 
@@ -916,8 +939,8 @@ class RecordStore:
         values = self._link_values(from_id, to_id, relation, explanation, author_id)
         self._refuse_duplicate_link(values)
         self._db.execute(
-            """INSERT INTO links (from_key, to_key, relation, explanation,
-               author_id, updated_at, id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            f"""INSERT INTO links (from_key, to_key, relation, explanation, author_id,
+                updated_at, id, created_by, layer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
             (*values, link_id, author_id),
         )
         return self.read_link(link_id)
@@ -967,8 +990,8 @@ class RecordStore:
                        record_id: str | None = None) -> Record:
         record_id = record_id or str(uuid4())
         self._db.execute(
-            """INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            f"""INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, layer_key)
+               VALUES (?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
             (record_id, kind, text, encoded, author_id, author_id, datetime.now(UTC).isoformat()),
         )
         return self.read(record_id)
