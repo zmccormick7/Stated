@@ -34,7 +34,7 @@ class CLITests(unittest.TestCase):
     @staticmethod
     def edits(record):
         """The edit details a preview ends with."""
-        return {"author_id": record["author_id"], "updated_at": record["updated_at"]}
+        return {"author_id": record["author_id"], "updated_at": record["updated_at"], "layer": record["layer"]}
 
     def test_recall_and_revision_across_processes(self):
         text = "PowerFrame's backlog may slip.\n€5 and $HOME stay literal."
@@ -121,7 +121,8 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("list", "--kind", "Variable", "--full")["records"], [variable])
         edited = self.call("patch", variable["id"], "--input", "-", payload={"author_id": "agent-b", "attributes": {"value": 1}})
         self.assertEqual(self.call("list", "--kind", "Variable")["records"][0], {
-            **preview, "value": 1, "author_id": "agent-b", "created_by": "agent-a", "updated_at": edited["updated_at"]})
+            **preview, "value": 1, "author_id": "agent-b", "created_by": "agent-a", "updated_at": edited["updated_at"],
+            "layer": "workspace"})
 
     def test_recall_returns_records_evidence_and_issues(self):
         text = "A€ backlog note. Customers may defer deliveries."
@@ -245,10 +246,21 @@ class CLITests(unittest.TestCase):
     def test_init_names_the_layer_that_layers_and_records_report(self):
         self.path = self.directory / "base.sqlite"
         self.call("init", "--layer", "base")
-        self.assertEqual(self.call("layers"), {"layers": [{"name": "base", "version": "", "writable": True}]})
+        self.assertEqual(self.call("layers"), {"layers": [{"name": "base", "version": "", "writable": True,
+                                                             "content_sha256": None, "exported_at": None}]})
         self.assertEqual(self.create("Entity", "PowerFrame")["layer"], "base")
         self.assertEqual(self.call("init", "--layer", "ignored"), {"database": str(self.path.resolve())})
         self.assertEqual(self.call("layers")["layers"][0]["name"], "base")
+        published = self.directory / "base-2026.09.30.sqlite"
+        export = self.call("export-layer", str(published), "--version", "2026.09.30")
+        self.assertEqual({key: export[key] for key in ("name", "version", "records", "links", "sources", "withheld")},
+                         {"name": "base", "version": "2026.09.30", "records": 1, "links": 0, "sources": 0,
+                          "withheld": 0})
+        self.path = published  # A published file answers every read command.
+        self.assertEqual(self.call("layers")["layers"][0]["version"], "2026.09.30")
+        self.assertEqual(self.call("search", "PowerFrame")["records"][0]["layer"], "base")
+        self.assertIn("layer", self.call("create", "Entity", "--input", "-",
+                                         payload={"text": "Nope", "author_id": "a"}, status=1)["error"])
 
     def test_only_init_creates_a_database(self):
         self.path = self.directory / "typo.sqlite"

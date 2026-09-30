@@ -15,7 +15,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 12
+_SCHEMA_VERSION = 13
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,8 @@ class Layer:
     name: str
     version: str  # Empty for the workspace's own layer.
     writable: bool
+    content_sha256: str | None = None  # Set for published layers, over their canonical contents.
+    exported_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -250,8 +252,15 @@ class RecordStore:
     def layers(self) -> tuple[Layer, ...]:
         """The workspace's own layer first, then attached layers in attachment order."""
         rows = self._db.execute(
-            "SELECT name, version, writable FROM layers ORDER BY writable DESC, layer_key").fetchall()
-        return tuple(Layer(row["name"], row["version"], bool(row["writable"])) for row in rows)
+            """SELECT name, version, writable, content_sha256, exported_at FROM layers
+               ORDER BY writable DESC, layer_key""").fetchall()
+        return tuple(Layer(row["name"], row["version"], bool(row["writable"]), row["content_sha256"],
+                           row["exported_at"]) for row in rows)
+
+    def export_layer(self, path: str | Path, *, version: str) -> "LayerExport":
+        """Write the workspace's own layer to a new database file as a sealed, published layer."""
+        from .layers import export_layer
+        return export_layer(self, path, version=version)
 
     def read(self, record_id: str) -> Record:
         """Read current contents; a missing record raises KeyError."""

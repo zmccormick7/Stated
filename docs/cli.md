@@ -20,7 +20,7 @@ premisedb --db research.sqlite search "PowerFrame backlog" --kind Finding
 
 The counts left out are reported in `coverage`.
 
-`search`, `list`, `expand`, `connections` and `links` print previews unless given `--full`. A preview holds the record's `id`, `kind`, the first 200 characters of `text`, any of the attributes `basis`, `status`, `key` and `value`, and `citations` as a count when the record cites sources. Previews from `search`, `list` and `expand` end with the last editor's `author_id`, `created_by` when the creator differs, and `updated_at`. `connections` adds to each link an `other` preview of the record at its other end, and `links` adds `from` and `to` previews; `--full` returns links alone, with `connections` also listing the complete records. Use `get` for a complete record. Successful operations print one JSON object to stdout. Lists are under a named key: `records` from `search` and `list`, `links` from `connections` and `links`, `excerpts` from `search-documents`, `matches` from `locate` and `relations` from `relations`. `source-text` prints a JSON string, `chunk` a passage count, and missing context `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
+`search`, `list`, `expand`, `connections` and `links` print previews unless given `--full`. A preview holds the record's `id`, `kind`, the first 200 characters of `text`, any of the attributes `basis`, `status`, `key` and `value`, and `citations` as a count when the record cites sources. Previews from `search`, `list` and `expand` end with the last editor's `author_id`, `created_by` when the creator differs, `updated_at` and `layer`. `connections` adds to each link an `other` preview of the record at its other end, and `links` adds `from` and `to` previews; `--full` returns links alone, with `connections` also listing the complete records. Use `get` for a complete record. Successful operations print one JSON object to stdout. Lists are under a named key: `records` from `search` and `list`, `links` from `connections` and `links`, `excerpts` from `search-documents`, `matches` from `locate` and `relations` from `relations`. `source-text` prints a JSON string, `chunk` a passage count, and missing context `null`. Operational failures emit `{"error": "..."}` to stderr with exit code 1; argument errors exit 2. Help is plain text. Document search uses the configured provider; other commands run locally.
 
 ## Commands
 
@@ -29,7 +29,8 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 | Command | Purpose |
 | --- | --- |
 | `init [--layer NAME]` | Create or open the database. `--layer` names the workspace's own layer when creating it (default `workspace`) and is ignored for an existing database. |
-| `layers` | List layers: the workspace's own writable layer first, then any attached read-only layers. |
+| `layers` | List layers: the workspace's own writable layer first, then any attached read-only layers, each with its `version`, `content_sha256` and `exported_at` when published. |
+| `export-layer PATH --version LABEL` | Publish the workspace's own layer as a new database file at PATH (never overwritten). |
 | `create KIND --input FILE` | Create one of the six record types. |
 | `get ID` | Read current record contents. |
 | `update ID --input FILE` | Replace text and attributes, retaining identity and kind. |
@@ -66,6 +67,8 @@ For `ingest`, supply `description`, `author_id` and optional `attributes`; the s
 Updates replace complete contents: omitted attributes/provenance become `{}`, and an omitted link explanation becomes empty. Preserve metadata you intend to keep. For `patch`, supply `author_id` and any of `text`, `attributes` (keys to set), `remove` (keys to delete) and `citations`; unnamed attributes are kept. Each command uses the existing store operation and its transaction semantics; a series of commands is not one transaction. After an interrupted create or ingestion, check whether it committed before retrying.
 
 Records and links report their `layer`. Writes go to the workspace's own layer; a record or link in an attached read-only layer cannot be edited, and the error says so: add your own record or link that points at it instead. Attaching layers is not implemented yet.
+
+`export-layer` copies the workspace's own records, links, source text, passages and document context verbatim into a new PremiseDB database whose single layer is sealed and carries the version label, a content hash and the export time, so every read command works on the published file. A Source whose attributes hold `"redistributable": false` is published without its text, passages or context; the file records its text hash instead. A layer whose links reach records in attached layers cannot be exported yet.
 
 Record searches return at most 10 hits by default. Connections cover both directions by default, return up to 100 links, and report `has_more`. `list` and `links` return up to 100 records or links with `has_more`; continue with `--after` and the last ID. These limits have a maximum of 1,000. The [research skill](../skills/premisedb-research/SKILL.md) explains how to use these operations during an investigation.
 

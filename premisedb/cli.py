@@ -47,6 +47,10 @@ def _parser():
     init.add_argument("--layer", default="workspace",
                       help="Name of the workspace's own layer when creating the database (default: workspace).")
     command("layers", "layers", "List the workspace's own layer and any attached layers.")
+    export = command("export-layer", "export_layer",
+                     "Publish the workspace's own layer as a new database file that other workspaces can attach.",
+                     "path")
+    export.add_argument("--version", required=True, help="Version label recorded in the file, such as 2026.09.30.")
     command("create", "create", "Create an Entity, Source, Finding, Question, Model or Variable.",
             "kind", payload=record)
     command("get", "read", "Read a current record.", "record_id")
@@ -171,7 +175,7 @@ PREVIEW_ATTRIBUTES = ("basis", "status", "key", "value")
 
 def _preview(record, *, edits=True):
     """ID, kind, the start of the text, a few telling attributes, the number of citations and, with
-    edits, who last edited the record (and created it, when that differs) and when."""
+    edits, who last edited the record (and created it, when that differs), when, and its layer."""
     preview = {"id": record.id, "kind": record.kind,
                "text": record.text if len(record.text) <= 200 else record.text[:199] + "…"}
     preview |= {name: record.attributes[name] for name in PREVIEW_ATTRIBUTES if name in record.attributes}
@@ -182,6 +186,7 @@ def _preview(record, *, edits=True):
         if record.created_by != record.author_id:
             preview["created_by"] = record.created_by
         preview["updated_at"] = record.updated_at
+        preview["layer"] = record.layer
     return preview
 
 

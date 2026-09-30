@@ -4,7 +4,11 @@ CREATE TABLE layers (
     layer_key INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE CHECK (length(trim(name)) > 0),
     version TEXT NOT NULL,  -- Empty for the workspace's own layer.
-    writable INTEGER NOT NULL CHECK (writable IN (0, 1))
+    writable INTEGER NOT NULL CHECK (writable IN (0, 1)),
+    -- The manifest of a published layer: set on the sealed layer in an exported file and kept when
+    -- that file is attached.
+    content_sha256 TEXT CHECK (content_sha256 IS NULL OR length(content_sha256) = 64),
+    exported_at TEXT
 );
 CREATE UNIQUE INDEX layers_one_writable ON layers (writable) WHERE writable = 1;
 
@@ -101,6 +105,13 @@ END;
 CREATE TRIGGER source_content_fixed BEFORE UPDATE ON source_content BEGIN
     SELECT RAISE(ABORT, 'source text is fixed; ingest a new Source');
 END;
+
+-- Sources whose text a published layer withholds (Source attributes.redistributable is false). The
+-- hash lets a workspace that holds the document verify and supply the text itself.
+CREATE TABLE withheld_sources (
+    source_key INTEGER PRIMARY KEY REFERENCES records (record_key),
+    text_sha256 TEXT NOT NULL CHECK (length(text_sha256) = 64)
+);
 
 CREATE TABLE document_context (
     source_key INTEGER PRIMARY KEY REFERENCES source_content (source_key),
