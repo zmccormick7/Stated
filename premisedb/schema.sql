@@ -1,3 +1,13 @@
+-- Every record and link belongs to one layer. A workspace writes only to its own layer; the
+-- others hold read-only copies of graphs published elsewhere. Links may cross layers.
+CREATE TABLE layers (
+    layer_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE CHECK (length(trim(name)) > 0),
+    version TEXT NOT NULL,  -- Empty for the workspace's own layer.
+    writable INTEGER NOT NULL CHECK (writable IN (0, 1))
+);
+CREATE UNIQUE INDEX layers_one_writable ON layers (writable) WHERE writable = 1;
+
 CREATE TABLE records (
     record_key INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
@@ -8,8 +18,10 @@ CREATE TABLE records (
         AND json_type(attributes) = 'object'),
     author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),  -- Last editor.
     created_by TEXT NOT NULL CHECK (length(trim(created_by)) > 0),  -- Set once on insert.
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    layer_key INTEGER NOT NULL REFERENCES layers (layer_key)
 );
+CREATE INDEX records_layer ON records (layer_key, record_key);
 
 CREATE TABLE links (
     link_key INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,13 +32,43 @@ CREATE TABLE links (
     explanation TEXT NOT NULL,
     author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),  -- Last editor.
     created_by TEXT NOT NULL CHECK (length(trim(created_by)) > 0),  -- Set once on insert.
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    layer_key INTEGER NOT NULL REFERENCES layers (layer_key)
 );
 
 CREATE INDEX links_out ON links (from_key, relation, link_key);
 CREATE INDEX links_out_all ON links (from_key, link_key);
 CREATE INDEX links_in ON links (to_key, relation, link_key);
 CREATE INDEX links_in_all ON links (to_key, link_key);
+CREATE INDEX links_layer ON links (layer_key, link_key);
+
+-- Read-only layers change only when a new version of them is attached, never through edits.
+CREATE TRIGGER records_read_only_insert BEFORE INSERT ON records
+WHEN (SELECT writable FROM layers WHERE layer_key = new.layer_key) = 0 BEGIN
+    SELECT RAISE(ABORT, 'records can only be added to the writable layer');
+END;
+CREATE TRIGGER records_read_only_update BEFORE UPDATE ON records
+WHEN new.layer_key != old.layer_key
+  OR (SELECT writable FROM layers WHERE layer_key = old.layer_key) = 0 BEGIN
+    SELECT RAISE(ABORT, 'the record belongs to a read-only layer; add your own record and link it');
+END;
+CREATE TRIGGER records_read_only_delete BEFORE DELETE ON records
+WHEN (SELECT writable FROM layers WHERE layer_key = old.layer_key) = 0 BEGIN
+    SELECT RAISE(ABORT, 'the record belongs to a read-only layer');
+END;
+CREATE TRIGGER links_read_only_insert BEFORE INSERT ON links
+WHEN (SELECT writable FROM layers WHERE layer_key = new.layer_key) = 0 BEGIN
+    SELECT RAISE(ABORT, 'links can only be added to the writable layer');
+END;
+CREATE TRIGGER links_read_only_update BEFORE UPDATE ON links
+WHEN new.layer_key != old.layer_key
+  OR (SELECT writable FROM layers WHERE layer_key = old.layer_key) = 0 BEGIN
+    SELECT RAISE(ABORT, 'the link belongs to a read-only layer; add your own link instead');
+END;
+CREATE TRIGGER links_read_only_delete BEFORE DELETE ON links
+WHEN (SELECT writable FROM layers WHERE layer_key = old.layer_key) = 0 BEGIN
+    SELECT RAISE(ABORT, 'the link belongs to a read-only layer');
+END;
 
 CREATE VIRTUAL TABLE records_fts USING fts5(
     text, content='records', content_rowid='record_key'
@@ -68,6 +110,12 @@ CREATE TABLE document_context (
     updated_at TEXT NOT NULL,
     provenance TEXT NOT NULL CHECK (json_valid(provenance) AND json_type(provenance) = 'object')
 );
+-- Context is part of its Source's layer.
+CREATE TRIGGER document_context_read_only BEFORE INSERT ON document_context
+WHEN (SELECT y.writable FROM records r JOIN layers y ON y.layer_key = r.layer_key
+      WHERE r.record_key = new.source_key) = 0 BEGIN
+    SELECT RAISE(ABORT, 'the Source belongs to a read-only layer');
+END;
 
 CREATE TABLE passages (
     passage_key INTEGER PRIMARY KEY AUTOINCREMENT,

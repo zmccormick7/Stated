@@ -242,6 +242,14 @@ class CLITests(unittest.TestCase):
         usage = self.run_cli("search", "claim", "--limit", "invalid")
         self.assertEqual((usage.returncode, usage.stdout), (2, ""))
 
+    def test_init_names_the_layer_that_layers_and_records_report(self):
+        self.path = self.directory / "base.sqlite"
+        self.call("init", "--layer", "base")
+        self.assertEqual(self.call("layers"), {"layers": [{"name": "base", "version": "", "writable": True}]})
+        self.assertEqual(self.create("Entity", "PowerFrame")["layer"], "base")
+        self.assertEqual(self.call("init", "--layer", "ignored"), {"database": str(self.path.resolve())})
+        self.assertEqual(self.call("layers")["layers"][0]["name"], "base")
+
     def test_only_init_creates_a_database(self):
         self.path = self.directory / "typo.sqlite"
         self.assertIn("init", self.call("search", "anything", status=1)["error"])

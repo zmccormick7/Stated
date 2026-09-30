@@ -43,7 +43,10 @@ def _parser():
         return sub
 
     record = "text, author_id, optional attributes"
-    command("init", None, "Create or open a research database.")
+    init = command("init", None, "Create or open a research database.")
+    init.add_argument("--layer", default="workspace",
+                      help="Name of the workspace's own layer when creating the database (default: workspace).")
+    command("layers", "layers", "List the workspace's own layer and any attached layers.")
     command("create", "create", "Create an Entity, Source, Finding, Question, Model or Variable.",
             "kind", payload=record)
     command("get", "read", "Read a current record.", "record_id")
@@ -204,7 +207,7 @@ def _compact(db, method, result, options):
 
 # Every result is a JSON object; collections sit under a named key so parsers can rely on one shape.
 LIST_KEYS = {"search_records": "records", "search_documents": "excerpts", "locate_source_text": "matches",
-             "relation_usage": "relations"}
+             "relation_usage": "relations", "layers": "layers"}
 
 
 def _shape(method, result):
@@ -290,7 +293,7 @@ def main(argv=None):
             options["quote"] = sys.stdin.read().removesuffix("\n")
         if options.keys() & payload.keys():
             raise ValueError("JSON input must not repeat arguments supplied by the command")
-        with RecordStore(path) as db:
+        with RecordStore(path, layer=options.pop("layer", "workspace")) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
             for name in ("record_id", "source_id", "from_id", "to_id", "link_id"):
                 if name in options:
