@@ -11,7 +11,7 @@ from .store import Link, Record, RecordStore
 # Weight per followed relation; a reached record scores entry score × (weight × HOP_DISCOUNT) per hop.
 # Reasoning relations outrank `about`; `in_layer` and `supported_by` are not walked.
 RELATION_WEIGHTS = {
-    "depends_on": 1.0, "qualifies": 1.0, "contradicts": 1.0, "corroborates": 0.9, "updates": 0.9,
+    "depends_on": 1.0, "qualifies": 1.0, "contradicts": 1.0, "supersedes": 1.0, "corroborates": 0.9, "updates": 0.9,
     "answered_by": 0.9, "partly_answered_by": 0.9, "raises": 0.8, "shares_driver": 0.6, "in_model": 0.6,
     "about": 0.4,
 }
@@ -19,9 +19,10 @@ HOP_DISCOUNT = 0.5
 RRF_K = 60  # Reciprocal rank fusion constant.
 CHANNEL_WEIGHTS = {"seed": 2.0, "search": 1.0}  # Seeds the caller chose come before search hits.
 FRONTIER_LIMIT = 50
-ISSUE_RELATIONS = ("contradicts", "qualifies", "updates")
+ISSUE_RELATIONS = ("contradicts", "qualifies", "updates", "supersedes")
 QUESTION_RELATIONS = ("raises", "answered_by", "partly_answered_by", "depends_on", "qualifies")
 OPEN_STATUSES = ("open", "partly_answered")
+RETIRED_STATUSES = ("superseded", "retracted")  # No longer current understanding; walked through, not selected.
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,7 @@ class Evidence:
 class Recall:
     records: tuple[Recalled, ...]  # Best first.
     evidence: tuple[Evidence, ...]
-    issue_links: tuple[Link, ...]  # contradicts, qualifies and updates links touching selected records.
+    issue_links: tuple[Link, ...]  # contradicts, qualifies, updates and supersedes links touching selected records.
     open_questions: tuple[Record, ...]  # Linked Questions whose status is open or partly answered.
     frontier: tuple[str, ...]  # Reached but not selected, best first, then capped records.
     coverage: dict[str, object]
@@ -89,6 +90,9 @@ def recall(db: RecordStore, query: str, *, seeds: Iterable[str] = (), max_record
                     best[reached.record.id] = Recalled(reached.record, score, entry_id, channels, reached.path)
 
     ranked = sorted(best.values(), key=lambda r: (-r.score, len(r.path), r.record.id))
+    # Retired records still carry paths to what replaced or depended on them, but are not research to build on.
+    retired = sum(r.record.attributes.get("status") in RETIRED_STATUSES for r in ranked)
+    ranked = [r for r in ranked if r.record.attributes.get("status") not in RETIRED_STATUSES]
     selected, rest = ranked[:max_records], ranked[max_records:]
     chosen = {r.record.id for r in selected}
 
@@ -132,5 +136,6 @@ def recall(db: RecordStore, query: str, *, seeds: Iterable[str] = (), max_record
         open_questions=tuple(questions.values()),
         frontier=tuple(frontier[:FRONTIER_LIMIT]),
         coverage={"seeds": len(seed_ids), "search_hits": len(hits), "entry_points": len(entries), "reached": len(best), "selected": len(selected),
-                  "frontier_omitted": max(0, len(frontier) - FRONTIER_LIMIT), "truncated": bool(rest or capped)},
+                  "retired": retired, "frontier_omitted": max(0, len(frontier) - FRONTIER_LIMIT),
+                  "truncated": bool(rest or capped)},
     )

@@ -283,15 +283,18 @@ def _apply(db: sqlite3.Connection, key: int, own_key: int, snapshot: _Snapshot):
     db.executemany(
         f"""INSERT INTO document_context (source_key, title, summary, author_id, updated_at, provenance)
             VALUES ({key_of}, ?, ?, ?, ?, ?)""", (tuple(row) for row in snapshot.contexts))
-    # Review: the workspace's own links whose endpoint in this layer changed, and records kept after removal.
+    # Review: the workspace's own links whose endpoint in this layer changed or was retired, and records
+    # kept after removal.
     review = {}
     if changed:
-        linked = [row[0] for row in db.execute(
-            f"""SELECT DISTINCT r.id FROM records r JOIN links l ON r.record_key IN (l.from_key, l.to_key)
+        linked = db.execute(
+            f"""SELECT DISTINCT r.id, coalesce(json_extract(r.attributes, '$.status') IN ('superseded', 'retracted'), 0) AS retired
+                FROM records r JOIN links l ON r.record_key IN (l.from_key, l.to_key)
                 WHERE l.layer_key = {own_key} AND r.id IN (SELECT value FROM json_each(?)) ORDER BY r.id""",
-            (json.dumps(changed),))]
-        if linked:
-            review["changed_linked_records"] = linked
+            (json.dumps(changed),)).fetchall()
+        for name, flag in (("retired_linked_records", 1), ("changed_linked_records", 0)):
+            if ids := [row["id"] for row in linked if row["retired"] == flag]:
+                review[name] = ids
     if kept:
         review["removed_upstream_but_linked"] = sorted(kept)
     return ({"added": len(incoming) - (len(current) - len(dropped)), "updated": len(changed), "removed": len(dropped) - len(kept),

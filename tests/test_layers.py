@@ -256,6 +256,15 @@ class AttachTests(unittest.TestCase):
         self.assertEqual({c.record.id for c in self.subscriber.cited_by(self.terms.id).citations},
                          {self.finding.id, challenge.id})
         self.assertEqual(self.subscriber.search_records("quarter")[0].id, self.finding.id)
+        # Version 3 retires the finding; the review separates retirements from edits.
+        replacement = self.publisher.create("Finding", text="Backlog will not slip.", author_id="p")
+        self.publisher.create_link(replacement.id, self.finding.id, "supersedes", author_id="p")
+        self.publisher.patch(self.finding.id, author_id="p", attributes={"status": "superseded"})
+        v3 = self.directory / "base-3.sqlite"
+        self.publisher.export_layer(v3, version="3")
+        attachment = self.subscriber.attach_layer(v3)
+        self.assertEqual(attachment.review, {"retired_linked_records": [self.finding.id],
+                                             "removed_upstream_but_linked": [self.dropped.id]})
 
     def test_withdrawn_text_leaves_and_changed_text_is_refused(self):
         self.subscriber.attach_layer(self.v1)

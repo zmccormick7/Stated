@@ -68,6 +68,25 @@ class RecallTests(unittest.TestCase):
         empty = recall(self.db, "nothing matches this")
         self.assertEqual((empty.records, empty.coverage["entry_points"]), ((), 0))
 
+    def test_retired_records_are_walked_through_but_not_selected(self):
+        # The evidence finding is superseded by a corrected one; the correction links to it, nothing else does.
+        corrected = self.db.create("Finding", text="Interconnection takes five years.", author_id="b",
+                                   attributes={"basis": "disclosed"})
+        supersedes = self.db.create_link(corrected.id, self.evidence.id, "supersedes", author_id="b",
+                                         explanation="The earlier figure misread the filing.")
+        self.db.patch(self.evidence.id, author_id="b", attributes={"status": "superseded"})
+        result = recall(self.db, "grid")
+        ids = [r.record.id for r in result.records]
+        self.assertNotIn(self.evidence.id, ids)
+        self.assertNotIn(self.evidence.id, result.frontier)
+        self.assertIn(corrected.id, ids)  # Reached only through the retired record.
+        path = next(r for r in result.records if r.record.id == corrected.id).path
+        self.assertEqual(path[-1].relation, "supersedes")
+        self.assertIn(supersedes, result.issue_links)
+        self.assertEqual(result.coverage["retired"], 1)
+        self.db.patch(self.claim.id, author_id="b", attributes={"status": "retracted"})
+        self.assertNotIn(self.claim.id, [r.record.id for r in recall(self.db, "grid").records])
+
     def test_invalid_input(self):
         for kwargs in ({"max_records": 0}, {"max_records": 101}, {"entry_limit": 0}, {"seeds": "abc"}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
