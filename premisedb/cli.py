@@ -98,6 +98,10 @@ def _parser():
                      help="Drop the lowest-ranked records until compact output fits (default 24000).")
     rec.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     command("relations", "relation_usage", "Count links by relation and the record kinds they connect.")
+    check = command("check-model", "check_model",
+                    "Evaluate each output Variable's formula from the model's stored values and compare.", "model_id")
+    check.add_argument("--tolerance", type=float, default=1e-4,
+                       help="Relative difference allowed between a stored value and its formula (default 1e-4).")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     listing.add_argument("--kind")
@@ -302,7 +306,7 @@ def main(argv=None):
             raise ValueError("JSON input must not repeat arguments supplied by the command")
         with RecordStore(path, layer=options.pop("layer", "workspace")) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
-            for name in ("record_id", "source_id", "from_id", "to_id", "link_id"):
+            for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id"):
                 if name in options:
                     options[name] = db.resolve_id(options[name], link=name == "link_id")
             if "seed_ids" in options:
