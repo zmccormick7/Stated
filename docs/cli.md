@@ -48,6 +48,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 | `expand SEED_ID... [--depth 1\|2] [--direction both\|in\|out] [--relation NAME]... [--limit N] [--per-record N] [--full]` | Walk links from seed records, reporting each record reached and its path. Previews by default; `--full` returns complete records. |
 | `recall QUERY [--seed ID]... [--max-records N] [--full]` | Assemble connected research: records with paths, cited evidence, disagreements, open Questions and a frontier. Compact by default and capped at `--max-chars` (default 24,000, minimum 2,000) by dropping the lowest-ranked records with their evidence and issue links; `coverage.dropped_for_size` counts them. `--full` is uncapped. Records with status `superseded` or `retracted` are walked through but not returned; `coverage.retired` counts them. |
 | `relations` | Count links by relation and the record kinds they connect. |
+| `check-model MODEL_ID [--tolerance X]` | Evaluate each output Variable's `formula` from the model's stored values and report `checked` (key, stored, computed, matches, problems) and `without_formula`. A stored number matches when within the relative tolerance (default 1e-4; absolute below 1). |
 | `ingest TEXT_FILE --input FILE` | Capture extracted UTF-8 source text and its metadata. |
 | `source-text SOURCE_ID [--start-byte N] [--end-byte N]` | Read exact source text as a JSON string. |
 | `cited-by SOURCE_ID [--start-byte N] [--end-byte N] [--limit N]` | List records citing any part of a source range. An end past the text means the end. |

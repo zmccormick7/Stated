@@ -77,6 +77,12 @@ with RecordStore("research.sqlite") as db:
 
 `list_links(relation=None, author_id=None, created_by=None, since=None, after=None, limit=100)` pages through current links the same way and returns a `LinkPage` of `links` and `has_more`. `since` keeps links created or edited at or after the given UTC time, so an agent can see the connections others have added to the graph; `after` takes a link ID or unique prefix.
 
+## Check a model's formulas
+
+A Variable with `role: output` may carry a `formula` attribute computing its `value` from the `key`s of Variables in the same Model (connected to it by `in_model`). `evaluate(formula, values)` evaluates one formula over a dict of key → value; `RecordStore.check_model(model_id, tolerance=1e-4)` evaluates every output formula of a Model from the stored values of its Variables and returns a `ModelCheck`: `inputs` and `outputs` counts, `checked` as `VariableCheck(key, stored, computed, matches, problems)` per output with a formula, and `without_formula` keys. Each formula is checked on its own against stored values, so one wrong output does not fail its dependents. A formula must name only Variables of the model that the output also links `depends_on`; naming others, its own Variable, an unknown key, or failing to evaluate is reported in `problems` rather than raised. Two Variables sharing a key, a non-Model ID, or a tolerance outside `[0, 1)` raise `ValueError`.
+
+The language: numbers, keys, `+ - * / **`, unary minus, comparisons (chained allowed), `a if cond else b`, and the functions `min`, `max`, `sum`, `abs` and `prev`. Values are numbers or lists aligned with the Variable's `periods`; lists combine element-wise and must have equal length, scalars broadcast, and a `null` operand yields `null`. `min`, `max` and `sum` of one list aggregate across its periods, ignoring `null`; with several arguments they apply per period. `prev(x)` shifts a list one period later with `null` first, `prev(x, start)` fills the first period. Anything else, including attribute access, indexing, strings, booleans and other calls, is refused by `parse` with `ValueError`.
+
 ## Recall connected research
 
 ```python

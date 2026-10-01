@@ -270,6 +270,23 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("search", "PowerFrame")["records"][0]["layer"], "base")
         self.assertEqual(self.create("Question", "Which plants?")["layer"], "fund")
 
+    def test_check_model_reports_each_output_formula(self):
+        model = self.create("Model", "Revenue model")
+        payload = {"author_id": "agent-a", "records": [
+            {"ref": "gw", "kind": "Variable", "text": "GW", "attributes": {"key": "gw", "role": "input", "value": [20, 24]}},
+            {"ref": "price", "kind": "Variable", "text": "Price", "attributes": {"key": "price", "role": "input", "value": 570}},
+            {"ref": "rev", "kind": "Variable", "text": "Revenue", "attributes": {
+                "key": "revenue", "role": "output", "value": [11400, 13680], "formula": "gw * price"}}],
+            "links": [{"from_id": ref, "to_id": model["id"], "relation": "in_model"} for ref in ("gw", "price", "rev")]
+            + [{"from_id": "rev", "to_id": ref, "relation": "depends_on"} for ref in ("gw", "price")]}
+        self.call("contribute", "--input", "-", payload=payload)
+        result = self.call("check-model", model["id"][:8], "--tolerance", "0.001")
+        self.assertEqual((result["model_id"], result["inputs"], result["outputs"], result["without_formula"]),
+                         (model["id"], 2, 1, []))
+        self.assertEqual(result["checked"], [{"key": "revenue", "stored": [11400, 13680], "computed": [11400, 13680],
+                                              "matches": True, "problems": []}])
+        self.assertIn("not a Model", self.call("check-model", self.create("Finding", "x")["id"], status=1)["error"])
+
     def test_only_init_creates_a_database(self):
         self.path = self.directory / "typo.sqlite"
         self.assertIn("init", self.call("search", "anything", status=1)["error"])

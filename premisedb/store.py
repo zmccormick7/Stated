@@ -262,6 +262,26 @@ class RecordStore:
         from .layers import export_layer
         return export_layer(self, path, version=version)
 
+    def check_model(self, model_id: str, *, tolerance: float = 1e-4) -> "ModelCheck":
+        """Check that each output Variable's formula reproduces its stored value from the model's Variables."""
+        from .formulas import check_model
+        model = self.read(self.resolve_id(model_id))
+        if model.kind != "Model":
+            raise ValueError(f"{model_id} is a {model.kind}, not a Model")
+        rows = self._db.execute(
+            """SELECT v.id, v.attributes,
+                      (SELECT json_group_array(json_extract(d.attributes, '$.key')) FROM links dl
+                       JOIN records d ON d.record_key = dl.to_key
+                       WHERE dl.from_key = v.record_key AND dl.relation = 'depends_on'
+                         AND d.record_key IN (SELECT from_key FROM links WHERE to_key = m.record_key
+                                              AND relation = 'in_model')) AS depends_on
+               FROM links l JOIN records v ON v.record_key = l.from_key JOIN records m ON m.record_key = l.to_key
+               WHERE m.id = ? AND l.relation = 'in_model' AND v.kind = 'Variable' ORDER BY v.record_key""",
+            (model.id,)).fetchall()
+        variables = [json.loads(row["attributes"]) | {"id": row["id"], "depends_on": [
+            key for key in json.loads(row["depends_on"]) if key is not None]} for row in rows]
+        return check_model(variables, model.id, tolerance=tolerance)
+
     def attach_layer(self, path: str | Path) -> "LayerAttachment":
         """Attach a published layer file read-only, or bring an attached layer to the file's version."""
         from .layers import attach_layer
