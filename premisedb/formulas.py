@@ -1,16 +1,19 @@
 """Formulas on model Variables: a small arithmetic language over the keys of Variables in one Model.
 
 A formula is a Python expression restricted to numbers, Variable keys, + - * / **, unary minus,
-comparisons, `a if cond else b`, and the functions min, max, sum, abs and prev. A value is a number
-or a list aligned with the Variable's `periods`; lists combine element-wise, scalars broadcast, and a
-`null` period yields `null`. `prev(x)` shifts a list one period later, `prev(x, start)` fills the first.
+comparisons, `a if cond else b`, and the functions min, max, sum, abs, prev, at and fill. A value is a
+number or a list labelled by the Variable's `periods`. Lists are aligned to the output's periods by
+label, so rows over different years combine on the years they share; unlabelled lists align by
+position. Scalars broadcast, and a `null` period yields `null`. `prev(x)` shifts a list one period
+later and `prev(x, start)` fills the first; `at(x, "2027")` picks one period; `fill(x, v)` replaces
+`null`. A formula may name its own Variable inside `prev` to define a period-by-period recurrence.
 """
 
 import ast
 from dataclasses import dataclass
 import math
 
-FUNCTIONS = ("min", "max", "sum", "abs", "prev")
+FUNCTIONS = ("min", "max", "sum", "abs", "prev", "next", "at", "fill")
 _OPERATORS = {
     ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult: lambda a, b: a * b,
     ast.Div: lambda a, b: a / b, ast.Pow: lambda a, b: a ** b,
@@ -46,14 +49,22 @@ def parse(formula: str) -> tuple[ast.Expression, frozenset[str]]:
     except SyntaxError as error:
         raise ValueError(f"formula syntax: {error.msg}") from None
     names = set()
+    labels = set()  # Period labels: the string second argument of at().
     for node in ast.walk(tree):
         if isinstance(node, ast.Name):
             if node.id not in FUNCTIONS:
                 names.add(node.id)
         elif isinstance(node, ast.Call):
             if not isinstance(node.func, ast.Name) or node.func.id not in FUNCTIONS or node.keywords:
-                raise ValueError("formula calls must be min, max, sum, abs or prev with positional arguments")
+                raise ValueError("formula calls must be min, max, sum, abs, prev, next, at or fill with positional arguments")
+            if node.func.id == "at":
+                if len(node.args) != 2 or not isinstance(node.args[1], ast.Constant) \
+                        or not isinstance(node.args[1].value, str):
+                    raise ValueError('at takes a list and a period label, such as at(revenue, "2027")')
+                labels.add(id(node.args[1]))
         elif isinstance(node, ast.Constant):
+            if id(node) in labels:
+                continue
             if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
                 raise ValueError("formula constants must be numbers")
         elif isinstance(node, (ast.BinOp, ast.UnaryOp, ast.Compare)):
@@ -65,48 +76,122 @@ def parse(formula: str) -> tuple[ast.Expression, frozenset[str]]:
     return tree, frozenset(names)
 
 
-def evaluate(formula: str, values: dict[str, object]) -> object:
-    """Evaluate a formula over Variable values; lists are element-wise with `null` propagating."""
+def evaluate(formula: str, values: dict[str, object], *, periods: dict[str, list] | None = None,
+             target: list | None = None, self_key: str | None = None) -> object:
+    """Evaluate a formula over Variable values.
+
+    `periods` labels each list value and `target` labels the result. A labelled row keeps its own
+    periods through prev, next, at and aggregates; when rows combine, each is read at the target's
+    labels (`null` where a label is missing), or at identical labels when there is no target.
+    Unlabelled lists combine by position and must have equal lengths. With `self_key`, the formula may
+    name that Variable inside `prev(...)`, and the result is computed one period at a time.
+    """
     tree, names = parse(formula)
-    missing = sorted(names - set(values))
+    missing = sorted(names - set(values) - ({self_key} if self_key else set()))
     if missing:
         raise ValueError(f"formula names unknown Variables: {', '.join(missing)}")
-    return _node(tree.body, values)
+    periods = periods or {}
+    if target is not None and (not isinstance(target, list) or len(set(target)) != len(target)):
+        raise ValueError("the output's periods must be a list of distinct labels")
+    rows = {key: _row(key, value, periods.get(key)) for key, value in values.items()}
+    if self_key not in names:
+        return _plain(_node(tree.body, rows, target), target)
+    # A recurrence: every reference to the output itself must sit inside prev(), and the result is a row.
+    if target is None:
+        raise ValueError("a formula that refers to its own Variable needs the output to have periods")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and node.func.id == "prev" and isinstance(node.args[0], ast.Name) \
+                and node.args[0].id == self_key:
+            node.args[0].id = _SELF
+    if any(isinstance(node, ast.Name) and node.id == self_key for node in ast.walk(tree)):
+        raise ValueError("a formula may refer to its own Variable only inside prev()")
+    own = [None] * len(target)
+    for index in range(len(target)):
+        result = _plain(_node(tree.body, rows | {_SELF: _Row(target, list(own))}, target), target)
+        if not isinstance(result, list):
+            raise ValueError("a recurrence must produce a value for each period")
+        own[index] = result[index]
+    return own
 
 
-def _node(node, values):
+_SELF = "\0self"  # Not a valid key, so it cannot collide with a Variable.
+
+
+class _Row:
+    """A list value with its period labels."""
+
+    def __init__(self, labels, values):
+        self.labels, self.values = labels, values
+
+    def at(self, target):
+        by_label = dict(zip(self.labels, self.values))
+        return [by_label.get(label) for label in target]
+
+
+def _row(key, value, labels):
+    value = _check_value(key, value)
+    if not isinstance(value, list) or labels is None:
+        return value
+    if not isinstance(labels, list) or len(labels) != len(value) or len(set(labels)) != len(labels):
+        raise ValueError(f"Variable {key} has periods that do not match its values")
+    return _Row(labels, value)
+
+
+def _plain(value, target):
+    """The result as a list or number; a labelled row is read at the target's labels."""
+    if isinstance(value, _Row):
+        return value.at(target) if target is not None else value.values
+    return value
+
+
+def _node(node, rows, target):
     if isinstance(node, ast.Constant):
         return node.value
     if isinstance(node, ast.Name):
-        return _check_value(node.id, values[node.id])
+        return rows[node.id]
     if isinstance(node, ast.UnaryOp):
-        return _map(lambda a: -a if isinstance(node.op, ast.USub) else a, _node(node.operand, values))
+        return _map(lambda a: -a if isinstance(node.op, ast.USub) else a, [_node(node.operand, rows, target)], target)
     if isinstance(node, ast.BinOp):
-        return _map(_OPERATORS[type(node.op)], _node(node.left, values), _node(node.right, values))
+        return _map(_OPERATORS[type(node.op)], [_node(node.left, rows, target), _node(node.right, rows, target)], target)
     if isinstance(node, ast.Compare):
-        left, result = _node(node.left, values), None
+        left, result = _node(node.left, rows, target), None
         for op, comparator in zip(node.ops, node.comparators):
-            right = _node(comparator, values)
-            term = _map(_OPERATORS[type(op)], left, right)
-            result = term if result is None else _map(lambda a, b: a and b, result, term)
+            right = _node(comparator, rows, target)
+            term = _map(_OPERATORS[type(op)], [left, right], target)
+            result = term if result is None else _map(lambda a, b: a and b, [result, term], target)
             left = right
         return result
     if isinstance(node, ast.IfExp):
-        return _map(lambda c, a, b: a if c else b, _node(node.test, values), _node(node.body, values),
-                    _node(node.orelse, values))
+        return _map(lambda c, a, b: a if c else b, [_node(part, rows, target) for part in
+                                                   (node.test, node.body, node.orelse)], target)
     if isinstance(node, ast.Call):
-        args = [_node(arg, values) for arg in node.args]
-        if node.func.id == "prev":
-            if not 1 <= len(args) <= 2 or not isinstance(args[0], list):
-                raise ValueError("prev takes a list and an optional starting value")
-            return [args[1] if len(args) == 2 else None] + args[0][:-1]
-        if node.func.id == "abs":
-            return _map(abs, *args)
-        function = {"min": min, "max": max, "sum": sum}[node.func.id]
-        if len(args) == 1 and isinstance(args[0], list):  # Aggregate one list across its periods.
-            items = [a for a in args[0] if a is not None]
+        args = [_node(arg, rows, target) for arg in node.args]
+        name = node.func.id
+        if name in ("prev", "next"):
+            if not 1 <= len(args) <= 2 or not isinstance(args[0], (list, _Row)):
+                raise ValueError(f"{name} takes a list and an optional value for the period it cannot see")
+            row, edge = args[0], args[1] if len(args) == 2 else None
+            items = row.values if isinstance(row, _Row) else row
+            shifted = [edge] + items[:-1] if name == "prev" else items[1:] + [edge]
+            return _Row(row.labels, shifted) if isinstance(row, _Row) else shifted
+        if name == "at":
+            if not isinstance(args[0], _Row):
+                raise ValueError("at needs a list whose periods are known")
+            if node.args[1].value not in args[0].labels:
+                raise ValueError(f"at: no period {node.args[1].value!r} among {args[0].labels}")
+            return args[0].values[args[0].labels.index(node.args[1].value)]
+        if name == "fill":  # Fills the periods the output has, including ones the row lacks.
+            if len(args) != 2 or isinstance(args[1], (list, _Row)):
+                raise ValueError("fill takes a list or value and a single replacement for null")
+            row = _Row(target, args[0].at(target)) if isinstance(args[0], _Row) and target is not None else args[0]
+            return _map(lambda a: args[1] if a is None else a, [row], target, keep_null=False)
+        if name == "abs":
+            return _map(abs, args, target)
+        function = {"min": min, "max": max, "sum": sum}[name]
+        if len(args) == 1 and isinstance(args[0], (list, _Row)):  # Aggregate one row across its periods.
+            items = [a for a in (args[0].values if isinstance(args[0], _Row) else args[0]) if a is not None]
             return function(items) if items else None
-        return _map(lambda *a: function(a), *args)
+        return _map(lambda *a: function(a), args, target)
     raise ValueError(f"formula cannot contain {type(node).__name__}")
 
 
@@ -118,14 +203,30 @@ def _check_value(key, value):
     return value
 
 
-def _map(function, *operands):
-    """Apply element-wise over lists of equal length, broadcasting scalars; a None operand yields None."""
+def _map(function, operands, target, *, keep_null=True):
+    """Apply per period, broadcasting scalars. Labelled rows are read at the target's labels, or must
+    share labels when there is none; unlabelled lists must have equal lengths. A None operand yields
+    None unless keep_null is false."""
+    rows = [o for o in operands if isinstance(o, _Row)]
     lists = [o for o in operands if isinstance(o, list)]
+    if rows:
+        labels = target
+        if labels is None:
+            labels = rows[0].labels
+            if any(r.labels != labels for r in rows):
+                raise ValueError("formula combines rows with different periods and no output periods to align to")
+        if any(len(l) != len(labels) for l in lists):
+            raise ValueError("formula combines lists with different numbers of periods")
+        operands = [o.at(labels) if isinstance(o, _Row) else o for o in operands]
+        return _Row(labels, _map(function, operands, None, keep_null=keep_null))
     if not lists:
-        return None if any(o is None for o in operands) else _finite(function(*operands))
+        if keep_null and any(o is None for o in operands):
+            return None
+        return _finite(function(*operands))
     if len({len(l) for l in lists}) != 1:
         raise ValueError("formula combines lists with different numbers of periods")
-    return [_map(function, *(o[i] if isinstance(o, list) else o for o in operands)) for i in range(len(lists[0]))]
+    return [_map(function, [o[i] if isinstance(o, list) else o for o in operands], None, keep_null=keep_null)
+            for i in range(len(lists[0]))]
 
 
 def _finite(value):
@@ -164,6 +265,7 @@ def check_model(variables: list[dict[str, object]], model_id: str, *, tolerance:
             raise ValueError(f"two Variables in the model share the key {key!r}")
         by_key[key] = variable
     values = {key: v.get("value") for key, v in by_key.items()}
+    periods = {key: v["periods"] for key, v in by_key.items() if isinstance(v.get("periods"), list)}
     outputs = [v for v in by_key.values() if v.get("role") == "output"]
     checked = []
     for variable in outputs:
@@ -176,12 +278,10 @@ def check_model(variables: list[dict[str, object]], model_id: str, *, tolerance:
             undeclared = sorted(names - set(variable.get("depends_on", ())) - set(unknown) - {key})
             problems = ([f"names Variables not in the model: {', '.join(unknown)}"] if unknown else []) + (
                 [f"names Variables without a depends_on link: {', '.join(undeclared)}"] if undeclared else [])
-            if key in names:
-                problems.append("formula refers to its own Variable")
             if problems:
                 checked.append(VariableCheck(key, stored, None, False, tuple(problems)))
                 continue
-            computed = evaluate(variable["formula"], values)
+            computed = evaluate(variable["formula"], values, periods=periods, target=periods.get(key), self_key=key)
         except (ValueError, ZeroDivisionError, TypeError) as error:
             checked.append(VariableCheck(key, stored, None, False, (str(error),)))
             continue
