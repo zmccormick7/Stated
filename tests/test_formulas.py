@@ -37,6 +37,55 @@ class FormulaLanguageTests(unittest.TestCase):
         with self.assertRaises(ZeroDivisionError):
             evaluate("a / 0", {"a": 1})
 
+    def test_lists_align_by_period_label_when_a_target_is_given(self):
+        values = {"ramp": [1, 2, 3, 4, 5], "growth": [0.1, 0.2, 0.3], "flat": 10}
+        periods = {"ramp": ["2025", "2026", "2027", "2028", "2029"], "growth": ["2027", "2028", "2029"]}
+        self.assertEqual(evaluate("ramp * (1 + growth)", values, periods=periods, target=["2027", "2028", "2029"]),
+                         [3.3000000000000003, 4.8, 6.5])
+        self.assertEqual(evaluate("ramp * (1 + growth)", values, periods=periods, target=["2026", "2027"]),
+                         [None, 3.3000000000000003])  # 2026 has no growth.
+        self.assertEqual(evaluate("fill(growth, 0) * ramp", values, periods=periods, target=["2026", "2027"]), [0, 0.30000000000000004])
+        self.assertEqual(evaluate('at(ramp, "2028") * flat', values, periods=periods, target=None), 40)
+        self.assertEqual(evaluate('at(ramp, "2028") * flat', values, periods=periods, target=["2027", "2028"]), 40)
+        # A row keeps its own periods through aggregates, at, prev and next; only combining reads it at the target.
+        self.assertEqual(evaluate('sum(ramp) - at(ramp, "2025")', values, periods=periods, target=["2027"]), 14)
+        self.assertEqual(evaluate('at(ramp * 2, "2027")', values, periods=periods, target=["2027", "2028"]), 6)
+        self.assertEqual(evaluate("next(ramp) - ramp", values, periods=periods, target=["2028", "2029"]), [1, None])
+        self.assertEqual(evaluate("next(ramp, 6) - ramp", values, periods=periods, target=["2028", "2029"]), [1, 1])
+        self.assertEqual(evaluate("next(growth)", values, periods=periods, target=["2026", "2027"]), [None, 0.2])
+        with self.assertRaisesRegex(ValueError, "different periods and no output periods"):
+            evaluate("ramp * growth", values, periods=periods)
+        self.assertEqual(evaluate("prev(ramp) * 2", values, periods=periods, target=["2027", "2028"]), [4, 6])
+        with self.assertRaisesRegex(ValueError, "no period '2030'"):
+            evaluate('at(ramp, "2030")', values, periods=periods)
+        with self.assertRaisesRegex(ValueError, "periods are known"):
+            evaluate('at(flat, "2027")', values, periods=periods)
+        with self.assertRaisesRegex(ValueError, "do not match its values"):
+            evaluate("ramp", values, periods={"ramp": ["2025"]}, target=["2025"])
+        with self.assertRaisesRegex(ValueError, "distinct labels"):
+            evaluate("ramp", values, periods=periods, target=["2025", "2025"])
+        # Without labels, lists combine by position as before.
+        with self.assertRaisesRegex(ValueError, "different numbers of periods"):
+            evaluate("ramp * growth", values)
+        for bad in ('at(ramp)', 'at(ramp, 2027)', 'at(ramp, growth)', '"2027"', 'fill(ramp)'):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                evaluate(bad, values, periods=periods)
+
+    def test_recurrences_compute_period_by_period(self):
+        values = {"growth": [0.1, 0.2, 0.5], "start": 100}
+        periods = {"growth": ["2026", "2027", "2028"]}
+        target = ["2026", "2027", "2028"]
+        self.assertEqual(evaluate("prev(revenue, start) * (1 + growth)", values, periods=periods, target=target,
+                                  self_key="revenue"), [110.00000000000001, 132.0, 198.0])
+        self.assertEqual(evaluate("fill(prev(revenue), start) + 1", values, periods=periods, target=target,
+                                  self_key="revenue"), [101, 102, 103])
+        with self.assertRaisesRegex(ValueError, "only inside prev"):
+            evaluate("revenue * growth", values, periods=periods, target=target, self_key="revenue")
+        with self.assertRaisesRegex(ValueError, "needs the output to have periods"):
+            evaluate("prev(revenue, start)", values, periods=periods, self_key="revenue")
+        with self.assertRaisesRegex(ValueError, "value for each period"):
+            evaluate("sum(prev(revenue, start))", values, periods=periods, target=target, self_key="revenue")
+
     def test_matches_uses_a_relative_tolerance_above_one(self):
         self.assertTrue(matches(13.6547, 13.65472, tolerance=1e-4))
         self.assertFalse(matches(13.6547, 13.66, tolerance=1e-4))
@@ -56,8 +105,10 @@ class ModelCheckTests(unittest.TestCase):
         self.model = self.db.create("Model", text="PowerFrame revenue model", author_id="a")
         self.variables = {}
 
-    def variable(self, key, role, value, formula=None, depends_on=(), model=None):
+    def variable(self, key, role, value, formula=None, depends_on=(), model=None, periods=None):
         attributes = {"key": key, "role": role, "value": value}
+        if periods is not None:
+            attributes["periods"] = periods
         if formula is not None:
             attributes["formula"] = formula
         record = self.db.create("Variable", text=key, author_id="a", attributes=attributes)
@@ -72,7 +123,9 @@ class ModelCheckTests(unittest.TestCase):
         self.variable("price", "input", 570)
         self.variable("growth", "input", [None, 0.1, 0.1])
         self.variable("revenue", "output", [11400, 11400, 13680], "gw * price", ["gw", "price"])
-        self.variable("price_path", "output", [None, 627, 627], "prev(price_path, price) * (1 + growth)", ["price", "growth"])
+        self.variable("price_path", "output", [570, 627, 689.7], "prev(price_path, price) * (1 + fill(growth, 0))",
+                      ["price", "growth"], periods=["2026", "2027", "2028"])
+        self.variable("selfish", "output", 1, "gw * selfish", ["gw"])
         self.variable("wrong", "output", 1, "gw * price", ["gw", "price"])
         self.variable("undeclared", "output", 11400, "gw * price", ["gw"])
         self.variable("unknown", "output", 1, "gw * tariff", ["gw"])
@@ -80,18 +133,19 @@ class ModelCheckTests(unittest.TestCase):
         self.variable("manual", "output", 5)
         result = self.db.check_model(self.model.id[:8])
         self.assertEqual((result.model_id, result.inputs, result.outputs, result.without_formula),
-                         (self.model.id, 3, 7, ("manual",)))
+                         (self.model.id, 3, 8, ("manual",)))
         by_key = {check.key: check for check in result.checked}
         self.assertEqual(by_key["revenue"].computed, [11400, 11400, 13680])
         self.assertTrue(by_key["revenue"].matches)
-        self.assertEqual(by_key["price_path"].problems, ("formula refers to its own Variable",))
+        self.assertTrue(by_key["price_path"].matches)  # A recurrence over its own earlier periods.
+        self.assertEqual(by_key["selfish"].problems, ("a formula that refers to its own Variable needs the output to have periods",))
         self.assertEqual((by_key["wrong"].matches, by_key["wrong"].computed, by_key["wrong"].problems),
                          (False, [11400, 11400, 13680], ("stored value differs from the formula's result",)))
         self.assertEqual(by_key["undeclared"].problems, ("names Variables without a depends_on link: price",))
         self.assertEqual(by_key["unknown"].problems, ("names Variables not in the model: tariff",))
         self.assertIn("syntax", by_key["broken"].problems[0])
         self.assertEqual([check.key for check in result.checked],
-                         ["revenue", "price_path", "wrong", "undeclared", "unknown", "broken"])
+                         ["revenue", "price_path", "selfish", "wrong", "undeclared", "unknown", "broken"])
 
     def test_dependencies_on_other_models_do_not_count_as_declarations(self):
         other = self.db.create("Model", text="Other", author_id="a")
