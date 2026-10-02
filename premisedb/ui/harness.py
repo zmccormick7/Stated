@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
-import tomllib
 
 
 class HarnessError(RuntimeError):
@@ -19,8 +18,12 @@ class Reply:
     denied: tuple[str, ...]  # Tools refused under the workspace's permission settings.
 
 
+ALLOWED_TOOLS = ("Bash(premisedb:*)", "Read", "Write")
+
+
 class ClaudeCode:
-    """Claude Code in headless mode, with the login and permission settings of the directory it runs in."""
+    """Claude Code in headless mode, with the user's own login and settings plus the permissions the
+    product itself needs."""
 
     name = "claude-code"
 
@@ -32,28 +35,12 @@ class ClaudeCode:
         """Where Claude Code loads personal skills from, as the README's install step describes."""
         return (Path.home() / ".claude" / "skills",)
 
-    @staticmethod
-    def permission_advice(cwd, home: Path | None = None) -> str | None:
-        """Headless, Claude Code cannot ask before running a command, so the workspace must be trusted and its
-        settings must allow the premisedb CLI, or every call is refused. Returns what to do when they do not."""
-        home, cwd = home or Path.home(), Path(cwd).resolve()
-        files = [cwd / ".claude" / name for name in ("settings.json", "settings.local.json")] + [
-            home / ".claude" / "settings.json"]
-        for path in files:
-            if any(isinstance(rule, str) and rule.startswith("Bash(premisedb")
-                   for rule in _read_json(path).get("permissions", {}).get("allow", [])):
-                break
-        else:
-            return (f"No settings file allows the premisedb CLI, so a headless Claude Code would refuse every call. "
-                    f'Add to {files[0]}:\n  {{"permissions": {{"allow": ["Bash(premisedb:*)", "Read"]}}}}')
-        if not _read_json(home / ".claude.json").get("projects", {}).get(str(cwd), {}).get("hasTrustDialogAccepted"):
-            return (f"Claude Code has not been told to trust {cwd}, so it ignores the workspace's permission settings. "
-                    f"Run `claude` there once and accept the trust dialog.")
-        return None
-
     def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None,
             on_progress=lambda text: None) -> Reply:
-        command = [self.executable, "-p", prompt, "--output-format", "stream-json", "--verbose"]
+        # The least the product needs: its own CLI, and files in the workspace. Everything else follows
+        # the user's own settings, so a tool they have not allowed is refused as usual.
+        command = [self.executable, "-p", prompt, "--output-format", "stream-json", "--verbose",
+                   "--allowedTools", *ALLOWED_TOOLS]
         if session_id:
             command += ["--resume", session_id]
         try:
@@ -89,8 +76,8 @@ class ClaudeCode:
 
 
 class Codex:
-    """Codex in non-interactive mode (`codex exec --json`), with the user's own login and config. Commands
-    run inside Codex's sandbox as the user's config sets it; a refused command fails rather than asking."""
+    """Codex in non-interactive mode (`codex exec --json`), with the user's own login and config and a
+    sandbox that can write in the workspace. A command the sandbox refuses fails rather than asking."""
 
     name = "codex"
 
@@ -102,23 +89,10 @@ class Codex:
         """Where Codex loads personal skills from, as the README's install step describes."""
         return (Path.home() / ".agents" / "skills",)
 
-    @staticmethod
-    def permission_advice(cwd, home: Path | None = None) -> str | None:
-        """Codex asks no one in exec mode; its sandbox decides. Under the default read-only sandbox SQLite
-        cannot even open the workspace database, so the user's config must allow writes in the workspace."""
-        path = (home or Path.home()) / ".codex" / "config.toml"
-        try:
-            mode = tomllib.loads(path.read_text(encoding="utf-8")).get("sandbox_mode")
-        except (OSError, ValueError):
-            mode = None
-        if mode in ("workspace-write", "danger-full-access"):
-            return None
-        return (f"Codex's sandbox is {mode or 'read-only'}, under which premisedb cannot open the workspace database. "
-                f'Add to {path}:\n  sandbox_mode = "workspace-write"')
-
     def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None,
             on_progress=lambda text: None) -> Reply:
-        options = ["--json", "--skip-git-repo-check"] + (["-m", self.model] if self.model else []) + (
+        # workspace-write: the least that lets SQLite open the workspace database; the rest is the user's config.
+        options = ["--json", "--skip-git-repo-check", "-s", "workspace-write"] + (["-m", self.model] if self.model else []) + (
             ["-c", f'model_reasoning_effort="{self.reasoning_effort}"'] if self.reasoning_effort else [])
         with tempfile.TemporaryDirectory() as directory:
             last = Path(directory) / "last.txt"
@@ -172,10 +146,3 @@ def _describe(tool_use: dict) -> str:
     text = " ".join(f"{tool_use.get('name', 'tool')}: {detail}".split()).rstrip(": ")
     return text if len(text) <= 160 else text[:159] + "…"
 
-
-def _read_json(path: Path) -> dict:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}

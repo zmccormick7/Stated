@@ -124,24 +124,10 @@ class ClaudeCodeTests(unittest.TestCase):
             "Why?", cwd=self.directory, env=dict(os.environ), session_id="s-1", on_progress=progress.append)
         self.assertEqual(reply, Reply("{}", "s-2", ("WebFetch",)))
         self.assertEqual(json.loads((self.directory / "argv.json").read_text()),
-                         ["-p", "Why?", "--output-format", "stream-json", "--verbose", "--resume", "s-1"])
+                         ["-p", "Why?", "--output-format", "stream-json", "--verbose",
+                          "--allowedTools", "Bash(premisedb:*)", "Read", "Write", "--resume", "s-1"])
         self.assertEqual(progress[0], "Bash: Recall x")
         self.assertEqual((len(progress[1]), progress[1][-1]), (160, "…"))
-
-    def test_permission_advice_reads_the_workspace_settings_and_trust(self):
-        home = self.directory / "home"
-        (home / ".claude").mkdir(parents=True)
-        advice = ClaudeCode.permission_advice(self.directory, home)
-        self.assertIn('"Bash(premisedb:*)"', advice or "")
-        (self.directory / ".claude").mkdir()
-        (self.directory / ".claude" / "settings.json").write_text("not json")
-        self.assertIn("No settings file", ClaudeCode.permission_advice(self.directory, home))
-        (self.directory / ".claude" / "settings.local.json").write_text(
-            json.dumps({"permissions": {"allow": ["Bash(premisedb:*)"]}}))
-        self.assertIn("trust", ClaudeCode.permission_advice(self.directory, home))
-        (home / ".claude.json").write_text(json.dumps({"projects": {str(self.directory.resolve()): {
-            "hasTrustDialogAccepted": True}}}))
-        self.assertIsNone(ClaudeCode.permission_advice(self.directory, home))
 
     def test_failures_raise_harness_errors(self):
         failed = {"type": "result", "is_error": True, "result": "OAuth session expired"}
@@ -181,9 +167,9 @@ class CodexTests(unittest.TestCase):
         reply = harness.run("Why?", cwd=self.directory, env=dict(os.environ), on_progress=progress.append)
         self.assertEqual((reply, progress), (Reply('{"title": "x"}', "t-1", ()), ["Shell: premisedb recall x"]))
         argv = json.loads((self.directory / "argv.json").read_text())
-        self.assertEqual(argv[:8], ["exec", "--json", "--skip-git-repo-check", "-m", "gpt-6.1-sol", "-c",
-                                    'model_reasoning_effort="high"', "-o"])
-        self.assertEqual(argv[9:], ["Why?"])
+        self.assertEqual(argv[:10], ["exec", "--json", "--skip-git-repo-check", "-s", "workspace-write", "-m",
+                                     "gpt-6.1-sol", "-c", 'model_reasoning_effort="high"', "-o"])
+        self.assertEqual(argv[11:], ["Why?"])
         Codex(self.executable(*events, last="ok")).run("More?", cwd=self.directory, session_id="t-1")
         argv = json.loads((self.directory / "argv.json").read_text())
         self.assertEqual(argv[-3:], ["resume", "t-1", "More?"])
@@ -196,13 +182,6 @@ class CodexTests(unittest.TestCase):
             with self.subTest(message=message), self.assertRaisesRegex(HarnessError, message):
                 Codex(build()).run("Why?", cwd=self.directory)
         self.assertEqual(Codex.skills_directories(), (Path.home() / ".agents" / "skills",))
-        home = self.directory / "home"
-        (home / ".codex").mkdir(parents=True)
-        self.assertIn('sandbox_mode = "workspace-write"', Codex.permission_advice(self.directory, home))
-        (home / ".codex" / "config.toml").write_text('sandbox_mode = "read-only"\n')
-        self.assertIn("is read-only", Codex.permission_advice(self.directory, home))
-        (home / ".codex" / "config.toml").write_text('model = "x"\nsandbox_mode = "workspace-write"\n')
-        self.assertIsNone(Codex.permission_advice(self.directory, home))
 
 
 if __name__ == "__main__":
