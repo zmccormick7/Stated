@@ -74,6 +74,8 @@ mkdir -p ~/.claude/skills
 cp -R skills/premisedb-research ~/.claude/skills/
 ```
 
+A second skill, `skills/premisedb-answer`, teaches an agent to return a structured answer (a headline, a paragraph, sources and charts whose figures are checked against the graph with `check-answer`). Copy it the same way if you want answers in that format; no interface renders them yet.
+
 Open a new agent session in your research workspace and ask:
 
 > Use the premisedb-research skill and research.sqlite to investigate this company's exposure to customer project delays. Build on existing findings, inspect the evidence, and save the important conclusions and open questions.

@@ -293,6 +293,20 @@ class CLITests(unittest.TestCase):
         self.assertFalse(any(v["changed"] for v in self.call("evaluate-model", model["id"])["variables"]))
         self.assertIn("not in the model", self.call("evaluate-model", model["id"], "--set", "tariff=1", status=1)["error"])
 
+    def test_check_answer_reports_problems_without_failing(self):
+        finding = self.create("Finding", "Two customers were 22% and 14% of revenue.")
+        answer = {"title": "Two customers were 36% of revenue.", "body": "One was 22%. [1]",
+                  "sources": [{"record": finding["id"][:8]}],
+                  "blocks": [{"type": "chart", "unit": "%", "rows": [{"label": "2026", "parts": [
+                      {"label": "Largest", "record": finding["id"], "value": 22, "as_written": "22%"}]}]}]}
+        result = self.call("check-answer", "--input", "-", payload=answer)
+        self.assertEqual((result["ok"], result["problems"]), (True, []))
+        self.assertEqual(result["answer"]["sources"], [{"record": finding["id"], "kind": "Finding"}])
+        answer["blocks"][0]["rows"][0]["parts"][0] |= {"value": 24, "as_written": "24%"}
+        result = self.call("check-answer", "--input", "-", payload=answer)
+        self.assertEqual((result["ok"], result["answer"]), (False, None))
+        self.assertIn('"24%" does not appear', result["problems"][0])
+
     def test_only_init_creates_a_database(self):
         self.path = self.directory / "typo.sqlite"
         self.assertIn("init", self.call("search", "anything", status=1)["error"])
