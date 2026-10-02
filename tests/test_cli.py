@@ -301,7 +301,8 @@ class CLITests(unittest.TestCase):
                       {"label": "Largest", "record": finding["id"], "value": 22, "as_written": "22%"}]}]}]}
         result = self.call("check-answer", "--input", "-", payload=answer)
         self.assertEqual((result["ok"], result["problems"]), (True, []))
-        self.assertEqual(result["answer"]["sources"], [{"record": finding["id"], "kind": "Finding"}])
+        self.assertEqual(result["answer"]["sources"], [{"record": finding["id"], "kind": "Finding",
+                                                        "text": "Two customers were 22% and 14% of revenue."}])
         answer["blocks"][0]["rows"][0]["parts"][0] |= {"value": 24, "as_written": "24%"}
         result = self.call("check-answer", "--input", "-", payload=answer)
         self.assertEqual((result["ok"], result["answer"]), (False, None))

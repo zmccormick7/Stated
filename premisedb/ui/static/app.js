@@ -28,8 +28,8 @@ function renderBlock(block, sources) {
   if (block.type === "text") return cited(block.text, sources);
   if (block.type === "quote") {
     const source = sources[block.source - 1];
-    return el("blockquote", {}, [el("p", { text: `“${source.quote}”` }),
-                                 el("small", { text: `${block.source} · ${source.kind} ${source.record.slice(0, 8)}` })]);
+    const from = source.cited ? source.cited.title : `${source.kind} ${source.record.slice(0, 8)}`;
+    return el("blockquote", {}, [el("p", { text: `“${source.quote}”` }), el("small", { text: `${block.source} · ${from}` })]);
   }
   if (block.type === "chart") return renderChart(block);
   if (block.type === "lever") return renderLever(block);
@@ -140,12 +140,20 @@ function renderFlow(block) {
     body, el("figcaption", { text: [block.caption, block.unit].filter(Boolean).join(" · ") })]);
 }
 
+// A source entry: what the record says, in a line, opening to its full text, the quoted document and the ID.
+function renderSource(source, i) {
+  const text = source.text || `${source.kind} ${source.record.slice(0, 8)}`;
+  const head = text.length > 150 ? text.slice(0, 149) + "…" : text;
+  const detail = [el("p", { text }), ...(source.cited ? [el("p", { class: "muted", text: `Quoted from ${source.cited.title}` })] : []),
+                  el("p", { class: "muted", text: `${source.kind} ${source.record}` })];
+  return el("li", { id: `source-${i + 1}` }, [el("details", {}, [el("summary", { text: head }), ...detail])]);
+}
+
 function renderAnswer(answer) {
   const sources = answer.sources || [];
   const node = el("div", { class: "answer" }, [el("h1", { text: answer.title }), cited(answer.body, sources)]);
   for (const block of answer.blocks || []) node.append(renderBlock(block, sources));
-  if (sources.length) node.append(el("ol", { class: "sources" }, sources.map((source, i) =>
-    el("li", { id: `source-${i + 1}`, text: `${source.kind} ${source.record.slice(0, 8)}` + (source.quote ? ` — “${source.quote}”` : "") }))));
+  if (sources.length) node.append(el("ol", { class: "sources" }, sources.map(renderSource)));
   return node;
 }
 
@@ -156,12 +164,12 @@ function renderTurn(turn) {
     node.append(el("div", { class: "progress", text: last ? `${last}…` : "Starting…" }));
   } else if (turn.status === "done") {
     node.append(renderAnswer(turn.answer));
-  } else {
-    node.append(el("div", { class: "error", text: turn.error || "The answer failed." }));
+  } else {  // Refused tools are shown only here, where they may explain the failure.
+    const denied = (turn.denied || []).length ? ` Refused under your settings: ${turn.denied.join(", ")}.` : "";
+    node.append(el("div", { class: "error", text: (turn.error || "The answer failed.") + denied }));
   }
   const written = Object.entries(turn.written || {}).map(([kind, n]) => `${n} ${kind}${n === 1 ? "" : "s"}`);
   if (written.length) node.append(el("div", { class: "note", text: `Added to your layer: ${written.join(", ")}` }));
-  if ((turn.denied || []).length) node.append(el("div", { class: "note", text: `Refused under your settings: ${turn.denied.join(", ")}` }));
   return node;
 }
 

@@ -56,7 +56,8 @@ class ThreadTests(unittest.TestCase):
         turn = thread["turns"][0]
         self.assertEqual((turn["status"], turn["error"], turn["progress"], turn["denied"]),
                          ("done", None, ["Bash: Recall what the graph holds"], ["WebFetch"]))
-        self.assertEqual(turn["answer"]["sources"], [{"record": self.finding, "kind": "Finding"}])
+        self.assertEqual(turn["answer"]["sources"], [{"record": self.finding, "kind": "Finding",
+                                                      "text": "Two customers were 22% and 14% of revenue."}])
         self.assertEqual(turn["written"], {"Question": 1})  # What the agent added during the turn.
         call = harness.calls[0]
         self.assertEqual((call["cwd"], call["db"], call["session_id"]), (self.directory, str(self.db_path), None))
