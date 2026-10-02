@@ -8,8 +8,8 @@ import time
 import unittest
 
 from premisedb import RecordStore
-from premisedb.ui import Reply
-from premisedb.ui.server import install_skills, make_server, prepare_workspace
+from premisedb.ui import Reply, ThreadStore
+from premisedb.ui.server import App, install_skills, make_server, prepare_workspace
 
 
 class SlowHarness:
@@ -136,6 +136,21 @@ class ServerTests(unittest.TestCase):
         status, entity = self.call("GET", f"/api/records/{self.entity}")
         self.assertEqual((entity["connections"][0]["direction"], entity["connections"][0]["record"]["id"]), ("in", self.finding))
         self.assertEqual(self.call("GET", "/api/records/missing")[0], 404)
+
+    def test_what_was_left_running_is_picked_up_or_failed_on_start(self):
+        store = ThreadStore(self.server.RequestHandlerClass.args[0].store.path)
+        question = store.create_thread("Why?", harness="fake")
+        store.start_turn(question, "Why?", 5)
+        research = store.create_thread("Go deep.", harness="fake")
+        run_id = store.start_turn(research, "Go deep.", 60, 1)
+        store.add_items(run_id, ["A"])
+        store.next_item(run_id)
+        self.harness.release.set()
+        App(self.server.RequestHandlerClass.args[0].db_path, harness=self.harness)  # As on the next start.
+        self.assertEqual(self.wait_done(question)["turns"][0]["error"], "PremiseDB was stopped while this question was being answered.")
+        turn = self.wait_done(research)["turns"][0]
+        self.assertEqual((turn["status"], turn["items"][0]["status"], turn["progress"][0]),
+                         ("done", "done", "Picking the research up again after a restart, with 1 piece of work put back in the queue"))
 
     def test_status_describes_the_workspace(self):
         status, result = self.call("GET", "/api/status")
