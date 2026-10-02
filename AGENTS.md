@@ -13,11 +13,11 @@ Read [README.md](README.md) before planning or implementing changes. PremiseDB i
 
 - This repository starts from a clean foundation. Earlier prototypes impose no architecture, compatibility or migration requirements on new work.
 - During early development, reject incompatible database schema formats with a clear error. Do not add migrations; developers recreate prototype databases when the schema changes.
-- Do not add a frontend unless the user requests one.
-- PremiseDB may call configured local or hosted models for document processing, contextual headers, embeddings and retrieval scoring. Keep providers replaceable and accept caller-supplied outputs where useful. The earlier manual-only prototype workflow is not a permanent product constraint. Existing agent harnesses conduct investigations; do not build an agent orchestrator into PremiseDB.
+- The answer UI (`premisedb/ui`) is a local app that runs on the user's machine beside their workspace: a small Python server and plain JavaScript with no build step, rendering checked answer documents. Do not add a hosted service or another frontend unless the user requests one.
+- PremiseDB may call configured local or hosted models for document processing, contextual headers, embeddings and retrieval scoring. Keep providers replaceable and accept caller-supplied outputs where useful. The earlier manual-only prototype workflow is not a permanent product constraint. Existing agent harnesses conduct investigations; do not build an agent orchestrator into PremiseDB. The answer UI passes each question to the user's own harness (Claude Code first, then Codex), run headless in the workspace with the workspace's login and permission settings; it does not plan, schedule or coordinate agents.
 - Include dsRAG's Contextual Chunk Headers and Relevant Segment Extraction in the document-retrieval foundation. Preserve source text and citations separately from model-generated context.
 - Use Python and explicit SQL. Use SQLite, including FTS5, for authoritative storage and lexical search, and Faiss for derived vector indexes. Do not add another database or search service without a demonstrated need. Agents use a thin CLI over the Python API and the bundled research skill. Do not add an MCP server.
-- Keep all table, index and trigger definitions together in `premisedb/schema.sql`.
+- Keep all table, index and trigger definitions of the research database together in `premisedb/schema.sql`. The answer UI's conversation threads are not knowledge and live in a separate SQLite file, defined in `premisedb/ui/schema.sql`.
 - Keep the initial implementation small and coherent. Financial calculators, broad data integrations and deployment infrastructure are outside the initial scope.
 
 ## Knowledge and shared writes

@@ -15,7 +15,7 @@ premisedb = "premisedb.cli:main"
 include = ["premisedb*"]
 
 [tool.setuptools.package-data]
-premisedb = ["schema.sql"]
+premisedb = ["schema.sql", "ui/schema.sql"]
 
 [project.optional-dependencies]
 cli = ["tiktoken>=0.12,<1"]
