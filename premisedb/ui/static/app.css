@@ -119,3 +119,6 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .pieces summary, .summary summary { cursor: pointer; font-size: 13px; color: #555555; }
 .summary { font-size: 14px; }
 .summary .piece .note { white-space: normal; }
+.run .progress { margin-top: 6px; }
+.log summary { cursor: pointer; font-size: 13px; color: #555555; }
+.log .lines { margin-top: 8px; max-height: 320px; overflow-y: auto; font-size: 12px; color: var(--mute); line-height: 1.6; border-top: 1px solid var(--line); padding-top: 6px; }

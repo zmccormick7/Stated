@@ -226,8 +226,11 @@ function renderRun(turn) {
   const finish = el("button", { text: "Finish now" });
   finish.onclick = () => control("finish");
   const count = (n, label) => el("div", { class: "count" }, [el("b", { text: String(n) }), el("span", { text: label })]);
+  // The agent's latest step, so the run is never a closed box; the whole log folds out below the lists.
+  const step = waiting ? "" : last;
   const box = el("section", { class: "run" }, [
-    el("div", { class: "head" }, [el("div", {}, [el("div", { class: "state", text: heading }), el("div", { class: "muted", text: sub })]),
+    el("div", { class: "head" }, [el("div", {}, [el("div", { class: "state", text: heading }), el("div", { class: "muted", text: sub }),
+                                                 ...(step ? [el("div", { class: "progress", text: `${step}…` })] : [])]),
                                   ...(turn.finish ? [] : [el("div", { class: "buttons" }, [pause, finish])])]),
     el("div", { class: "rule", role: "img", "aria-label": time }, [el("div", { style: `width: ${Math.min(100, used(turn).minutes / turn.effort * 100)}%` })]),
     el("div", { class: "counts" }, [count(done.length, "done"), count(running.length, "in progress"), count(todo.length, "to do"),
@@ -237,6 +240,9 @@ function renderRun(turn) {
   if (running.length) node.push(pieces("In progress", running, 10));
   if (done.length) node.push(pieces("Done", done));
   if (todo.length) node.push(pieces("To do", todo));
+  const steps = turn.progress.length;
+  node.push(el("details", { class: "log" }, [el("summary", { text: `Show all ${steps} step${steps === 1 ? "" : "s"}` }),
+    el("div", { class: "lines" }, turn.progress.map((line) => el("div", { text: line })))]));
   return node;
 }
 
