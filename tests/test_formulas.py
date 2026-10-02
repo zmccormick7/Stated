@@ -96,7 +96,7 @@ class FormulaLanguageTests(unittest.TestCase):
         self.assertFalse(matches("1", 1, tolerance=1e-4))
 
 
-class ModelCheckTests(unittest.TestCase):
+class _ModelCase(unittest.TestCase):
     def setUp(self):
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -118,6 +118,8 @@ class ModelCheckTests(unittest.TestCase):
         self.variables[key] = record
         return record
 
+
+class ModelCheckTests(_ModelCase):
     def test_outputs_are_checked_from_stored_values(self):
         self.variable("gw", "input", [20, 20, 24])
         self.variable("price", "input", 570)
@@ -170,3 +172,55 @@ class ModelCheckTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "share the key"):
             self.db.check_model(self.model.id)
         self.assertEqual(self.db.check_model(self.db.create("Model", text="Empty", author_id="a").id).checked, ())
+
+
+class ModelEvaluationTests(_ModelCase):
+    def build(self):
+        self.variable("gw", "input", [20, 20, 24])
+        self.variable("price", "input", 570)
+        self.variable("margin", "input", 0.25)
+        self.variable("revenue", "output", [11400, 11400, 13680], "gw * price", ["gw", "price"])
+        self.variable("manual", "output", 5)
+        # Created before the output it reads, and stored stale: evaluation recomputes it in dependency order.
+        profit = self.db.create("Variable", text="profit", author_id="a", attributes={
+            "key": "profit", "role": "output", "value": [0, 0, 0], "formula": "revenue * margin + manual"})
+        self.db.create_link(profit.id, self.model.id, "in_model", author_id="a")
+
+    def test_overrides_flow_through_dependent_formulas(self):
+        self.build()
+        base = self.db.evaluate_model(self.model.id[:8])
+        self.assertEqual((base.model_id, base.overrides, base.without_formula), (self.model.id, {}, ("manual",)))
+        self.assertEqual([v.key for v in base.variables], ["gw", "price", "margin", "manual", "revenue", "profit"])
+        by_key = {v.key: v for v in base.variables}
+        self.assertEqual((by_key["profit"].stored, by_key["profit"].value), ([0, 0, 0], [2855.0, 2855.0, 3425.0]))
+        self.assertFalse(any(v.changed for v in base.variables))
+
+        result = self.db.evaluate_model(self.model.id, {"price": 600, "gw": [10, 20, 24]})
+        by_key = {v.key: v for v in result.variables}
+        self.assertEqual(by_key["revenue"].value, [6000, 12000, 14400])
+        self.assertEqual(by_key["profit"].value, [1505.0, 3005.0, 3605.0])
+        self.assertEqual({v.key for v in result.variables if v.changed}, {"gw", "price", "revenue", "profit"})
+        self.assertEqual((by_key["price"].stored, by_key["price"].value, by_key["price"].role), (570, 600, "input"))
+
+        held = {v.key: v for v in self.db.evaluate_model(self.model.id, {"revenue": [100, 200, 300]}).variables}
+        self.assertEqual((held["revenue"].value, held["profit"].value), ([100, 200, 300], [30.0, 55.0, 80.0]))
+        self.assertEqual(self.db.read(self.variables["price"].id).attributes["value"], 570)  # Nothing is written.
+
+    def test_invalid_evaluations(self):
+        self.build()
+        for overrides, message in (({"tariff": 1}, "not in the model: tariff"), ({"gw": 20}, "stored value's shape"),
+                                   ({"gw": [20, 20]}, "stored value's shape"), ({"price": "600"}, "no numeric value"),
+                                   ([("price", 600)], "must map")):
+            with self.subTest(overrides=overrides), self.assertRaisesRegex(ValueError, message):
+                self.db.evaluate_model(self.model.id, overrides)
+        with self.assertRaisesRegex(ValueError, "not a Model"):
+            self.db.evaluate_model(self.variables["gw"].id)
+        self.variable("a", "output", 1, "b + 1")
+        self.variable("b", "output", 1, "a + 1")
+        with self.assertRaisesRegex(ValueError, "cycle: a, b"):
+            self.db.evaluate_model(self.model.id)
+        other = self.db.create("Model", text="Other", author_id="a")
+        self.variable("ratio", "output", 1, "gw / tariff", model=other)
+        with self.assertRaisesRegex(ValueError, "ratio: formula names unknown Variables: gw, tariff"):
+            self.db.evaluate_model(other.id)
+

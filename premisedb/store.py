@@ -265,6 +265,17 @@ class RecordStore:
     def check_model(self, model_id: str, *, tolerance: float = 1e-4) -> "ModelCheck":
         """Check that each output Variable's formula reproduces its stored value from the model's Variables."""
         from .formulas import check_model
+        model_id, variables = self._model_variables(model_id)
+        return check_model(variables, model_id, tolerance=tolerance)
+
+    def evaluate_model(self, model_id: str, overrides: dict[str, object] | None = None) -> "ModelEvaluation":
+        """Recompute a Model's formulas with some Variables set to other values; nothing is written."""
+        from .formulas import evaluate_model
+        model_id, variables = self._model_variables(model_id)
+        return evaluate_model(variables, model_id, overrides)
+
+    def _model_variables(self, model_id):
+        """A Model's ID and its Variables' attributes, each with its `id` and in-model `depends_on` keys."""
         model = self.read(self.resolve_id(model_id))
         if model.kind != "Model":
             raise ValueError(f"{model_id} is a {model.kind}, not a Model")
@@ -278,9 +289,8 @@ class RecordStore:
                FROM links l JOIN records v ON v.record_key = l.from_key JOIN records m ON m.record_key = l.to_key
                WHERE m.id = ? AND l.relation = 'in_model' AND v.kind = 'Variable' ORDER BY v.record_key""",
             (model.id,)).fetchall()
-        variables = [json.loads(row["attributes"]) | {"id": row["id"], "depends_on": [
+        return model.id, [json.loads(row["attributes"]) | {"id": row["id"], "depends_on": [
             key for key in json.loads(row["depends_on"]) if key is not None]} for row in rows]
-        return check_model(variables, model.id, tolerance=tolerance)
 
     def attach_layer(self, path: str | Path) -> "LayerAttachment":
         """Attach a published layer file read-only, or bring an attached layer to the file's version."""

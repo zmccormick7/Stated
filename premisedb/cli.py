@@ -102,6 +102,11 @@ def _parser():
                     "Evaluate each output Variable's formula from the model's stored values and compare.", "model_id")
     check.add_argument("--tolerance", type=float, default=1e-4,
                        help="Relative difference allowed between a stored value and its formula (default 1e-4).")
+    scenario = command("evaluate-model", "evaluate_model",
+                       "Recompute a model's formulas with some Variables set to other values; nothing is written.",
+                       "model_id")
+    scenario.add_argument("--set", dest="overrides", action="append", type=_where_item, metavar="KEY=VALUE",
+                          help="Hold a Variable at VALUE, a number or a JSON list for a row; repeatable.")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     listing.add_argument("--kind")
@@ -283,8 +288,9 @@ def _recall(db, options):
 def main(argv=None):
     options = vars(_parser().parse_args(argv))
     path = Path(options.pop("db"))
-    if options.get("where") is not None:
-        options["where"] = dict(options["where"])
+    for name in ("where", "overrides"):
+        if options.get(name) is not None:
+            options[name] = dict(options[name])
     method = options.pop("method")
     options.pop("command")
     try:
