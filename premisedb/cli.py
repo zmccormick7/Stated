@@ -29,8 +29,8 @@ def _where_item(text):
 
 def _parser():
     parser = argparse.ArgumentParser(prog="premisedb", description=__doc__)
-    parser.add_argument("--db", default=os.environ.get("PREMISEDB_DB") or "research.sqlite",
-                        help="Database file (default: $PREMISEDB_DB, else research.sqlite)")
+    parser.add_argument("--db", default=os.environ.get("PREMISEDB_DB"),
+                        help="Database file (default: $PREMISEDB_DB, else research.sqlite; ui also looks in ~/PremiseDB)")
     commands = parser.add_subparsers(dest="command", required=True)
 
     def command(name, method, description, *arguments, payload=None):
@@ -117,6 +117,8 @@ def _parser():
                     help="The coding agent that answers (default: claude-code).")
     ui.add_argument("--model", help="With --harness codex: the model to pass to codex exec.")
     ui.add_argument("--effort", dest="reasoning_effort", help="With --harness codex: the model_reasoning_effort to set.")
+    ui.add_argument("--base", metavar="FILE", help="A published base layer file to attach, or to update to.")
+    ui.add_argument("--no-open", dest="open_browser", action="store_false", help="Do not open the page in a browser.")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     listing.add_argument("--kind")
@@ -297,7 +299,17 @@ def _recall(db, options):
 
 def main(argv=None):
     options = vars(_parser().parse_args(argv))
-    path = Path(options.pop("db"))
+    given = options.pop("db")
+    if options["method"] == "ui":
+        from .ui.server import serve
+        try:
+            return serve(given, harness_name=options["harness"], port=options["port"], model=options["model"],
+                         reasoning_effort=options["reasoning_effort"], base=options["base"],
+                         open_browser=options["open_browser"])
+        except (OSError, ValueError, sqlite3.Error) as error:
+            print(json.dumps({"error": str(error)}), file=sys.stderr)
+            return 1
+    path = Path(given or "research.sqlite")
     for name in ("where", "overrides"):
         if options.get(name) is not None:
             options[name] = dict(options[name])
@@ -320,10 +332,6 @@ def main(argv=None):
             options["quote"] = sys.stdin.read().removesuffix("\n")
         if options.keys() & payload.keys():
             raise ValueError("JSON input must not repeat arguments supplied by the command")
-        if method == "ui":
-            from .ui.server import serve
-            return serve(path, harness_name=options["harness"], port=options["port"], model=options["model"],
-                         reasoning_effort=options["reasoning_effort"])
         with RecordStore(path, layer=options.pop("layer", "workspace")) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
             for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id"):

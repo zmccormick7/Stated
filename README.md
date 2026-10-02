@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
-[Quickstart](#quickstart) · [CLI](docs/cli.md) · [Research skill](skills/premisedb-research/SKILL.md) · [Python API](docs/python-api.md) · [Design](docs/database-spec.md) · [Contribute](#contributing)
+[Quickstart](#quickstart) · [CLI](docs/cli.md) · [Research skill](premisedb/skills/premisedb-research/SKILL.md) · [Python API](docs/python-api.md) · [Design](docs/database-spec.md) · [Contribute](#contributing)
 
 ## Follow the connections
 
@@ -67,14 +67,16 @@ From the checkout, copy the bundled skill into your harness's personal skills di
 ```bash
 # Codex
 mkdir -p ~/.agents/skills
-cp -R skills/premisedb-research ~/.agents/skills/
+cp -R premisedb/skills/premisedb-research ~/.agents/skills/
 
 # Claude Code
 mkdir -p ~/.claude/skills
-cp -R skills/premisedb-research ~/.claude/skills/
+cp -R premisedb/skills/premisedb-research ~/.claude/skills/
 ```
 
-A second skill, `skills/premisedb-answer`, teaches an agent to return a structured answer (a headline, a paragraph, sources and charts whose figures are checked against the graph with `check-answer`). You need not copy it: `premisedb --db research.sqlite ui` installs both skills for the chosen harness and serves a local page at `http://127.0.0.1:8765` where you ask questions and your own Claude Code answers them in the workspace, with its own login and settings plus permission to run `premisedb` and read and write files there; `--harness codex` uses Codex instead.
+A second skill, `premisedb/skills/premisedb-answer`, teaches an agent to return a structured answer (a headline, a paragraph, sources and charts whose figures are checked against the graph with `check-answer`). You need not copy it: `premisedb ui` installs both skills for the chosen harness and serves a local page where you ask questions and your own Claude Code answers them in the workspace, with its own login and settings plus permission to run `premisedb` and read and write files there; `--harness codex` uses Codex instead.
+
+To use the answer UI without the steps above: install the command once (`pipx install "/path/to/PremiseDB[cli]"`, with a Python that meets the requirements below), then run `premisedb ui --base /path/to/base-2026.10.01.sqlite`. The first run creates `~/PremiseDB/research.sqlite` with a `fund` layer, attaches the base, installs the skills and opens the page; after that `premisedb ui` alone is enough. Pass `--base` again to update to a newer base file.
 
 Open a new agent session in your research workspace and ask:
 
