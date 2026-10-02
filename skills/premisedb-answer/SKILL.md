@@ -1,6 +1,6 @@
 ---
 name: premisedb-answer
-description: Answer a question from a PremiseDB research graph as a structured answer document (a one-line title, a body paragraph, cited sources and optional chart or quote blocks) that passes `premisedb check-answer`.
+description: Answer a question from a PremiseDB research graph as a structured answer document (a one-line title, a body paragraph, cited sources and optional lever, flow, chart, quote or text blocks) that passes `premisedb check-answer`.
 ---
 
 # Answer with PremiseDB
@@ -27,7 +27,7 @@ Use this when the reply will be rendered as an answer: a headline, a paragraph, 
 ```
 
 - **`title`** is the answer itself in one line of at most 120 characters: a statement that replies to the question, not a topic.
-- **`body`** is one short paragraph that explains the title. Cite with `[n]`, the number of an entry in `sources`.
+- **`body`** is one paragraph of three to five sentences that explains the title. Cite with `[n]`, the number of an entry in `sources`. Anything beyond that goes in a `text` block, or is left out.
 - **`sources`** lists only the records the answer cites, each by ID (a unique prefix of 8 or more characters works). An optional `quote` is exact text from the record or from a passage it cites. Every source must be cited by a `[n]` or shown by a quote block.
 - **`blocks`** is optional. Most answers need none.
 
@@ -35,13 +35,22 @@ Those four keys are the whole format; anything else is refused. There is no plac
 
 ## Blocks
 
-Add a block only when it changes what the reader understands. At most six, and usually one or two.
+Add a block only when it changes what the reader understands. At most six, and usually one or two. Choose by what the question turns on:
 
-- **`text`**: a further paragraph, `{"type": "text", "text": "…"}`, with `[n]` citations.
-- **`quote`**: shows a source's quote in full, `{"type": "quote", "source": 1}`. Use it when the exact words matter.
+- The answer rests on **one model assumption**, such as a growth rate or a share: a `lever` on that input, as the lead. Show the reader how the output moves rather than telling them the base case.
+- The question is **who gets what share** of something, or who depends on whom: a `flow`.
+- A **few figures** compared, or one figure over time: a `chart`.
+- The **exact words** of a filing or call matter: a `quote`.
+
+A chart of a model's inputs or outputs is usually the wrong choice when a lever or flow would let the reader see the same thing move.
+
 - **`lever`**: one model input to drag and one output to watch, recomputed live through the model: `{"type": "lever", "model": MODEL_ID, "input": "accel_supply_growth_cy2027", "output": "dc_rev_fy28", "input_label": "Supply growth, 2027", "output_label": "FY28 Data Center revenue, $B"}`. Both keys name Variables of that model with a single numeric value; the output should have a formula so it moves. The slider spans the Variable's `low` and `high`, or a `range` of `[low, high]` you give. Use it when the answer rests on an assumption the reader would want to push on.
 - **`flow`**: who depends on what, in proportion: a `from` node (`{"label", "note"?}`), `parts` drawn as a stacked column (each a figure as in a chart, with an optional `note`), and an optional `to` node (`{"label", "note"?, "items"?}`) for what sits downstream. `unit`, `whole` and `rest_label` work as in a chart. Use it for allocation and dependency questions.
-- **`chart`**: labelled bars. `rows` is a list of `{"label", "parts"}`; one part draws a plain bar and several draw a stacked one. Give the `unit`. With `whole` (such as 100), each row's remainder is drawn and named by `rest_label`. Optional `caption`. Set `"lead": true` on at most one block to make it the centre of the answer.
+- **`chart`**: labelled bars. `rows` is a list of `{"label", "parts"}`; one part draws a plain bar and several draw a stacked one. Give the `unit`. With `whole` (such as 100), each row's remainder is drawn and named by `rest_label`. Optional `caption`.
+- **`quote`**: shows a source's quote in full, `{"type": "quote", "source": 1}`.
+- **`text`**: a further paragraph, `{"type": "text", "text": "…"}`, with `[n]` citations.
+
+Set `"lead": true` on at most one block to make it the centre of the answer.
 
 ## Figures
 

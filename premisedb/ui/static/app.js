@@ -49,7 +49,8 @@ function renderChart(block) {
   const labels = [...new Set(block.rows.flatMap((row) => row.parts.map((part) => part.label)))];
   const totals = block.rows.map((row) => row.parts.reduce((sum, part) => sum + part.value, 0));
   const scale = block.whole || Math.max(...totals, 0) || 1;
-  if (labels.length > 1) figure.append(el("div", { class: "legend" }, labels.map((label, i) =>
+  const plain = block.rows.every((row) => row.parts.length === 1);  // One bar per row: the row label names it.
+  if (labels.length > 1 && !plain) figure.append(el("div", { class: "legend" }, labels.map((label, i) =>
     el("span", {}, [el("i", { style: `background:${SHADES[i % SHADES.length]}` }), el("span", { text: label })]))));
   const grid = el("div", { class: "rows" });
   block.rows.forEach((row, r) => {
@@ -59,7 +60,7 @@ function renderChart(block) {
       const shade = labels.indexOf(part.label) % SHADES.length;
       const segment = el("div", { class: "part", title: `${row.label} · ${part.label}: ${number(part.value)} ${block.unit}`,
         style: `width:${(share * 100).toFixed(2)}%;background:${SHADES[shade]};color:${shade < 2 ? "#FFFFFF" : "#1A1A1A"}` });
-      if (share >= 0.07) segment.append(el("span", { text: number(part.value) }));
+      if (share >= 0.07 && !(plain && !block.whole)) segment.append(el("span", { text: number(part.value) }));
       bar.append(segment);
     });
     if (block.whole) {
