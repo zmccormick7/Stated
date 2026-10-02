@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 
 
 class HarnessError(RuntimeError):
@@ -17,8 +18,12 @@ class Reply:
     denied: tuple[str, ...]  # Tools refused under the workspace's permission settings.
 
 
+ALLOWED_TOOLS = ("Bash(premisedb:*)", "Read", "Write")
+
+
 class ClaudeCode:
-    """Claude Code in headless mode, with the login and permission settings of the directory it runs in."""
+    """Claude Code in headless mode, with the user's own login and settings plus the permissions the
+    product itself needs."""
 
     name = "claude-code"
 
@@ -30,28 +35,12 @@ class ClaudeCode:
         """Where Claude Code loads personal skills from, as the README's install step describes."""
         return (Path.home() / ".claude" / "skills",)
 
-    @staticmethod
-    def permission_advice(cwd, home: Path | None = None) -> str | None:
-        """Headless, Claude Code cannot ask before running a command, so the workspace must be trusted and its
-        settings must allow the premisedb CLI, or every call is refused. Returns what to do when they do not."""
-        home, cwd = home or Path.home(), Path(cwd).resolve()
-        files = [cwd / ".claude" / name for name in ("settings.json", "settings.local.json")] + [
-            home / ".claude" / "settings.json"]
-        for path in files:
-            if any(isinstance(rule, str) and rule.startswith("Bash(premisedb")
-                   for rule in _read_json(path).get("permissions", {}).get("allow", [])):
-                break
-        else:
-            return (f"No settings file allows the premisedb CLI, so a headless Claude Code would refuse every call. "
-                    f'Add to {files[0]}:\n  {{"permissions": {{"allow": ["Bash(premisedb:*)", "Read"]}}}}')
-        if not _read_json(home / ".claude.json").get("projects", {}).get(str(cwd), {}).get("hasTrustDialogAccepted"):
-            return (f"Claude Code has not been told to trust {cwd}, so it ignores the workspace's permission settings. "
-                    f"Run `claude` there once and accept the trust dialog.")
-        return None
-
     def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None,
             on_progress=lambda text: None) -> Reply:
-        command = [self.executable, "-p", prompt, "--output-format", "stream-json", "--verbose"]
+        # The least the product needs: its own CLI, and files in the workspace. Everything else follows
+        # the user's own settings, so a tool they have not allowed is refused as usual.
+        command = [self.executable, "-p", prompt, "--output-format", "stream-json", "--verbose",
+                   "--allowedTools", *ALLOWED_TOOLS]
         if session_id:
             command += ["--resume", session_id]
         try:
@@ -86,6 +75,69 @@ class ClaudeCode:
         return Reply(str(result.get("result") or ""), result.get("session_id"), denied)
 
 
+class Codex:
+    """Codex in non-interactive mode (`codex exec --json`), with the user's own login and config and a
+    sandbox that can write in the workspace. A command the sandbox refuses fails rather than asking."""
+
+    name = "codex"
+
+    def __init__(self, executable: str = "codex", model: str | None = None, reasoning_effort: str | None = None):
+        self.executable, self.model, self.reasoning_effort = executable, model, reasoning_effort
+
+    @staticmethod
+    def skills_directories() -> tuple[Path, ...]:
+        """Where Codex loads personal skills from, as the README's install step describes."""
+        return (Path.home() / ".agents" / "skills",)
+
+    def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None,
+            on_progress=lambda text: None) -> Reply:
+        # workspace-write: the least that lets SQLite open the workspace database; the rest is the user's config.
+        options = ["--json", "--skip-git-repo-check", "-s", "workspace-write"] + (["-m", self.model] if self.model else []) + (
+            ["-c", f'model_reasoning_effort="{self.reasoning_effort}"'] if self.reasoning_effort else [])
+        with tempfile.TemporaryDirectory() as directory:
+            last = Path(directory) / "last.txt"
+            command = [self.executable, "exec", *options, "-o", str(last)] + (
+                ["resume", session_id, prompt] if session_id else [prompt])
+            try:
+                process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                           stderr=subprocess.PIPE, text=True, encoding="utf-8")
+            except OSError as error:
+                raise HarnessError(f"Could not start {self.executable}: {error}") from None
+            thread, finished, errors = session_id, False, []
+            with process:
+                for line in process.stdout:
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(event, dict):
+                        continue
+                    kind, item = event.get("type"), event.get("item") or {}
+                    if kind == "thread.started":
+                        thread = event.get("thread_id") or thread
+                    elif kind == "item.started" and item.get("type") == "command_execution":
+                        on_progress(_shell(item.get("command") or ""))
+                    elif kind == "turn.completed":
+                        finished = True
+                    elif kind in ("turn.failed", "error"):
+                        errors.append(str(event.get("message") or (event.get("error") or {}).get("message") or kind))
+                stderr = process.stderr.read()
+            if not finished:
+                detail = "; ".join(errors) or stderr.strip().splitlines()[-1:] and stderr.strip().splitlines()[-1] or "no result"
+                raise HarnessError(f"{self.executable} exited with status {process.returncode}: {detail}")
+            text = last.read_text(encoding="utf-8") if last.is_file() else ""
+        return Reply(text, thread, ())
+
+
+def _shell(command: str) -> str:
+    """A progress line for a Codex shell command, without the wrapper it runs commands through."""
+    for prefix in ("/bin/zsh -lc ", "/bin/bash -lc ", "bash -lc ", "zsh -lc "):
+        if command.startswith(prefix):
+            command = command[len(prefix):].strip("'\"")
+    text = " ".join(f"Shell: {command}".split())
+    return text if len(text) <= 160 else text[:159] + "…"
+
+
 def _describe(tool_use: dict) -> str:
     """One line for the progress display: what the agent says it is doing, or the call itself."""
     given = tool_use.get("input") or {}
@@ -94,10 +146,3 @@ def _describe(tool_use: dict) -> str:
     text = " ".join(f"{tool_use.get('name', 'tool')}: {detail}".split()).rstrip(": ")
     return text if len(text) <= 160 else text[:159] + "…"
 
-
-def _read_json(path: Path) -> dict:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return value if isinstance(value, dict) else {}

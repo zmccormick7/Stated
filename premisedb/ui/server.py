@@ -5,22 +5,34 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import shutil
 import threading
 from urllib.parse import urlparse
 
 from ..store import RecordStore
-from .harness import ClaudeCode
+from .harness import ClaudeCode, Codex
 from .threads import ThreadStore, run_turn
 
 STATIC = Path(__file__).with_name("static")
-HARNESSES = {"claude-code": ClaudeCode}
+HARNESSES = {"claude-code": ClaudeCode, "codex": Codex}
 _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 
 
-def missing_skills(harness) -> list[str]:
-    """The bundled skills the harness cannot see; the README documents the copy that installs them."""
-    return [name for name in ("premisedb-research", "premisedb-answer")
-            if not any((directory / name / "SKILL.md").is_file() for directory in harness.skills_directories())]
+SKILLS = Path(__file__).resolve().parents[2] / "skills"
+
+
+def install_skills(harness, source: Path = SKILLS) -> list[str]:
+    """Copy the bundled skills into the harness's skills directory, replacing older copies; returns the
+    skills that were written or updated. The same file copy the README describes, done by the program."""
+    written = []
+    for directory in harness.skills_directories():
+        for skill in sorted(source.glob("*/SKILL.md")):
+            target = directory / skill.parent.name / "SKILL.md"
+            if not target.is_file() or target.read_bytes() != skill.read_bytes():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(skill, target)
+                written.append(skill.parent.name)
+    return written
 
 
 class App:
@@ -118,20 +130,17 @@ def make_server(db_path, *, harness, host="127.0.0.1", port=0) -> ThreadingHTTPS
     return ThreadingHTTPServer((host, port), partial(Handler, App(db_path, harness=harness)))
 
 
-def serve(db_path, *, harness_name="claude-code", port=8765) -> int:
+def serve(db_path, *, harness_name="claude-code", port=8765, model=None, reasoning_effort=None) -> int:
     """Run the answer UI for a workspace until interrupted; returns the exit status."""
     if harness_name not in HARNESSES:
         raise ValueError(f"unknown harness {harness_name}; choose from {', '.join(HARNESSES)}")
-    harness = HARNESSES[harness_name]()
-    if missing := missing_skills(harness):
-        root = Path(__file__).resolve().parents[2] / "skills"
-        print(f"{harness.name} cannot see the {' and '.join(missing)} skill(s). Install them with:")
-        for name in missing:
-            print(f"  cp -R {root / name} {harness.skills_directories()[0]}/")
-        return 1
-    if advice := harness.permission_advice(Path(db_path).resolve().parent):
-        print(advice)
-        return 1
+    if harness_name != "codex" and (model or reasoning_effort):
+        raise ValueError("--model and --effort apply to the codex harness")
+    harness = Codex(model=model, reasoning_effort=reasoning_effort) if harness_name == "codex" else ClaudeCode()
+    if not SKILLS.is_dir():
+        raise ValueError(f"the bundled skills are missing from {SKILLS}")
+    if written := install_skills(harness):
+        print(f"Installed the {' and '.join(written)} skill(s) for {harness.name} in {harness.skills_directories()[0]}")
     server = make_server(db_path, harness=harness, port=port)
     print(f"PremiseDB answer UI for {Path(db_path).resolve()} at http://127.0.0.1:{server.server_address[1]}")
     try:

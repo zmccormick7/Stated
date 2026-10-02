@@ -8,7 +8,7 @@ import unittest
 
 from premisedb import RecordStore
 from premisedb.ui import Reply
-from premisedb.ui.server import make_server, missing_skills
+from premisedb.ui.server import install_skills, make_server
 
 
 class SlowHarness:
@@ -24,13 +24,10 @@ class SlowHarness:
         self.release.wait(5)
         return Reply(self.answer, "session-1", ())
 
-    @staticmethod
-    def skills_directories():
-        return ()
+    skills_directory = None
 
-    @staticmethod
-    def permission_advice(cwd):
-        return None
+    def skills_directories(self):
+        return (self.skills_directory,) if self.skills_directory else ()
 
 
 class ServerTests(unittest.TestCase):
@@ -105,8 +102,18 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.call("POST", f"/api/models/{self.model}/evaluate", {"overrides": {"tariff": 1}})[0], 400)
         self.assertEqual(self.call("POST", "/api/models/missing/evaluate", {"overrides": {}})[0], 404)
 
-    def test_missing_skills_are_named(self):
-        self.assertEqual(missing_skills(self.harness), ["premisedb-research", "premisedb-answer"])
+    def test_skills_are_installed_and_updated(self):
+        with TemporaryDirectory() as directory:
+            source, target = Path(directory) / "skills", Path(directory) / "harness-skills"
+            (source / "premisedb-answer").mkdir(parents=True)
+            (source / "premisedb-answer" / "SKILL.md").write_text("v1")
+            self.harness.skills_directory = target
+            self.assertEqual(install_skills(self.harness, source), ["premisedb-answer"])
+            self.assertEqual((target / "premisedb-answer" / "SKILL.md").read_text(), "v1")
+            self.assertEqual(install_skills(self.harness, source), [])  # Up to date: nothing written.
+            (source / "premisedb-answer" / "SKILL.md").write_text("v2")
+            self.assertEqual(install_skills(self.harness, source), ["premisedb-answer"])
+            self.assertEqual((target / "premisedb-answer" / "SKILL.md").read_text(), "v2")
 
 
 if __name__ == "__main__":
