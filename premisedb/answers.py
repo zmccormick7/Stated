@@ -19,8 +19,10 @@ _KEYS = {
     "quote": ({"type", "source"}, set()),
     "chart": ({"type", "unit", "rows"}, {"caption", "whole", "rest_label", "lead"}),
     "lever": ({"type", "model", "input", "output"}, {"input_label", "output_label", "range", "caption", "lead"}),
+    "flow": ({"type", "from", "parts"}, {"to", "unit", "whole", "rest_label", "caption", "lead"}),
+    "node": ({"label"}, {"note", "items"}),
     "row": ({"label", "parts"}, set()),
-    "part": ({"label", "record"}, {"value", "as_written", "scale", "period"}),
+    "part": ({"label", "record"}, {"value", "as_written", "scale", "period", "note"}),
 }
 
 
@@ -55,7 +57,7 @@ def check_answer(db, answer: object) -> AnswerCheck:
         where = f"blocks[{i + 1}]"
         kind = block.get("type") if isinstance(block, dict) else None
         if kind not in _BLOCKS:
-            problems.append(f"{where}: type must be text, quote, chart or lever")
+            problems.append(f"{where}: type must be text, quote, chart, lever or flow")
         elif _shape(block, kind, where, problems):
             resolved_blocks.append(_BLOCKS[kind](db, block, where, sources, used, problems))
     if any(isinstance(b, dict) and "lead" in b and not isinstance(b["lead"], bool) for b in blocks):
@@ -168,8 +170,8 @@ def _chart_block(db, block, where, sources, used, problems):
         parts = []
         for p, part in enumerate(row["parts"]):
             there = f"{at}.parts[{p + 1}]"
-            if _shape(part, "part", there, problems) and (figure := _figure(db, part, there, problems)) is not None:
-                parts.append({"label": part["label"], "record": figure[0], "value": figure[1]})
+            if (resolved := _part(db, part, there, problems)) is not None:
+                parts.append(resolved)
         if whole is not None and len(parts) == len(row["parts"]) and sum(x["value"] for x in parts) > whole * 1.005:
             problems.append(f"{at}: the parts add up to more than the whole")
         rows.append({"label": row["label"], "parts": parts})
@@ -217,6 +219,53 @@ def _lever_block(db, block, where, sources, used, problems):
     ends["input"].update(low=low, high=high)
     return {k: v for k, v in block.items() if k not in ("input_label", "output_label", "range")} | {
         "model": model_id, "input": ends["input"], "output": ends["output"]}
+
+
+def _part(db, part, where, problems):
+    """A charted part reduced to its label, record and value, plus a note when it carries one."""
+    if not _shape(part, "part", where, problems) or (figure := _figure(db, part, where, problems)) is None:
+        return None
+    resolved = {"label": part["label"], "record": figure[0], "value": figure[1]}
+    if "note" in part:
+        if not _text(part["note"]):
+            problems.append(f"{where}: note must be a nonblank string")
+            return None
+        resolved["note"] = part["note"]
+    return resolved
+
+
+def _node(node, where, problems):
+    """A flow's source or destination: a label, an optional note and optional named items."""
+    if not _shape(node, "node", where, problems):
+        return None
+    if not _text(node["label"]) or ("note" in node and not _text(node["note"])) or (
+            "items" in node and not (isinstance(node["items"], list) and node["items"] and all(map(_text, node["items"])))):
+        problems.append(f"{where}: label, note and items must be nonblank strings")
+        return None
+    return dict(node)
+
+
+def _flow_block(db, block, where, sources, used, problems):
+    """A flow from one source through proportional parts, optionally on to a destination."""
+    resolved = {k: v for k, v in block.items()}
+    resolved["from"] = _node(block["from"], f"{where}.from", problems)
+    if "to" in block:
+        resolved["to"] = _node(block["to"], f"{where}.to", problems)
+    if "unit" in block and not _text(block["unit"]):
+        problems.append(f"{where}: unit must be a nonblank string")
+    whole = block.get("whole")
+    if whole is not None and not _is_number(whole):
+        problems.append(f"{where}: whole must be a number")
+    if not isinstance(block["parts"], list) or not block["parts"]:
+        problems.append(f"{where}: a flow needs at least one part")
+        return None
+    parts = [_part(db, part, f"{where}.parts[{p + 1}]", problems) for p, part in enumerate(block["parts"])]
+    if None in parts:
+        return None
+    if _is_number(whole) and sum(part["value"] for part in parts) > whole * 1.005:
+        problems.append(f"{where}: the parts add up to more than the whole")
+    resolved["parts"] = parts
+    return resolved
 
 
 def _figure(db, part, where, problems):
@@ -271,4 +320,5 @@ def _parse(written):
     return -number if negative else number
 
 
-_BLOCKS = {"text": _text_block, "quote": _quote_block, "chart": _chart_block, "lever": _lever_block}
+_BLOCKS = {"text": _text_block, "quote": _quote_block, "chart": _chart_block, "lever": _lever_block,
+           "flow": _flow_block}

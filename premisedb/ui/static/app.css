@@ -55,3 +55,22 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .lever input[type=range] { width: 100%; margin: 0; accent-color: #1F5FA8; }
 .lever figcaption { color: var(--mute); font-size: 12px; }
 .lever figcaption:empty { display: none; }
+.flow { margin: 0; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.flow.lead { border: 1px solid var(--ink); padding: 22px 24px; }
+.flow .lanes { display: grid; grid-template-columns: 160px 32px minmax(0, 1fr) 32px 170px; align-items: center; }
+.flow .lanes:has(.column:last-child) { grid-template-columns: 160px 32px minmax(0, 1fr); }
+.flow .link { height: 1px; background: var(--ink); }
+.flow .link.dashed { background: none; border-top: 1px dashed var(--ink); }
+.flow .node { border: 1px solid var(--ink); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.flow .node.to { border-style: dashed; }
+.flow .node .title { font-weight: 600; }
+.flow .node .note { color: #555555; font-size: 12px; }
+.flow .node .item { font-weight: 500; }
+.flow .column { display: flex; flex-direction: column; gap: 2px; height: 260px; }
+.flow .part { min-height: 18px; box-sizing: border-box; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; overflow: hidden; }
+.flow .part .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.flow .part b { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.flow .part.rest { background: #FFFFFF; border: 1px solid var(--line); color: #555555; }
+.flow .part.rest .name, .flow .part.rest b { font-weight: 400; font-size: 12px; }
+.flow figcaption { color: var(--mute); font-size: 12px; }
+.flow figcaption:empty { display: none; }
