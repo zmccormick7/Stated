@@ -17,6 +17,7 @@ FAILURES = 2  # This many pieces of work failing in a row ends the work early.
 RETRY_MINUTES = 15  # How long to wait at a usage limit when the harness does not say when it resets.
 REPORT_WAIT_HOURS = 6  # How long a finished run's report will wait for a usage limit to reset.
 _sleep = time.sleep
+REVIEW_MINUTES = 10  # What a review of the new records for duplicates may take.
 START_MINUTES = 5  # A piece of work is not started with less working time left than this: it would only be cut off.
 
 
@@ -78,6 +79,14 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
         queue((result.get("new_items") or [])[:2])
         return None
 
+    def review() -> None:
+        """Have one session fold duplicates among the records the run has added into the records they repeat."""
+        store.add_progress(turn_id, "Checking the new records for duplicates")
+        try:
+            agent.run(_review(brief, turn["started_at"], agent.name), None, REVIEW_MINUTES * 60)
+        except HarnessError:  # The review is a tidy-up; the work and the report do not depend on it.
+            pass
+
     store.add_progress(turn_id, "Planning the research")
     try:
         if not planned(patient(lambda: agent.run(_plan(brief, effort, agents), turn["session_id"]), work_ends)):
@@ -85,7 +94,8 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
     except HarnessError as error:
         return agent.fail(str(error))
     failures, error, working, limit = 0, "The time ran out before any of the work was done.", set(), None
-    with ThreadPoolExecutor(agents) as pool:
+    reviewed, reviewing, done_count = 0, None, lambda: sum(item["status"] == "done" for item in store.items(turn_id))
+    with ThreadPoolExecutor(agents) as pool, ThreadPoolExecutor(1) as reviewer:
         while True:
             if limit and not working:  # Everyone has stopped at the limit: wait it out if the time allows.
                 if _pause(limit) > left() - START_MINUTES * 60:
@@ -102,6 +112,9 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
                         limit, error = failure, str(failure)
                     else:
                         failures, error = (0, error) if failure is None else (failures + 1, str(failure))
+                # Every few finished pieces, while the work goes on, a review folds duplicates into what they repeat.
+                if (reviewing is None or reviewing.done()) and done_count() - reviewed >= 2 * agents and left() > START_MINUTES * 60:
+                    reviewed, reviewing = done_count(), reviewer.submit(review)
                 continue
             # Nobody is working and nothing was claimed: stop, or with time in hand ask what else would serve the brief.
             if left() <= START_MINUTES * 60 or failures >= FAILURES or time.monotonic() - started >= USE_OF_TIME * effort * 60:
@@ -112,9 +125,13 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
                     break
             except HarnessError:
                 break
+        if reviewing is not None:
+            reviewing.result()
     done = [item for item in store.items(turn_id) if item["status"] == "done"]
     if not done:
         return agent.fail(error)
+    if len(done) > reviewed:  # Records added since the last review are checked before the report reads the graph.
+        review()
 
     def report():
         store.add_progress(turn_id, "Writing the report")
@@ -176,6 +193,18 @@ def _work(brief: str, text: str, items: list[dict], author: str) -> str:
             'and added", "new_items": ["at most two further pieces of work this turned up that are not on the list '
             'and matter to the brief"]}.'
             f"\n\nBrief: {brief}\n\nYour item: {text}\n\nAll items in this research, so you do not repeat one:\n{_listing(items, 0)}")
+
+
+def _review(brief: str, since: str, author: str) -> str:
+    return ("Research on the brief below is under way, and its workers have been adding records to the graph (the "
+            f"database PREMISEDB_DB names) since {since}. Review what they added for duplicates, with the "
+            f"premisedb-research skill: `premisedb list --since {since} --kind Entity` lists the new Entities; check "
+            "the new Questions the same way. For each, search the graph by name and aliases for an existing record of "
+            "the same company, campus, person or question. Where one exists, keep the record that is older or in the "
+            "base layer and fold the newer one into it: `premisedb merge KEEP_ID DUPLICATE_ID --input FILE` with "
+            f'{{"author_id": "{author}"}}. Merge only records that are plainly the same thing; leave anything doubtful '
+            'as it is, and do no other research. Reply with JSON alone: {"merged": N}.'
+            f"\n\nBrief: {brief}")
 
 
 def _report(brief: str, done: list[dict], author: str) -> str:

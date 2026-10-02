@@ -21,9 +21,12 @@ class FakeHarness:
     name = "fake"
 
     def __init__(self, *replies, write=None):
-        self.replies, self.calls, self.write = list(replies), [], write
+        self.replies, self.calls, self.reviews, self.write = list(replies), [], [], write
 
     def run(self, prompt, *, cwd, env, session_id, web, timeout, on_progress):
+        if prompt.startswith("Research on the brief below is under way"):  # A run's duplicate review, kept apart.
+            self.reviews.append({"prompt": prompt, "timeout": timeout})
+            return Reply('{"merged": 0}', "review", ())
         self.calls.append({"prompt": prompt, "cwd": cwd, "db": env["PREMISEDB_DB"], "session_id": session_id,
                            "web": web, "timeout": timeout, "fetch": env["PREMISEDB_FETCH"]})
         on_progress("Bash: Recall what the graph holds")
@@ -163,6 +166,11 @@ class ThreadTests(unittest.TestCase):
         self.assertEqual(report["session_id"], None)  # The report starts fresh, from the graph.
         self.assertEqual(turn["progress"][::2][:2], ["Planning the research", "Working on: Who are the two customers?"])
         self.assertIn("Writing the report", turn["progress"])
+        # Duplicates are reviewed after every two finished pieces (one agent) and again before the report.
+        self.assertEqual((len(harness.reviews), harness.reviews[0]["timeout"]), (2, 600))
+        self.assertIn(f"since {turn['started_at']}", harness.reviews[0]["prompt"])
+        self.assertIn("premisedb merge KEEP_ID DUPLICATE_ID", harness.reviews[0]["prompt"])
+        self.assertEqual(turn["progress"].count("Checking the new records for duplicates"), 2)
         # A follow-up plans in the session that wrote the report.
         harness = FakeHarness(json.dumps({"items": ["More"]}), worked, HarnessError("usage limit"), HarnessError("usage limit"), self.good)
         turn = self.ask(harness, "And suppliers?", thread=thread["id"], effort=60)["turns"][1]
