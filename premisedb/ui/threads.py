@@ -15,7 +15,7 @@ from ..answers import AnswerCheck, check_answer
 from ..store import RecordStore
 from .harness import HarnessError
 
-_VERSION = 2
+_VERSION = 3
 
 # What the user may give a turn, in minutes: what the agent is told, whether it may use the web, and
 # whether an agent that finishes early is asked to go on.
@@ -28,6 +28,8 @@ EFFORTS = {
 }
 RUN_EFFORTS = (60,)  # Longer than one session can hold: planned, worked an item at a time, then reported (runs.py).
 DEFAULT_EFFORT = 5
+AGENTS = (1, 2, 3, 5, 10)  # How many workers a run may have at a time.
+DEFAULT_AGENTS = 3
 USE_OF_TIME = 0.75  # An agent that has used less of its time than this is asked whether more work would help.
 
 
@@ -94,13 +96,13 @@ class ThreadStore:
                                       | {"items": [dict(item) for item in items if item["turn_id"] == turn["id"]]}
                                       for turn in turns]}
 
-    def start_turn(self, thread_id: str, question: str, effort: int = DEFAULT_EFFORT) -> int:
+    def start_turn(self, thread_id: str, question: str, effort: int = DEFAULT_EFFORT, agents: int = 1) -> int:
         if not isinstance(question, str) or not question.strip():
             raise ValueError("question must be a nonblank string")
         self.thread(thread_id)
         with self._db() as db:
-            return db.execute("INSERT INTO turns (thread_id, question, effort, status, started_at) VALUES (?, ?, ?, 'running', ?)",
-                              (thread_id, question, effort, _now())).lastrowid
+            return db.execute("""INSERT INTO turns (thread_id, question, effort, agents, status, started_at)
+                                 VALUES (?, ?, ?, ?, 'running', ?)""", (thread_id, question, effort, agents, _now())).lastrowid
 
     def add_items(self, turn_id: int, texts: list[str]) -> None:
         """Queue pieces of work for a run, in order."""
@@ -139,7 +141,7 @@ class ThreadStore:
 
     def _turn(self, turn_id: int) -> sqlite3.Row:
         with self._db() as db:
-            return db.execute("""SELECT t.id, t.thread_id, t.question, t.effort, t.started_at, th.session_id FROM turns t
+            return db.execute("""SELECT t.id, t.thread_id, t.question, t.effort, t.agents, t.started_at, th.session_id FROM turns t
                                  JOIN threads th ON th.id = t.thread_id WHERE t.id = ?""", (turn_id,)).fetchone()
 
     def _set_session(self, thread_id: str, session_id: str | None) -> None:

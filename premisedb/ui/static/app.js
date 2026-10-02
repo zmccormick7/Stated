@@ -259,7 +259,7 @@ $("ask").onsubmit = async (event) => {
   if (!question) return;
   try {
     const started = await api(state.current ? `/api/threads/${state.current}/turns` : "/api/threads",
-      { question, effort: Number($("effort").value) });
+      { question, effort: Number($("effort").value), agents: Number($("agents").value) });
     $("question").value = "";
     await select(started.thread_id);
   } catch (error) {
@@ -271,9 +271,15 @@ const HINTS = {
   1: "Answers from what your graph already holds.",
   5: "Looks through your graph, adds what it learns to your layer, and answers.",
   20: "Looks through your graph and outside sources, adds what it learns to your layer, and answers.",
-  60: "Plans the work, does it one piece at a time, and reports within the hour.",
 };
-$("effort").onchange = () => { $("hint").textContent = HINTS[$("effort").value]; };
+const RUNS = { 60: "1 hour" };  // Efforts that are research runs, which have agents.
+$("effort").onchange = $("agents").onchange = () => {
+  const span = RUNS[$("effort").value], agents = $("agents").value;
+  $("agents").hidden = !span;
+  $("hint").textContent = span
+    ? `Plans the work, runs ${agents === "1" ? "it with one agent" : `${agents} agents at a time`}, and reports within ${span}.`
+    : HINTS[$("effort").value];
+};
 $("effort").onchange();
 $("question").onkeydown = (event) => {  // Enter asks; Shift+Enter starts a new line.
   if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("ask").requestSubmit(); }
