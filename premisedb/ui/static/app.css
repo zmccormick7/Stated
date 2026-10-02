@@ -122,3 +122,7 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .run .progress { margin-top: 6px; }
 .log summary { cursor: pointer; font-size: 13px; color: #555555; }
 .log .lines { margin-top: 8px; max-height: 320px; overflow-y: auto; font-size: 12px; color: var(--mute); line-height: 1.6; border-top: 1px solid var(--line); padding-top: 6px; }
+.pieces details.piece summary { font-size: 14px; color: var(--ink); list-style: none; }
+.pieces details.piece summary::-webkit-details-marker { display: none; }
+.pieces details.piece .note { margin-top: 2px; }
+.pieces details.piece .detail { margin-top: 6px; font-size: 13px; color: #555555; }

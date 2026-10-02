@@ -143,7 +143,7 @@ class ServerTests(unittest.TestCase):
         store.start_turn(question, "Why?", 5)
         research = store.create_thread("Go deep.", harness="fake")
         run_id = store.start_turn(research, "Go deep.", 60, 1)
-        store.add_items(run_id, ["A"])
+        store.add_items(run_id, [("A", "Do A.")])
         store.next_item(run_id)
         self.harness.release.set()
         App(self.server.RequestHandlerClass.args[0].db_path, harness=self.harness)  # As on the next start.

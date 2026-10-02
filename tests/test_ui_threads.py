@@ -139,24 +139,26 @@ class ThreadTests(unittest.TestCase):
         self.assertEqual(len(harness.calls), 1)
 
     def test_an_hour_is_a_run_of_planned_work_and_a_report(self):
-        plan = json.dumps({"items": ["Who are the two customers?", " Read the\n10-K note ", "", 7]})
-        worked = json.dumps({"summary": "They are unnamed.", "new_items": ["Check the 10-Q", "Ask the 8-K", "A third"]})
+        plan = json.dumps({"items": [{"title": "Who are the two customers?", "detail": "Read the 10-K's concentration note."},
+                                     " Read the\n10-K note ", "", 7]})
+        worked = json.dumps({"summary": "They are unnamed.", "new_items": [{"title": "Check the 10-Q", "detail": "Q2 note 4."},
+                                                                           "Ask the 8-K", "A third"]})
         harness = FakeHarness(plan, worked, HarnessError("the page would not load"), "Plain words, no JSON.", "Nothing new.",
                               json.dumps({"items": []}), self.good)
         thread = self.ask(harness, "Go deep on the customers.", effort=60)
         turn = thread["turns"][0]
         self.assertEqual((turn["status"], turn["error"], turn["effort"], turn["answer"]["title"]),
                          ("done", None, 60, "Two customers were 36% of revenue."))
-        self.assertEqual([(item["text"], item["status"], item["result"]) for item in turn["items"]], [
-            ("Who are the two customers?", "done", "They are unnamed."),
-            ("Read the 10-K note", "failed", "the page would not load"),
-            ("Check the 10-Q", "done", "Plain words, no JSON."),  # A worker may add two items, no more.
-            ("Ask the 8-K", "done", "Nothing new.")])
+        self.assertEqual([(item["title"], item["text"], item["status"], item["result"]) for item in turn["items"]], [
+            ("Who are the two customers?", "Read the 10-K's concentration note.", "done", "They are unnamed."),
+            ("Read the 10-K note", "Read the 10-K note", "failed", "the page would not load"),  # A bare string is both.
+            ("Check the 10-Q", "Q2 note 4.", "done", "Plain words, no JSON."),  # A worker may add two items, no more.
+            ("Ask the 8-K", "Ask the 8-K", "done", "Nothing new.")])
         plan_call, first, *_, replan, report = harness.calls
         self.assertEqual(len(harness.calls), 7)
         self.assertIn("Plan research for the brief below", plan_call["prompt"])
         self.assertIn("3 to 6 items.\n\nBrief: Go deep on the customers.", plan_call["prompt"])
-        self.assertIn("Your item: Who are the two customers?", first["prompt"])
+        self.assertIn("Your item: Who are the two customers?\nRead the 10-K's concentration note.", first["prompt"])
         self.assertIn("- [todo] Read the 10-K note", first["prompt"])  # A worker sees the other items.
         self.assertEqual((first["session_id"], first["web"], first["fetch"], first["timeout"]), (None, True, "1", 1800))
         self.assertIn("- [done] Who are the two customers? — They are unnamed.", replan["prompt"])
@@ -166,6 +168,8 @@ class ThreadTests(unittest.TestCase):
         self.assertEqual(report["session_id"], None)  # The report starts fresh, from the graph.
         self.assertEqual(turn["progress"][::2][:2], ["Planning the research", "Working on: Who are the two customers?"])
         self.assertIn("Writing the report", turn["progress"])
+        self.assertEqual([runs._piece(g) for g in ({"detail": "Only a detail"}, {"title": " T ", "text": "old key"}, {}, 7)],
+                         [("Only a detail", "Only a detail"), ("T", "old key"), None, None])
         # Duplicates are reviewed after every two finished pieces (one agent) and again before the report.
         self.assertEqual((len(harness.reviews), harness.reviews[0]["timeout"]), (2, 600))
         self.assertIn(f"since {turn['started_at']}", harness.reviews[0]["prompt"])
@@ -232,7 +236,7 @@ class ThreadTests(unittest.TestCase):
             """A run turn left running with one piece done and one in hand, started some minutes ago."""
             thread = self.store.create_thread("Go deep.", harness="fake")
             turn_id = self.store.start_turn(thread, "Go deep.", 60, 1)
-            self.store.add_items(turn_id, ["A", "B", "C"])
+            self.store.add_items(turn_id, [("A", "Do A."), ("B", "Do B."), ("C", "Do C.")])
             self.store.finish_item(self.store.next_item(turn_id)["id"], result="Did A.")
             self.store.next_item(turn_id)
             with self.store._db() as db:
