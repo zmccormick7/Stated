@@ -50,6 +50,37 @@ class App:
         return {"values": {v.key: v.value for v in result.variables},
                 "changed": [v.key for v in result.variables if v.changed]}
 
+    def record(self, record_id: str) -> dict:
+        """A record for the reader: its text and attributes, the passages it cites, and one hop of links."""
+        with RecordStore(self.db_path) as db:
+            record = db.read(db.resolve_id(record_id))
+            citations = []
+            for citation in record.attributes.get("citations") or []:
+                if not isinstance(citation, dict):
+                    continue
+                quote = citation.get("quote")
+                if not isinstance(quote, str):
+                    try:
+                        quote = db.read_source_text(citation.get("source_id"), start_byte=citation.get("start_byte"),
+                                                    end_byte=citation.get("end_byte"))
+                    except (KeyError, ValueError):
+                        continue
+                try:
+                    title = db.read(citation["source_id"]).text.split(". ")[0][:120]
+                except (KeyError, TypeError):
+                    title = None
+                citations.append({"quote": quote, "source": citation.get("source_id"), "title": title})
+            found = db.connections(record.id, limit=50)
+            connections = []
+            for link in found.links:
+                other = found.records[link.from_id if link.to_id == record.id else link.to_id]
+                connections.append({"relation": link.relation, "direction": "in" if link.to_id == record.id else "out",
+                                    "explanation": link.explanation, "record": _preview(other)})
+        return {"id": record.id, "kind": record.kind, "text": record.text, "layer": record.layer,
+                "author_id": record.author_id, "updated_at": record.updated_at,
+                "attributes": {k: v for k, v in record.attributes.items() if k != "citations"},
+                "citations": citations, "connections": connections, "has_more": found.has_more}
+
     def ask(self, thread_id: str | None, question: str) -> dict:
         """Start a turn and answer it in the background; one turn at a time per thread."""
         if thread_id is None:
@@ -60,6 +91,13 @@ class App:
         threading.Thread(target=run_turn, args=(self.store, turn_id),
                          kwargs={"db_path": self.db_path, "harness": self.harness}, daemon=True).start()
         return {"thread_id": thread_id, "turn_id": turn_id}
+
+
+def _preview(record) -> dict:
+    """What a linked record shows as a chip: its kind, the start of its text, and its status, key and value."""
+    text = " ".join(record.text.split())
+    keep = {k: record.attributes[k] for k in ("status", "basis", "key", "value") if k in record.attributes}
+    return {"id": record.id, "kind": record.kind, "text": text if len(text) <= 200 else text[:199] + "…", **keep}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -83,6 +121,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.store.thread(path[13:]))
             except KeyError:
                 return self._error(HTTPStatus.NOT_FOUND, "no such thread")
+        if path.startswith("/api/records/"):
+            try:
+                return self._json(self.app.record(path[13:]))
+            except (KeyError, ValueError):
+                return self._error(HTTPStatus.NOT_FOUND, "no such record")
         self._error(HTTPStatus.NOT_FOUND, "not found")
 
     def do_POST(self):
