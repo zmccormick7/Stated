@@ -15,7 +15,7 @@ from ..answers import AnswerCheck, check_answer
 from ..store import RecordStore
 from .harness import HarnessError
 
-_VERSION = 3
+_VERSION = 4
 
 # What the user may give a turn, in minutes: what the agent is told, whether it may use the web, and
 # whether an agent that finishes early is asked to go on.
@@ -89,11 +89,14 @@ class ThreadStore:
             if row is None:
                 raise KeyError(thread_id)
             turns = db.execute("SELECT * FROM turns WHERE thread_id = ? ORDER BY id", (thread_id,)).fetchall()
-            items = db.execute("""SELECT w.id, w.turn_id, w.text, w.status, w.result FROM work_items w
+            items = db.execute("""SELECT w.id, w.turn_id, w.text, w.status, w.result, w.progress FROM work_items w
                                   JOIN turns t ON t.id = w.turn_id WHERE t.thread_id = ? ORDER BY w.id""", (thread_id,)).fetchall()
+            notes = db.execute("""SELECT n.id, n.turn_id, n.text, n.created_at FROM notes n
+                                  JOIN turns t ON t.id = n.turn_id WHERE t.thread_id = ? ORDER BY n.id""", (thread_id,)).fetchall()
         return dict(row) | {"turns": [dict(turn) | {key: json.loads(turn[key]) if turn[key] else None for key in
                                                     ("progress", "answer", "written", "denied")}
-                                      | {"items": [dict(item) for item in items if item["turn_id"] == turn["id"]]}
+                                      | {"items": [dict(item) for item in items if item["turn_id"] == turn["id"]],
+                                         "notes": [dict(note) for note in notes if note["turn_id"] == turn["id"]]}
                                       for turn in turns]}
 
     def start_turn(self, thread_id: str, question: str, effort: int = DEFAULT_EFFORT, agents: int = 1) -> int:
@@ -144,9 +147,46 @@ class ThreadStore:
             return [dict(row) for row in db.execute(
                 "SELECT id, text, status, result FROM work_items WHERE turn_id = ? ORDER BY id", (turn_id,))]
 
-    def add_progress(self, turn_id: int, text: str) -> None:
+    def add_progress(self, turn_id: int, text: str, item_id: int | None = None) -> None:
         with self._db() as db:
             db.execute("UPDATE turns SET progress = json_insert(progress, '$[#]', ?) WHERE id = ?", (text, turn_id))
+            if item_id is not None:
+                db.execute("UPDATE work_items SET progress = ? WHERE id = ?", (text, item_id))
+
+    def control(self, turn_id: int, action: str) -> None:
+        """What the user may ask of a running run: pause, resume, or finish (go to the report now)."""
+        changes = {"pause": "paused = 1", "resume": "paused = 0", "finish": "finish = 1"}
+        if action not in changes:
+            raise ValueError("action must be pause, resume or finish")
+        with self._db() as db:
+            row = db.execute("SELECT status, effort FROM turns WHERE id = ?", (turn_id,)).fetchone()
+            if row is None:
+                raise KeyError(turn_id)
+            if row["status"] != "running" or row["effort"] not in RUN_EFFORTS:
+                raise ValueError("only a research run that is still going can be paused, resumed or finished")
+            db.execute(f"UPDATE turns SET {changes[action]} WHERE id = ?", (turn_id,))
+
+    def asked(self, turn_id: int) -> tuple[bool, bool]:
+        """Whether the user has asked the run to pause, and whether to finish."""
+        with self._db() as db:
+            row = db.execute("SELECT paused, finish FROM turns WHERE id = ?", (turn_id,)).fetchone()
+        return bool(row["paused"]), bool(row["finish"])
+
+    def add_note(self, turn_id: int, text: str) -> None:
+        """A note from the user to steer a running run; later sessions of the run see it."""
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("note must be a nonblank string")
+        with self._db() as db:
+            row = db.execute("SELECT status, effort FROM turns WHERE id = ?", (turn_id,)).fetchone()
+            if row is None:
+                raise KeyError(turn_id)
+            if row["status"] != "running" or row["effort"] not in RUN_EFFORTS:
+                raise ValueError("notes go to a research run that is still going")
+            db.execute("INSERT INTO notes (turn_id, text, created_at) VALUES (?, ?, ?)", (turn_id, " ".join(text.split()), _now()))
+
+    def notes(self, turn_id: int) -> list[str]:
+        with self._db() as db:
+            return [row["text"] for row in db.execute("SELECT text FROM notes WHERE turn_id = ? ORDER BY id", (turn_id,))]
 
     def finish_turn(self, turn_id: int, *, answer: dict | None = None, error: str | None = None,
                     written: dict | None = None, denied: tuple[str, ...] = ()) -> None:
@@ -177,10 +217,11 @@ class Agent:
                             env=os.environ | {"PREMISEDB_DB": str(db_path), "PREMISEDB_FETCH": "1" if web else "0",
                                               "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"})
 
-    def run(self, prompt: str, session_id: str | None = None, seconds: float | None = None):
+    def run(self, prompt: str, session_id: str | None = None, seconds: float | None = None, on_progress=None):
         """One prompt in a new or resumed session, stopped when the turn's time, or `seconds`, runs out."""
         left = self.stop_at - time.monotonic()
-        reply = self._run(prompt, session_id=session_id, timeout=max(1.0, left if seconds is None else min(left, seconds)))
+        reply = self._run(prompt, session_id=session_id, timeout=max(1.0, left if seconds is None else min(left, seconds)),
+                          **({} if on_progress is None else {"on_progress": on_progress}))
         self.denied.extend(reply.denied)
         return reply
 
@@ -202,12 +243,22 @@ class Agent:
     def finish(self, turn, check: AnswerCheck) -> None:
         """Store the answer with a count of what the turn added to the workspace's own layer."""
         with RecordStore(self.db_path) as db:
-            written, own = {}, db.layers()[0].name
-            for record in db.list_records(since=turn["started_at"], limit=1000).records:
-                if record.layer == own:
-                    written[record.kind] = written.get(record.kind, 0) + 1
+            written = written_since(db, turn["started_at"])
         self.store.finish_turn(self.turn_id, answer=check.answer, written=written, denied=tuple(dict.fromkeys(self.denied)),
                                error=None if check.ok else "The agent's answer did not pass the check: " + "; ".join(check.problems))
+
+
+def written_since(db: RecordStore, since: str) -> dict[str, int]:
+    """Records added or edited in the workspace's own layer since a time, counted by kind."""
+    written, own, after = {}, db.layers()[0].name, None
+    while True:
+        page = db.list_records(since=since, after=after, limit=1000)
+        for record in page.records:
+            if record.layer == own:
+                written[record.kind] = written.get(record.kind, 0) + 1
+        if not page.has_more:
+            return written
+        after = page.records[-1].id
 
 
 def run_turn(store: ThreadStore, turn_id: int, *, db_path: str | Path, harness) -> None:

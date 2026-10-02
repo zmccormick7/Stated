@@ -100,3 +100,22 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .flow .part.rest .name, .flow .part.rest b { font-weight: 400; font-size: 12px; }
 .flow figcaption { color: var(--mute); font-size: 12px; }
 .flow figcaption:empty { display: none; }
+#ask.notes .controls select, #ask.notes #hint { display: none; }
+.run { border: 1px solid var(--ink); padding: 22px 24px; display: flex; flex-direction: column; gap: 18px; }
+.run .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.run .state { font-size: 20px; line-height: 1.3; font-weight: 600; }
+.run .muted { color: #555555; font-size: 13px; }
+.run .buttons { display: flex; gap: 8px; flex-shrink: 0; }
+.run .rule { height: 2px; background: var(--line); }
+.run .rule div { height: 2px; background: var(--ink); }
+.run .counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.run .count { display: flex; flex-direction: column; }
+.run .count b { font-size: 32px; line-height: 1.1; font-weight: 600; font-variant-numeric: tabular-nums; }
+.run .count span { font-size: 13px; color: #555555; }
+.pieces { display: flex; flex-direction: column; font-size: 14px; }
+.pieces h2 { margin: 0 0 6px; font-size: 13px; font-weight: 400; color: var(--mute); }
+.pieces .piece, .summary .piece { border-top: 1px solid var(--line); padding: 8px 0; display: flex; flex-direction: column; }
+.pieces details { border-top: 1px solid var(--line); padding: 6px 0 0; }
+.pieces summary, .summary summary { cursor: pointer; font-size: 13px; color: #555555; }
+.summary { font-size: 14px; }
+.summary .piece .note { white-space: normal; }

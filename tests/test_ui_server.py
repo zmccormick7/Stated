@@ -152,6 +152,18 @@ class ServerTests(unittest.TestCase):
         self.assertEqual((turn["status"], turn["items"][0]["status"], turn["progress"][0]),
                          ("done", "done", "Picking the research up again after a restart, with 1 piece of work put back in the queue"))
 
+    def test_a_running_run_takes_controls_and_notes(self):
+        store = self.server.RequestHandlerClass.args[0].store
+        thread = store.create_thread("Go deep.", harness="fake")
+        turn_id = store.start_turn(thread, "Go deep.", 60, 3)  # Left running by hand: nothing is answering it.
+        self.assertEqual(self.call("POST", f"/api/turns/{turn_id}/control", {"action": "pause"}), (200, {"ok": True}))
+        self.assertEqual(self.call("POST", f"/api/turns/{turn_id}/notes", {"text": "Look at the lenders."}), (201, {"ok": True}))
+        turn = self.call("GET", f"/api/threads/{thread}")[1]["turns"][0]
+        self.assertEqual((turn["paused"], turn["finish"], turn["notes"][0]["text"]), (1, 0, "Look at the lenders."))
+        self.assertEqual(self.call("POST", f"/api/turns/{turn_id}/control", {"action": "halt"})[0], 400)
+        self.assertEqual(self.call("POST", f"/api/turns/{turn_id}/notes", {"text": " "})[0], 400)
+        self.assertEqual(self.call("POST", "/api/turns/999/control", {"action": "pause"})[0], 404)
+
     def test_status_describes_the_workspace(self):
         status, result = self.call("GET", "/api/status")
         self.assertEqual((status, result["harness"], result["harness_found"]), (200, "fake", False))

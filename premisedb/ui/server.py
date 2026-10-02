@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 from ..store import RecordStore
 from .harness import ClaudeCode, Codex
-from .threads import AGENTS, DEFAULT_AGENTS, DEFAULT_EFFORT, EFFORTS, RUN_EFFORTS, ThreadStore, run_turn
+from .threads import AGENTS, DEFAULT_AGENTS, DEFAULT_EFFORT, EFFORTS, RUN_EFFORTS, ThreadStore, run_turn, written_since
 
 STATIC = Path(__file__).with_name("static")
 HARNESSES = {"claude-code": ClaudeCode, "codex": Codex}
@@ -70,6 +70,16 @@ class App:
         return {"workspace": str(self.db_path.parent), "database": str(self.db_path), "layers": layers,
                 "harness": self.harness.name,
                 "harness_found": shutil.which(getattr(self.harness, "executable", self.harness.name)) is not None}
+
+    def thread(self, thread_id: str) -> dict:
+        """A thread with its turns; a research run still going gets a live count of what it has added."""
+        thread = self.store.thread(thread_id)
+        if any(turn["status"] == "running" and turn["effort"] in RUN_EFFORTS for turn in thread["turns"]):
+            with RecordStore(self.db_path) as db:
+                for turn in thread["turns"]:
+                    if turn["status"] == "running" and turn["effort"] in RUN_EFFORTS:
+                        turn["written"] = written_since(db, turn["started_at"])
+        return thread
 
     def record(self, record_id: str) -> dict:
         """A record for the reader: its text and attributes, the passages it cites, and one hop of links."""
@@ -148,7 +158,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self.app.store.threads())
         if path.startswith("/api/threads/"):
             try:
-                return self._json(self.app.store.thread(path[13:]))
+                return self._json(self.app.thread(path[13:]))
             except KeyError:
                 return self._error(HTTPStatus.NOT_FOUND, "no such thread")
         if path.startswith("/api/records/"):
@@ -169,6 +179,12 @@ class Handler(BaseHTTPRequestHandler):
             elif path.startswith("/api/threads/") and path.endswith("/turns"):
                 self._json(self.app.ask(path[13:-6], body.get("question"), body.get("effort"), body.get("agents")),
                            HTTPStatus.CREATED)
+            elif path.startswith("/api/turns/") and path.endswith("/control"):
+                self.app.store.control(int(path[11:-8]), body.get("action"))
+                self._json({"ok": True})
+            elif path.startswith("/api/turns/") and path.endswith("/notes"):
+                self.app.store.add_note(int(path[11:-6]), body.get("text"))
+                self._json({"ok": True}, HTTPStatus.CREATED)
             elif path.startswith("/api/models/") and path.endswith("/evaluate"):
                 self._json(self.app.evaluate(path[12:-9], body.get("overrides")))
             else:

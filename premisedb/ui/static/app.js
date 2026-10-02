@@ -14,6 +14,7 @@ const el = (tag, attrs = {}, children = []) => {
   node.append(...children);
   return node;
 };
+const RUNS = { 60: "1 hour", 180: "3 hours", 480: "8 hours" };  // Efforts that are research runs, which have agents.
 const escape = (text) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // Text with [n] markers becomes paragraphs (split on blank lines) whose markers link to the sources list.
@@ -190,24 +191,88 @@ function renderAnswer(answer) {
   return node;
 }
 
+// A research run's time, in the user's terms: "1 h 12 min of 3 hours".
+function used(turn) {
+  const end = turn.finished_at ? new Date(turn.finished_at) : new Date();
+  const minutes = Math.max(0, Math.round((end - new Date(turn.started_at)) / 60000));
+  const text = minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes} min`;
+  return { minutes, text };
+}
+
+// The lists of a run's pieces of work: the first few shown, the rest behind "Show all".
+function pieces(title, items, shown = 4) {
+  const row = (item) => el("div", { class: "piece" }, [el("div", { text: item.text }),
+    ...(item.status === "running" && item.progress ? [el("div", { class: "note", text: item.progress })] : [])]);
+  const section = el("section", { class: "pieces" }, [el("h2", { text: title }), ...items.slice(0, shown).map(row)]);
+  if (items.length > shown) {
+    section.append(el("details", {}, [el("summary", { text: `Show all ${items.length}` }), ...items.slice(shown).map(row)]));
+  }
+  return section;
+}
+
+// A research run while it goes: its state, time and counts in one box, then what is in hand, done and to do.
+function renderRun(turn) {
+  const items = turn.items, last = turn.progress[turn.progress.length - 1] || "";
+  const running = items.filter((i) => i.status === "running"), done = items.filter((i) => i.status === "done").reverse();
+  const todo = items.filter((i) => i.status === "todo"), added = Object.values(turn.written || {}).reduce((a, b) => a + b, 0);
+  const time = `${used(turn).text} of ${RUNS[turn.effort]} · ${turn.agents === 1 ? "1 agent" : `${turn.agents} agents`}`;
+  const waiting = last.startsWith("Waiting for your usage limit");
+  const heading = turn.finish ? "Finishing: writing the report" : turn.paused ? "Paused"
+    : waiting ? last : items.length ? "Researching" : "Planning the research";
+  const sub = turn.paused ? `${time} · work in hand finishes, nothing new starts` : time;
+  const control = async (action) => { try { await api(`/api/turns/${turn.id}/control`, { action }); await refresh(); } catch (e) { alert(e.message); } };
+  const pause = el("button", { text: turn.paused ? "Resume" : "Pause" });
+  pause.onclick = () => control(turn.paused ? "resume" : "pause");
+  const finish = el("button", { text: "Finish now" });
+  finish.onclick = () => control("finish");
+  const count = (n, label) => el("div", { class: "count" }, [el("b", { text: String(n) }), el("span", { text: label })]);
+  const box = el("section", { class: "run" }, [
+    el("div", { class: "head" }, [el("div", {}, [el("div", { class: "state", text: heading }), el("div", { class: "muted", text: sub })]),
+                                  ...(turn.finish ? [] : [el("div", { class: "buttons" }, [pause, finish])])]),
+    el("div", { class: "rule", role: "img", "aria-label": time }, [el("div", { style: `width: ${Math.min(100, used(turn).minutes / turn.effort * 100)}%` })]),
+    el("div", { class: "counts" }, [count(done.length, "done"), count(running.length, "in progress"), count(todo.length, "to do"),
+                                    count(added, "records added to your layer")]),
+  ]);
+  const node = [box];
+  if (running.length) node.push(pieces("In progress", running, 10));
+  if (done.length) node.push(pieces("Done", done));
+  if (todo.length) node.push(pieces("To do", todo));
+  return node;
+}
+
+// A finished run folds down to one line above its report.
+function runSummary(turn) {
+  const done = turn.items.filter((i) => i.status === "done");
+  const added = Object.values(turn.written || {}).reduce((a, b) => a + b, 0);
+  const summary = `Researched for ${used(turn).text} with ${turn.agents === 1 ? "1 agent" : `${turn.agents} agents`}: `
+    + `${done.length} piece${done.length === 1 ? "" : "s"} of work, ${added} record${added === 1 ? "" : "s"} added to your layer`;
+  return el("details", { class: "summary" }, [el("summary", { text: summary }),
+    ...done.map((item) => el("div", { class: "piece" }, [el("div", { text: item.text }), el("div", { class: "note", text: item.result || "" })]))]);
+}
+
 function renderTurn(turn) {
   const node = el("div", { class: "turn" }, [el("div", { class: "question", text: turn.question })]);
-  if (turn.status === "running") {
+  for (const note of turn.notes || []) {
+    const at = new Date(note.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    node.append(el("div", { class: "question", text: `Added ${at}: ${note.text}` }));
+  }
+  const isRun = Boolean(RUNS[turn.effort]);
+  if (turn.status === "running" && isRun) {
+    node.append(...renderRun(turn));
+  } else if (turn.status === "running") {
     const last = turn.progress[turn.progress.length - 1];
     node.append(el("div", { class: "progress", text: last ? `${last}…` : "Starting…" }));
-    const items = turn.items || [];  // A research run: how far through its pieces of work it is.
-    if (items.length) {
-      const done = items.filter((item) => item.status === "done").length;
-      node.append(el("div", { class: "note", text: `${done} of ${items.length} pieces of work done` }));
-    }
   } else if (turn.status === "done") {
+    if (isRun) node.append(runSummary(turn));
     node.append(renderAnswer(turn.answer));
   } else {  // Refused tools are shown only here, where they may explain the failure.
     const denied = (turn.denied || []).length ? ` Refused under your settings: ${turn.denied.join(", ")}.` : "";
     node.append(el("div", { class: "error", text: (turn.error || "The answer failed.") + denied }));
   }
   const written = Object.entries(turn.written || {}).map(([kind, n]) => `${n} ${kind}${n === 1 ? "" : "s"}`);
-  if (written.length) node.append(el("div", { class: "note", text: `Added to your layer: ${written.join(", ")}` }));
+  if (written.length && !isRun) {  // A run shows its count in its box, then in its summary line.
+    node.append(el("div", { class: "note", text: `Added to your layer: ${written.join(", ")}` }));
+  }
   return node;
 }
 
@@ -222,7 +287,14 @@ function render() {
   $("main").classList.toggle("empty", !state.thread);
   main.replaceChildren(...(state.thread ? state.thread.turns.map(renderTurn) : []));
   renderStatus();
-  $("question").placeholder = state.thread ? "Ask a follow-up" : "Ask a question";
+  const run = runningRun();
+  $("question").placeholder = run ? "Add a note to steer this research" : state.thread ? "Ask a follow-up" : "Ask a question";
+  $("ask").classList.toggle("notes", Boolean(run));
+  $("ask").querySelector("button").textContent = run ? "Add" : "Ask";
+}
+
+function runningRun() {
+  return state.thread && state.thread.turns.find((turn) => turn.status === "running" && RUNS[turn.effort]);
 }
 
 // Status lives in the sidebar's foot; only a problem gets a sentence under the question box.
@@ -257,6 +329,11 @@ $("ask").onsubmit = async (event) => {
   event.preventDefault();
   const question = $("question").value.trim();
   if (!question) return;
+  const run = runningRun();
+  if (run) {  // A note to the run, not a new question.
+    try { await api(`/api/turns/${run.id}/notes`, { text: question }); $("question").value = ""; await refresh(); } catch (e) { alert(e.message); }
+    return;
+  }
   try {
     const started = await api(state.current ? `/api/threads/${state.current}/turns` : "/api/threads",
       { question, effort: Number($("effort").value), agents: Number($("agents").value) });
@@ -272,7 +349,6 @@ const HINTS = {
   5: "Looks through your graph, adds what it learns to your layer, and answers.",
   20: "Looks through your graph and outside sources, adds what it learns to your layer, and answers.",
 };
-const RUNS = { 60: "1 hour", 180: "3 hours", 480: "8 hours" };  // Efforts that are research runs, which have agents.
 $("effort").onchange = $("agents").onchange = () => {
   const span = RUNS[$("effort").value], agents = $("agents").value;
   $("agents").hidden = !span;

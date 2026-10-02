@@ -18,6 +18,7 @@ RETRY_MINUTES = 15  # How long to wait at a usage limit when the harness does no
 REPORT_WAIT_HOURS = 6  # How long a finished run's report will wait for a usage limit to reset.
 _sleep = time.sleep
 REVIEW_MINUTES = 10  # What a review of the new records for duplicates may take.
+POLL_SECONDS = 5  # How often a run looks for the user's pause, resume and finish while workers are busy.
 START_MINUTES = 5  # A piece of work is not started with less working time left than this: it would only be cut off.
 
 
@@ -68,8 +69,9 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
         usage limit goes back in the queue."""
         store.add_progress(turn_id, f"Working on: {item['text']}")
         try:
-            reply = agent.run(_work(brief, item["text"], store.items(turn_id), agent.name), None,
-                              min(2 * ITEM_MINUTES * 60, max(1.0, left())))
+            reply = agent.run(_work(brief, item["text"], store.items(turn_id), agent.name, store.notes(turn_id)), None,
+                              min(2 * ITEM_MINUTES * 60, max(1.0, left())),
+                              on_progress=lambda line: store.add_progress(turn_id, line, item["id"]))
         except UsageLimit as limit:
             store.requeue_item(item["id"])
             return limit
@@ -103,18 +105,22 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
     failures, error, working, limit = 0, "The time ran out before any of the work was done.", set(), None
     reviewed = sum(item["status"] == "done" for item in store.items(turn_id))  # After a restart: reviewed as the run goes on.
     reviewing, done_count = None, lambda: sum(item["status"] == "done" for item in store.items(turn_id))
-    with ThreadPoolExecutor(agents) as pool, ThreadPoolExecutor(1) as reviewer:
+    pool, reviewer, finish = ThreadPoolExecutor(agents), ThreadPoolExecutor(1), False
+    try:
         while True:
+            paused, finish = store.asked(turn_id)
+            if finish:  # The user wants the report now: pieces in hand run on, but the run does not wait for them.
+                break
             if limit and not working:  # Everyone has stopped at the limit: wait it out if the time allows.
                 if _pause(limit) > left() - START_MINUTES * 60:
                     break
                 rest(limit)
                 limit = None
-            while (not limit and len(working) < agents and left() > START_MINUTES * 60 and failures < FAILURES
-                   and (item := store.next_item(turn_id))):
+            while (not limit and not paused and len(working) < agents and left() > START_MINUTES * 60
+                   and failures < FAILURES and (item := store.next_item(turn_id))):
                 working.add(pool.submit(work, item))
             if working:  # Wait for a worker to finish; it may have queued more.
-                finished, working = wait(working, return_when=FIRST_COMPLETED)
+                finished, working = wait(working, timeout=POLL_SECONDS, return_when=FIRST_COMPLETED)
                 for failure in (future.result() for future in finished):
                     if isinstance(failure, UsageLimit):
                         limit, error = failure, str(failure)
@@ -124,17 +130,26 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
                 if (reviewing is None or reviewing.done()) and done_count() - reviewed >= 2 * agents and left() > START_MINUTES * 60:
                     reviewed, reviewing = done_count(), reviewer.submit(review)
                 continue
+            if left() <= START_MINUTES * 60 or failures >= FAILURES:
+                break
+            if paused:  # Nothing in hand and nothing new starts until the user resumes.
+                _sleep(POLL_SECONDS)
+                continue
             # Nobody is working and nothing was claimed: stop, or with time in hand ask what else would serve the brief.
-            if left() <= START_MINUTES * 60 or failures >= FAILURES or time.monotonic() - started >= USE_OF_TIME * effort * 60:
+            if time.monotonic() - started >= USE_OF_TIME * effort * 60:
                 break
             store.add_progress(turn_id, "Looking for what else would serve the brief")
             try:
-                if not planned(patient(lambda: agent.run(_replan(brief, store.items(turn_id), round(left() / 60))), work_ends)):
+                if not planned(patient(lambda: agent.run(_replan(brief, store.items(turn_id), round(left() / 60),
+                                                                 store.notes(turn_id))), work_ends)):
                     break
             except HarnessError:
                 break
-        if reviewing is not None:
+        if reviewing is not None and not finish:
             reviewing.result()
+    finally:
+        pool.shutdown(wait=not finish)
+        reviewer.shutdown(wait=not finish)
     done = [item for item in store.items(turn_id) if item["status"] == "done"]
     if not done:
         return agent.fail(error)
@@ -144,7 +159,7 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
     def report():
         store.add_progress(turn_id, "Writing the report")
         agent.stop_at = time.monotonic() + 2 * REPORT_MINUTES * 60  # The report has its own allowance.
-        return agent.answer(_report(brief, done, agent.name), None)
+        return agent.answer(_report(brief, done, agent.name, store.notes(turn_id)), None)
 
     try:  # The work is done, so a usage limit here is worth waiting out even past the run's time.
         check, session_id, _ = patient(report, time.monotonic() + REPORT_WAIT_HOURS * 3600)
@@ -180,17 +195,22 @@ def _listing(items: list[dict], results: int = 400) -> str:
         f" — {item['result'][:results]}" if item["status"] == "done" and results else "") for item in items)
 
 
-def _replan(brief: str, items: list[dict], minutes: int) -> str:
+def _notes(notes: list[str]) -> str:
+    return "\n\nNotes from the user while this research was going, which take precedence:\n" + "\n".join(
+        f"- {note}" for note in notes) if notes else ""
+
+
+def _replan(brief: str, items: list[dict], minutes: int, notes: list[str] = ()) -> str:
     return (f"Research on the brief below has done the work listed, and about {minutes} minutes of working time "
             "remain. With the premisedb-research skill, look at what the graph now holds and decide what further "
             "pieces of work would most improve the answer to the brief: a thin or single-sourced claim, a figure not "
             "checked against a primary source, a counterparty or period not yet covered, an open Question that "
             f"bears on it. Each will be done by a fresh worker in about {ITEM_MINUTES} minutes. Reply with JSON "
             'alone: {"items": ["...", "..."]}, or {"items": []} if the brief is already well served.'
-            f"\n\nBrief: {brief}\n\nWork so far:\n{_listing(items)}")
+            f"\n\nBrief: {brief}{_notes(notes)}\n\nWork so far:\n{_listing(items)}")
 
 
-def _work(brief: str, text: str, items: list[dict], author: str) -> str:
+def _work(brief: str, text: str, items: list[dict], author: str, notes: list[str] = ()) -> str:
     return ("You are one worker in a longer piece of research. Other workers take the other items, each starting "
             "fresh like you, so only what you put in the graph carries forward. Use the premisedb-research skill; the "
             f"research database is the one PREMISEDB_DB names; use the author ID {author} for anything you write. "
@@ -200,7 +220,8 @@ def _work(brief: str, text: str, items: list[dict], author: str) -> str:
             'could not settle. Then reply with JSON alone: {"summary": "two or three sentences on what you found '
             'and added", "new_items": ["at most two further pieces of work this turned up that are not on the list '
             'and matter to the brief"]}.'
-            f"\n\nBrief: {brief}\n\nYour item: {text}\n\nAll items in this research, so you do not repeat one:\n{_listing(items, 0)}")
+            f"\n\nBrief: {brief}{_notes(notes)}\n\nYour item: {text}\n\nAll items in this research, so you do not repeat one:"
+            f"\n{_listing(items, 0)}")
 
 
 def _review(brief: str, since: str, author: str) -> str:
@@ -215,9 +236,9 @@ def _review(brief: str, since: str, author: str) -> str:
             f"\n\nBrief: {brief}")
 
 
-def _report(brief: str, done: list[dict], author: str) -> str:
+def _report(brief: str, done: list[dict], author: str, notes: list[str] = ()) -> str:
     return ("Research on the brief below has finished. The workers put what they found in the graph (the database "
             f"PREMISEDB_DB names, mostly under the author ID {author}); their summaries are below, but the graph is the "
             "record. Recall from it with the premisedb-research skill, then answer the brief as an answer document "
             "with the premisedb-answer skill, checked with check-answer. Answer the brief itself; do not narrate the "
-            f"work or list what was not done.\n\nBrief: {brief}\n\nWork done:\n{_listing(done)}")
+            f"work or list what was not done.\n\nBrief: {brief}{_notes(notes)}\n\nWork done:\n{_listing(done)}")
