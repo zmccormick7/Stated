@@ -37,6 +37,12 @@ class ServerTests(unittest.TestCase):
         db_path = Path(directory.name) / "research.sqlite"
         with RecordStore(db_path) as db:
             finding = db.create("Finding", text="Two customers were 22% and 14% of revenue.", author_id="a").id
+            self.finding = finding
+            self.entity = db.create("Entity", text="PowerFrame Inc. (PowerFrame)", author_id="a").id
+            db.create_link(finding, self.entity, "about", author_id="a")
+            source = db.ingest_source(description="PowerFrame 10-K", document_text="Sales to one customer were 22%.",
+                                      author_id="a").id
+            db.patch(finding, author_id="a", citations=[{"source_id": source, "quote": "one customer were 22%"}])
             self.model = db.create("Model", text="Revenue model", author_id="a").id
             for attributes in ({"key": "growth", "role": "input", "value": 0.4},
                                {"key": "revenue", "role": "output", "value": 541.3, "formula": "386.6 * (1 + growth)"}):
@@ -101,6 +107,20 @@ class ServerTests(unittest.TestCase):
         self.assertAlmostEqual(result["values"]["revenue"], 463.92)
         self.assertEqual(self.call("POST", f"/api/models/{self.model}/evaluate", {"overrides": {"tariff": 1}})[0], 400)
         self.assertEqual(self.call("POST", "/api/models/missing/evaluate", {"overrides": {}})[0], 404)
+
+    def test_a_record_is_served_with_its_citations_and_connections(self):
+        status, record = self.call("GET", f"/api/records/{self.finding[:8]}")
+        self.assertEqual((status, record["id"], record["kind"], record["layer"]), (200, self.finding, "Finding", "workspace"))
+        self.assertEqual(record["citations"], [{"quote": "one customer were 22%", "source": record["citations"][0]["source"],
+                                                "title": "PowerFrame 10-K"}])
+        self.assertEqual([(c["relation"], c["direction"], c["record"]["kind"]) for c in record["connections"]],
+                         [("about", "out", "Entity"), ("supported_by", "out", "Source")])
+        self.assertEqual(record["connections"][0]["record"], {"id": self.entity, "kind": "Entity",
+                                                              "text": "PowerFrame Inc. (PowerFrame)"})
+        self.assertNotIn("citations", record["attributes"])
+        status, entity = self.call("GET", f"/api/records/{self.entity}")
+        self.assertEqual((entity["connections"][0]["direction"], entity["connections"][0]["record"]["id"]), ("in", self.finding))
+        self.assertEqual(self.call("GET", "/api/records/missing")[0], 404)
 
     def test_skills_are_installed_and_updated(self):
         with TemporaryDirectory() as directory:

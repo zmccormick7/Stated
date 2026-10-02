@@ -45,7 +45,15 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .answer .sources { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink); }
 .answer .sources summary { cursor: pointer; color: #555555; }
 .answer .sources details[open] summary { color: var(--ink); }
-.answer .sources details p { margin: 6px 0 0; font-size: 13px; }
+.answer .sources .record { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; }
+.answer .sources .record p { margin: 0; font-size: 13px; }
+.answer .sources .record blockquote { margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); }
+.answer .sources .record blockquote p { font-style: italic; font-size: 13px; }
+.answer .sources .record blockquote small { display: block; color: var(--mute); font-size: 12px; }
+.answer .sources .links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.answer .sources .links li { display: flex; align-items: baseline; gap: 8px; }
+.answer .sources .links span { flex-shrink: 0; width: 110px; text-align: right; }
+.answer .sources .links button, .answer .sources .back { height: auto; padding: 0; border: 0; background: none; text-align: left; font-size: 13px; text-decoration: underline; cursor: pointer; }
 .answer .sources .muted { color: var(--mute); font-size: 12px; }
 .progress { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .error { border: 1px solid var(--ink); padding: 10px 14px; font-size: 14px; }

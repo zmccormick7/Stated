@@ -140,13 +140,42 @@ function renderFlow(block) {
     body, el("figcaption", { text: [block.caption, block.unit].filter(Boolean).join(" · ") })]);
 }
 
-// A source entry: what the record says, in a line, opening to its full text, the quoted document and the ID.
+// A source entry: what the record says, in a line, opening to the record itself.
 function renderSource(source, i) {
   const text = source.text || `${source.kind} ${source.record.slice(0, 8)}`;
   const head = text.length > 150 ? text.slice(0, 149) + "…" : text;
-  const detail = [el("p", { text }), ...(source.cited ? [el("p", { class: "muted", text: `Quoted from ${source.cited.title}` })] : []),
-                  el("p", { class: "muted", text: `${source.kind} ${source.record}` })];
-  return el("li", { id: `source-${i + 1}` }, [el("details", {}, [el("summary", { text: head }), ...detail])]);
+  const body = el("div", { class: "record" });
+  const details = el("details", {}, [el("summary", { text: head }), body]);
+  details.ontoggle = () => { if (details.open && !body.hasChildNodes()) openRecord(body, source.record, []); };
+  return el("li", { id: `source-${i + 1}` }, [details]);
+}
+
+// Fetch a record into a container and draw it: text, what it rests on, and one hop of links, each of
+// which opens in the same place. `trail` is the records opened before it, for the Back link.
+async function openRecord(container, recordId, trail) {
+  container.replaceChildren(el("p", { class: "muted", text: "Loading…" }));
+  let record;
+  try { record = await api(`/api/records/${recordId}`); } catch (error) {
+    return container.replaceChildren(el("p", { class: "muted", text: error.message }));
+  }
+  const attrs = record.attributes || {};
+  const facts = [record.kind, attrs.basis, attrs.status, attrs.key && `key ${attrs.key}`,
+                 attrs.value !== undefined && `value ${JSON.stringify(attrs.value)}`, attrs.formula && `formula ${attrs.formula}`,
+                 record.layer && `${record.layer} layer`, record.author_id].filter(Boolean).join(" · ");
+  const nodes = [el("p", { text: record.text }), el("p", { class: "muted", text: facts })];
+  for (const citation of record.citations || [])
+    nodes.push(el("blockquote", {}, [el("p", { text: `“${citation.quote}”` }), el("small", { text: citation.title || "" })]));
+  if ((record.connections || []).length) nodes.push(el("ul", { class: "links" }, record.connections.map((c) => {
+    const chip = el("button", { type: "button", text: `${c.record.kind}: ${c.record.text}` });
+    chip.onclick = () => openRecord(container, c.record.id, [...trail, record]);
+    return el("li", {}, [el("span", { class: "muted", text: c.direction === "out" ? `${c.relation} →` : `← ${c.relation}` }), chip]);
+  })));
+  if (trail.length) {
+    const back = el("button", { type: "button", class: "back", text: `Back to ${trail[trail.length - 1].kind}` });
+    back.onclick = () => openRecord(container, trail[trail.length - 1].id, trail.slice(0, -1));
+    nodes.unshift(back);
+  }
+  container.replaceChildren(...nodes);
 }
 
 function renderAnswer(answer) {
