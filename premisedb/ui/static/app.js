@@ -195,6 +195,11 @@ function renderTurn(turn) {
   if (turn.status === "running") {
     const last = turn.progress[turn.progress.length - 1];
     node.append(el("div", { class: "progress", text: last ? `${last}…` : "Starting…" }));
+    const items = turn.items || [];  // A research run: how far through its pieces of work it is.
+    if (items.length) {
+      const done = items.filter((item) => item.status === "done").length;
+      node.append(el("div", { class: "note", text: `${done} of ${items.length} pieces of work done` }));
+    }
   } else if (turn.status === "done") {
     node.append(renderAnswer(turn.answer));
   } else {  // Refused tools are shown only here, where they may explain the failure.
@@ -266,6 +271,7 @@ const HINTS = {
   1: "Answers from what your graph already holds.",
   5: "Looks through your graph, adds what it learns to your layer, and answers.",
   20: "Looks through your graph and outside sources, adds what it learns to your layer, and answers.",
+  60: "Plans the work, does it one piece at a time, and reports within the hour.",
 };
 $("effort").onchange = () => { $("hint").textContent = HINTS[$("effort").value]; };
 $("effort").onchange();

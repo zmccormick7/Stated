@@ -95,7 +95,7 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(self.harness.web)
         for effort in (7, "5", True):
             self.assertEqual(self.call("POST", "/api/threads", {"question": "Why?", "effort": effort}),
-                             (400, {"error": "effort must be one of 1, 5, 20 minutes"}))
+                             (400, {"error": "effort must be one of 1, 5, 20, 60 minutes"}))
         self.assertEqual(len(self.call("GET", "/api/threads")[1]), 2)
         for method, path, body, status in (("GET", "/api/threads/missing", None, 404),
                                            ("POST", "/api/threads/missing/turns", {"question": "x"}, 404),

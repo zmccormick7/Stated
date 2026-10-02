@@ -15,7 +15,7 @@ from ..answers import AnswerCheck, check_answer
 from ..store import RecordStore
 from .harness import HarnessError
 
-_VERSION = 1
+_VERSION = 2
 
 # What the user may give a turn, in minutes: what the agent is told, whether it may use the web, and
 # whether an agent that finishes early is asked to go on.
@@ -26,6 +26,7 @@ EFFORTS = {
     20: ("You have about twenty minutes. Where the graph falls short, go to outside sources on the web, ingest "
          "what you rely on with `premisedb ingest --url` and add what you learn to your layer.", True, True),
 }
+RUN_EFFORTS = (60,)  # Longer than one session can hold: planned, worked an item at a time, then reported (runs.py).
 DEFAULT_EFFORT = 5
 USE_OF_TIME = 0.75  # An agent that has used less of its time than this is asked whether more work would help.
 
@@ -86,16 +87,43 @@ class ThreadStore:
             if row is None:
                 raise KeyError(thread_id)
             turns = db.execute("SELECT * FROM turns WHERE thread_id = ? ORDER BY id", (thread_id,)).fetchall()
+            items = db.execute("""SELECT w.id, w.turn_id, w.text, w.status, w.result FROM work_items w
+                                  JOIN turns t ON t.id = w.turn_id WHERE t.thread_id = ? ORDER BY w.id""", (thread_id,)).fetchall()
         return dict(row) | {"turns": [dict(turn) | {key: json.loads(turn[key]) if turn[key] else None for key in
-                                                    ("progress", "answer", "written", "denied")} for turn in turns]}
+                                                    ("progress", "answer", "written", "denied")}
+                                      | {"items": [dict(item) for item in items if item["turn_id"] == turn["id"]]}
+                                      for turn in turns]}
 
-    def start_turn(self, thread_id: str, question: str) -> int:
+    def start_turn(self, thread_id: str, question: str, effort: int = DEFAULT_EFFORT) -> int:
         if not isinstance(question, str) or not question.strip():
             raise ValueError("question must be a nonblank string")
         self.thread(thread_id)
         with self._db() as db:
-            return db.execute("INSERT INTO turns (thread_id, question, status, started_at) VALUES (?, ?, 'running', ?)",
-                              (thread_id, question, _now())).lastrowid
+            return db.execute("INSERT INTO turns (thread_id, question, effort, status, started_at) VALUES (?, ?, ?, 'running', ?)",
+                              (thread_id, question, effort, _now())).lastrowid
+
+    def add_items(self, turn_id: int, texts: list[str]) -> None:
+        """Queue pieces of work for a run, in order."""
+        with self._db() as db:
+            db.executemany("INSERT INTO work_items (turn_id, text) VALUES (?, ?)", [(turn_id, text) for text in texts])
+
+    def next_item(self, turn_id: int) -> dict | None:
+        """Claim the first piece of work nobody has started; None when the queue is empty."""
+        with self._db() as db:
+            row = db.execute("""UPDATE work_items SET status = 'running', started_at = ? WHERE id = (
+                                    SELECT id FROM work_items WHERE turn_id = ? AND status = 'todo' ORDER BY id LIMIT 1)
+                                RETURNING id, text""", (_now(), turn_id)).fetchone()
+        return None if row is None else dict(row)
+
+    def finish_item(self, item_id: int, *, result: str | None = None, error: str | None = None) -> None:
+        with self._db() as db:
+            db.execute("UPDATE work_items SET status = ?, result = ?, finished_at = ? WHERE id = ?",
+                       ("done" if error is None else "failed", result if error is None else error, _now(), item_id))
+
+    def items(self, turn_id: int) -> list[dict]:
+        with self._db() as db:
+            return [dict(row) for row in db.execute(
+                "SELECT id, text, status, result FROM work_items WHERE turn_id = ? ORDER BY id", (turn_id,))]
 
     def add_progress(self, turn_id: int, text: str) -> None:
         with self._db() as db:
@@ -111,7 +139,7 @@ class ThreadStore:
 
     def _turn(self, turn_id: int) -> sqlite3.Row:
         with self._db() as db:
-            return db.execute("""SELECT t.thread_id, t.question, t.started_at, th.session_id FROM turns t
+            return db.execute("""SELECT t.id, t.thread_id, t.question, t.effort, t.started_at, th.session_id FROM turns t
                                  JOIN threads th ON th.id = t.thread_id WHERE t.id = ?""", (turn_id,)).fetchone()
 
     def _set_session(self, thread_id: str, session_id: str | None) -> None:
@@ -119,59 +147,82 @@ class ThreadStore:
             db.execute("UPDATE threads SET session_id = coalesce(?, session_id) WHERE id = ?", (session_id, thread_id))
 
 
-def run_turn(store: ThreadStore, turn_id: int, *, db_path: str | Path, harness, effort: int = DEFAULT_EFFORT) -> None:
-    """Answer a started turn: run its question through the harness in the workspace, check the answer
-    document against the graph, give the agent one chance to fix what the check reports, and store the
-    result. The agent works with the user's own settings and may add to the graph as it goes. `effort`,
-    in minutes, sets what the agent is told about time, whether it may use the web, and when it is stopped.
-    An agent has no clock, so at the longer efforts one that finishes early is told how much time is left
-    and asked what would most improve the answer, until it has nothing to add or the time is mostly used."""
-    turn, db_path = store._turn(turn_id), Path(db_path).resolve()
-    budget, web, goes_on = EFFORTS[effort]
-    started = time.monotonic()
-    stop_at = started + time_limit(effort)
-    run = partial(harness.run, cwd=db_path.parent, web=web, on_progress=partial(store.add_progress, turn_id), env=os.environ | {
-        "PREMISEDB_DB": str(db_path), "PREMISEDB_FETCH": "1" if web else "0", "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"})
-    denied: list[str] = []
+class Agent:
+    """The harness at work on one turn: where it runs, what it may reach, and one clock for the whole turn."""
 
-    def ask(prompt: str, session_id: str | None, may_decline: bool = False) -> tuple[AnswerCheck, str | None, bool]:
-        """One prompt and, when its answer fails the check, one repair; the last value says whether the
-        reply held a document at all, which a reply that may decline need not."""
-        reply = run(prompt, session_id=session_id, timeout=max(1.0, stop_at - time.monotonic()))
-        denied.extend(reply.denied)
-        session_id, check, document = reply.session_id or session_id, _check(db_path, reply.text), "{" in reply.text
+    def __init__(self, store: ThreadStore, turn_id: int, db_path: Path, harness, *, web: bool, seconds: float):
+        self.store, self.turn_id, self.db_path, self.name = store, turn_id, db_path, harness.name
+        self.denied: list[str] = []
+        self.stop_at = time.monotonic() + seconds
+        self._run = partial(harness.run, cwd=db_path.parent, web=web, on_progress=partial(store.add_progress, turn_id),
+                            env=os.environ | {"PREMISEDB_DB": str(db_path), "PREMISEDB_FETCH": "1" if web else "0",
+                                              "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"})
+
+    def run(self, prompt: str, session_id: str | None = None, seconds: float | None = None):
+        """One prompt in a new or resumed session, stopped when the turn's time, or `seconds`, runs out."""
+        left = self.stop_at - time.monotonic()
+        reply = self._run(prompt, session_id=session_id, timeout=max(1.0, left if seconds is None else min(left, seconds)))
+        self.denied.extend(reply.denied)
+        return reply
+
+    def answer(self, prompt: str, session_id: str | None, may_decline: bool = False) -> tuple[AnswerCheck, str | None, bool]:
+        """A prompt whose reply is an answer document and, when the document fails the check, one repair;
+        the last value says whether the reply held a document at all, which a reply that may decline need not."""
+        reply = self.run(prompt, session_id)
+        session_id, check, document = reply.session_id or session_id, _check(self.db_path, reply.text), "{" in reply.text
         if not check.ok and (document or not may_decline):
-            store.add_progress(turn_id, "Fixing the answer")
-            reply = run("The answer document did not pass check-answer:\n- " + "\n- ".join(check.problems)
-                        + "\nFix these and reply with the corrected JSON document alone.",
-                        session_id=session_id, timeout=max(1.0, stop_at - time.monotonic()))
-            denied.extend(reply.denied)
-            session_id, check = reply.session_id or session_id, _check(db_path, reply.text)
+            self.store.add_progress(self.turn_id, "Fixing the answer")
+            reply = self.run("The answer document did not pass check-answer:\n- " + "\n- ".join(check.problems)
+                             + "\nFix these and reply with the corrected JSON document alone.", session_id)
+            session_id, check = reply.session_id or session_id, _check(self.db_path, reply.text)
         return check, session_id, document
 
+    def fail(self, error: str) -> None:
+        self.store.finish_turn(self.turn_id, error=error, denied=tuple(dict.fromkeys(self.denied)))
+
+    def finish(self, turn, check: AnswerCheck) -> None:
+        """Store the answer with a count of what the turn added to the workspace's own layer."""
+        with RecordStore(self.db_path) as db:
+            written, own = {}, db.layers()[0].name
+            for record in db.list_records(since=turn["started_at"], limit=1000).records:
+                if record.layer == own:
+                    written[record.kind] = written.get(record.kind, 0) + 1
+        self.store.finish_turn(self.turn_id, answer=check.answer, written=written, denied=tuple(dict.fromkeys(self.denied)),
+                               error=None if check.ok else "The agent's answer did not pass the check: " + "; ".join(check.problems))
+
+
+def run_turn(store: ThreadStore, turn_id: int, *, db_path: str | Path, harness) -> None:
+    """Answer a started turn: run its question through the harness in the workspace, check the answer
+    document against the graph, give the agent one chance to fix what the check reports, and store the
+    result. The agent works with the user's own settings and may add to the graph as it goes. The turn's
+    effort, in minutes, sets what the agent is told about time, whether it may use the web, and when it is stopped.
+    An agent has no clock, so at the longer efforts one that finishes early is told how much time is left
+    and asked what would most improve the answer, until it has nothing to add or the time is mostly used.
+    The efforts in RUN_EFFORTS are research runs, which runs.py carries out."""
+    turn, db_path = store._turn(turn_id), Path(db_path).resolve()
+    effort = turn["effort"]
+    if effort in RUN_EFFORTS:
+        from .runs import run_research
+        return run_research(store, turn, db_path=db_path, harness=harness, effort=effort)
+    budget, web, goes_on = EFFORTS[effort]
+    started = time.monotonic()
+    agent = Agent(store, turn_id, db_path, harness, web=web, seconds=time_limit(effort))
     try:
-        check, session_id, _ = ask(_prompt(turn["question"], harness.name, budget, first=turn["session_id"] is None),
-                                   turn["session_id"])
+        check, session_id, _ = agent.answer(_prompt(turn["question"], harness.name, budget, first=turn["session_id"] is None),
+                                            turn["session_id"])
         store._set_session(turn["thread_id"], session_id)
     except HarnessError as error:
-        store.finish_turn(turn_id, error=str(error), denied=tuple(dict.fromkeys(denied)))
-        return
+        return agent.fail(str(error))
     while goes_on and check.ok and session_id and time.monotonic() - started < USE_OF_TIME * effort * 60:
         store.add_progress(turn_id, "Looking for what would improve the answer")
         try:
-            again, session_id, document = ask(_go_on(time.monotonic() - started, effort), session_id, True)
+            again, session_id, document = agent.answer(_go_on(time.monotonic() - started, effort), session_id, True)
         except HarnessError:  # The answer in hand stands.
             break
         if not document or not again.ok or again.answer == check.answer:
             break
         check = again
-    with RecordStore(db_path) as db:
-        written, own = {}, db.layers()[0].name
-        for record in db.list_records(since=turn["started_at"], limit=1000).records:
-            if record.layer == own:
-                written[record.kind] = written.get(record.kind, 0) + 1
-    store.finish_turn(turn_id, answer=check.answer, written=written, denied=tuple(dict.fromkeys(denied)),
-                      error=None if check.ok else "The agent's answer did not pass the check: " + "; ".join(check.problems))
+    agent.finish(turn, check)
 
 
 def _go_on(elapsed: float, effort: int) -> str:
@@ -199,14 +250,20 @@ def _prompt(question: str, author: str, budget: str, *, first: bool) -> str:
             f"{budget}\n\nQuestion: {question}")
 
 
-def _check(db_path: Path, text: str) -> AnswerCheck:
-    """Check the JSON document in the agent's final message, tolerating a code fence or prose around it."""
+def document(text: str) -> dict | None:
+    """The JSON object in an agent's final message, tolerating a code fence or prose around it."""
     start, end = text.find("{"), text.rfind("}")
     try:
-        document = json.loads(text[start:end + 1]) if start != -1 else None
+        found = json.loads(text[start:end + 1]) if start != -1 else None
     except ValueError:
-        document = None
-    if document is None:
+        return None
+    return found if isinstance(found, dict) else None
+
+
+def _check(db_path: Path, text: str) -> AnswerCheck:
+    """Check the answer document in the agent's final message against the graph."""
+    found = document(text)
+    if found is None:
         return AnswerCheck(False, ("the reply was not a JSON answer document",), None)
     with RecordStore(db_path) as db:
-        return check_answer(db, document)
+        return check_answer(db, found)
