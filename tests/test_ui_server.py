@@ -20,7 +20,8 @@ class SlowHarness:
     def __init__(self, answer):
         self.answer, self.release = answer, threading.Event()
 
-    def run(self, prompt, *, cwd, env, session_id, on_progress):
+    def run(self, prompt, *, cwd, env, session_id, web, timeout, on_progress):
+        self.web = web
         on_progress("Bash: premisedb recall")
         self.release.wait(5)
         return Reply(self.answer, "session-1", ())
@@ -88,7 +89,14 @@ class ServerTests(unittest.TestCase):
         status, started = self.call("POST", f"/api/threads/{started['thread_id']}/turns", {"question": "And before?"})
         self.assertEqual(status, 201)
         self.assertEqual(len(self.wait_done(started["thread_id"])["turns"]), 2)
-        self.assertEqual(len(self.call("GET", "/api/threads")[1]), 1)
+        self.assertFalse(self.harness.web)  # Five minutes unless the user says otherwise: no web.
+        status, started = self.call("POST", "/api/threads", {"question": "Who else sells to them?", "effort": 20})
+        self.wait_done(started["thread_id"])
+        self.assertTrue(self.harness.web)
+        for effort in (7, "5", True):
+            self.assertEqual(self.call("POST", "/api/threads", {"question": "Why?", "effort": effort}),
+                             (400, {"error": "effort must be one of 1, 5, 20 minutes"}))
+        self.assertEqual(len(self.call("GET", "/api/threads")[1]), 2)
         for method, path, body, status in (("GET", "/api/threads/missing", None, 404),
                                            ("POST", "/api/threads/missing/turns", {"question": "x"}, 404),
                                            ("POST", "/api/threads", {"question": ""}, 400),

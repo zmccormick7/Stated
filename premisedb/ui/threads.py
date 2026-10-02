@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import sqlite3
 import sys
+import time
 from uuid import uuid4
 
 from ..answers import AnswerCheck, check_answer
@@ -15,6 +16,21 @@ from ..store import RecordStore
 from .harness import HarnessError
 
 _VERSION = 1
+
+# What the user may give a turn, in minutes: what the agent is told, and whether it may use the web.
+EFFORTS = {
+    1: ("You have about one minute. Answer from what the graph already holds: a few lookups, no new records "
+        "and no outside sources.", False),
+    5: ("You have about five minutes.", False),
+    20: ("You have about twenty minutes. Where the graph falls short, go to outside sources on the web, ingest "
+         "what you rely on and add what you learn to your layer.", True),
+}
+DEFAULT_EFFORT = 5
+
+
+def time_limit(effort: int) -> float:
+    """Seconds after which a turn is stopped: twice its effort, and never less than five minutes over."""
+    return 60 * max(2 * effort, effort + 5)
 
 
 def _now() -> str:
@@ -101,24 +117,27 @@ class ThreadStore:
             db.execute("UPDATE threads SET session_id = coalesce(?, session_id) WHERE id = ?", (session_id, thread_id))
 
 
-def run_turn(store: ThreadStore, turn_id: int, *, db_path: str | Path, harness) -> None:
+def run_turn(store: ThreadStore, turn_id: int, *, db_path: str | Path, harness, effort: int = DEFAULT_EFFORT) -> None:
     """Answer a started turn: run its question through the harness in the workspace, check the answer
     document against the graph, give the agent one chance to fix what the check reports, and store the
-    result. The agent works with the workspace's own settings and may add to the graph as it goes."""
+    result. The agent works with the user's own settings and may add to the graph as it goes. `effort`,
+    in minutes, sets what the agent is told about time, whether it may use the web, and when it is stopped."""
     turn, db_path = store._turn(turn_id), Path(db_path).resolve()
-    run = partial(harness.run, cwd=db_path.parent, on_progress=partial(store.add_progress, turn_id), env=os.environ | {
+    budget, web = EFFORTS[effort]
+    stop_at = time.monotonic() + time_limit(effort)
+    run = partial(harness.run, cwd=db_path.parent, web=web, on_progress=partial(store.add_progress, turn_id), env=os.environ | {
         "PREMISEDB_DB": str(db_path), "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"})
     denied: tuple[str, ...] = ()
     try:
-        reply = run(_prompt(turn["question"], harness.name, first=turn["session_id"] is None),
-                    session_id=turn["session_id"])
+        reply = run(_prompt(turn["question"], harness.name, budget, first=turn["session_id"] is None),
+                    session_id=turn["session_id"], timeout=max(1.0, stop_at - time.monotonic()))
         store._set_session(turn["thread_id"], reply.session_id)
         check, denied = _check(db_path, reply.text), reply.denied
         if not check.ok:
             store.add_progress(turn_id, "Fixing the answer")
             reply = run("The answer document did not pass check-answer:\n- " + "\n- ".join(check.problems)
                         + "\nFix these and reply with the corrected JSON document alone.",
-                        session_id=reply.session_id or turn["session_id"])
+                        session_id=reply.session_id or turn["session_id"], timeout=max(1.0, stop_at - time.monotonic()))
             check, denied = _check(db_path, reply.text), tuple(dict.fromkeys(denied + reply.denied))
     except HarnessError as error:
         store.finish_turn(turn_id, error=str(error), denied=denied)
@@ -132,13 +151,14 @@ def run_turn(store: ThreadStore, turn_id: int, *, db_path: str | Path, harness) 
         "The agent's answer did not pass the check: " + "; ".join(check.problems)))
 
 
-def _prompt(question: str, author: str, *, first: bool) -> str:
+def _prompt(question: str, author: str, budget: str, *, first: bool) -> str:
     """The skills are installed in the harness, as the README describes; the prompt only names them."""
     if not first:
-        return f"Answer this follow-up as an answer document in the same format, checked with check-answer.\n\n{question}"
+        return (f"Answer this follow-up as an answer document in the same format, checked with check-answer. {budget}"
+                f"\n\n{question}")
     return ("Use the premisedb-research skill for the research and the premisedb-answer skill for the reply. "
-            f"The research database is the one PREMISEDB_DB names; use the author ID {author} for anything you write."
-            f"\n\nQuestion: {question}")
+            f"The research database is the one PREMISEDB_DB names; use the author ID {author} for anything you write. "
+            f"{budget}\n\nQuestion: {question}")
 
 
 def _check(db_path: Path, text: str) -> AnswerCheck:

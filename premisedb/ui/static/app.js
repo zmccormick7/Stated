@@ -253,12 +253,24 @@ $("ask").onsubmit = async (event) => {
   const question = $("question").value.trim();
   if (!question) return;
   try {
-    const started = await api(state.current ? `/api/threads/${state.current}/turns` : "/api/threads", { question });
+    const started = await api(state.current ? `/api/threads/${state.current}/turns` : "/api/threads",
+      { question, effort: Number($("effort").value) });
     $("question").value = "";
     await select(started.thread_id);
   } catch (error) {
     alert(error.message);
   }
+};
+// What each effort level does, in the user's terms; the server holds what the agent is told.
+const HINTS = {
+  1: "Answers from what your graph already holds.",
+  5: "Looks through your graph, adds what it learns to your layer, and answers.",
+  20: "Looks through your graph and outside sources, adds what it learns to your layer, and answers.",
+};
+$("effort").onchange = () => { $("hint").textContent = HINTS[$("effort").value]; };
+$("effort").onchange();
+$("question").onkeydown = (event) => {  // Enter asks; Shift+Enter starts a new line.
+  if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("ask").requestSubmit(); }
 };
 $("new").onclick = () => { state.current = null; state.thread = null; render(); $("question").focus(); };
 $("toggle").onclick = () => $("sidebar").classList.toggle("collapsed");
