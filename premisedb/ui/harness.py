@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import threading
@@ -10,6 +11,25 @@ import threading
 
 class HarnessError(RuntimeError):
     """The harness could not be started or ended without an answer."""
+
+
+class UsageLimit(HarnessError):
+    """The user's subscription limit was reached. `resets_at` is the Unix time it lifts, when the harness says."""
+
+    def __init__(self, message: str, resets_at: float | None = None):
+        super().__init__(message)
+        self.resets_at = resets_at
+
+
+_LIMIT = re.compile(r"(usage|session|weekly|hourly|5-hour|rate)[ -]limit|limit reached|hit your [\w -]*limit|quota", re.I)
+
+
+def _failure(message: str) -> HarnessError:
+    """The error for a harness's own account of what went wrong, told apart when it is a usage limit."""
+    if not _LIMIT.search(message):
+        return HarnessError(message)
+    epoch = re.search(r"\|(\d{10})\b", message)  # Claude Code appends the reset time to some limit messages.
+    return UsageLimit(message, float(epoch.group(1)) if epoch else None)
 
 
 @dataclass(frozen=True)
@@ -93,9 +113,9 @@ class ClaudeCode:
             raise HarnessError(_OVERTIME)
         if result is None:
             detail = " ".join(line for line in other[-3:] if line) or "no result"
-            raise HarnessError(f"{self.executable} exited with status {status}: {detail}")
+            raise _failure(f"{self.executable} exited with status {status}: {detail}")
         if result.get("is_error"):
-            raise HarnessError(str(result.get("result") or "the agent reported an error"))
+            raise _failure(str(result.get("result") or "the agent reported an error"))
         denied = tuple(dict.fromkeys(str(d.get("tool_name")) for d in result.get("permission_denials") or []
                                      if isinstance(d, dict)))
         return Reply(str(result.get("result") or ""), result.get("session_id"), denied)
@@ -155,7 +175,7 @@ class Codex:
                 raise HarnessError(_OVERTIME)
             if not finished:
                 detail = "; ".join(errors) or stderr.strip().splitlines()[-1:] and stderr.strip().splitlines()[-1] or "no result"
-                raise HarnessError(f"{self.executable} exited with status {process.returncode}: {detail}")
+                raise _failure(f"{self.executable} exited with status {process.returncode}: {detail}")
             text = last.read_text(encoding="utf-8") if last.is_file() else ""
         return Reply(text, thread, ())
 

@@ -26,7 +26,7 @@ EFFORTS = {
     20: ("You have about twenty minutes. Where the graph falls short, go to outside sources on the web, ingest "
          "what you rely on with `premisedb ingest --url` and add what you learn to your layer.", True, True),
 }
-RUN_EFFORTS = (60,)  # Longer than one session can hold: planned, worked an item at a time, then reported (runs.py).
+RUN_EFFORTS = (60, 180, 480)  # Longer than one session can hold: planned, worked an item at a time, then reported (runs.py).
 DEFAULT_EFFORT = 5
 AGENTS = (1, 2, 3, 5, 10)  # How many workers a run may have at a time.
 DEFAULT_AGENTS = 3
@@ -121,6 +121,11 @@ class ThreadStore:
         with self._db() as db:
             db.execute("UPDATE work_items SET status = ?, result = ?, finished_at = ? WHERE id = ?",
                        ("done" if error is None else "failed", result if error is None else error, _now(), item_id))
+
+    def requeue_item(self, item_id: int) -> None:
+        """Put a claimed piece of work back at the front of the queue, as when a usage limit stopped it."""
+        with self._db() as db:
+            db.execute("UPDATE work_items SET status = 'todo', started_at = NULL WHERE id = ?", (item_id,))
 
     def items(self, turn_id: int) -> list[dict]:
         with self._db() as db:

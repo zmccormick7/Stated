@@ -272,7 +272,7 @@ const HINTS = {
   5: "Looks through your graph, adds what it learns to your layer, and answers.",
   20: "Looks through your graph and outside sources, adds what it learns to your layer, and answers.",
 };
-const RUNS = { 60: "1 hour" };  // Efforts that are research runs, which have agents.
+const RUNS = { 60: "1 hour", 180: "3 hours", 480: "8 hours" };  // Efforts that are research runs, which have agents.
 $("effort").onchange = $("agents").onchange = () => {
   const span = RUNS[$("effort").value], agents = $("agents").value;
   $("agents").hidden = !span;

@@ -4,11 +4,12 @@ from pathlib import Path
 import stat
 import sys
 import threading
+import time
 from tempfile import TemporaryDirectory
 import unittest
 
 from premisedb import RecordStore
-from premisedb.ui import ClaudeCode, Codex, HarnessError, Reply, ThreadStore, run_turn
+from premisedb.ui import ClaudeCode, Codex, HarnessError, Reply, ThreadStore, UsageLimit, run_turn
 from premisedb.ui import runs, threads
 from premisedb.ui.threads import time_limit
 
@@ -191,6 +192,30 @@ class ThreadTests(unittest.TestCase):
         self.assertIn("3 at a time, so items must not overlap", prompts[0])
         self.assertIn("3 to 6 items.", prompts[0])
 
+    def test_a_run_waits_out_a_usage_limit(self):
+        slept = []
+        self.addCleanup(setattr, runs, "_sleep", runs._sleep)
+        runs._sleep = slept.append
+        did = json.dumps({"summary": "Done."})
+        harness = FakeHarness(UsageLimit("usage limit reached"), json.dumps({"items": ["A", "B"]}),
+                              UsageLimit("usage limit reached", time.time() + 120), did, did, json.dumps({"items": []}),
+                              UsageLimit("usage limit reached"), self.good)
+        turn = self.ask(harness, "Go deep.", effort=180)["turns"][0]
+        self.assertEqual((turn["status"], [item["status"] for item in turn["items"]], len(harness.calls)),
+                         ("done", ["done", "done"], 8))
+        self.assertEqual((slept[0], slept[2]), (900, 900))  # No reset time given: try again in fifteen minutes.
+        self.assertTrue(140 < slept[1] <= 150)  # A reset time given: wait until just after it.
+        waits = [line for line in turn["progress"] if line.startswith("Waiting for your usage limit to reset")]
+        self.assertEqual(len(waits), 3)
+        self.assertRegex(waits[1], r"\(about \d\d:\d\d\)$")
+        self.assertIn("Your item: A", harness.calls[3]["prompt"])  # The piece the limit stopped is tried again first.
+        self.assertIn("6 to 12 items.", harness.calls[1]["prompt"])
+        # A limit that lifts after the working time ends the work; with nothing done, the run fails with it.
+        harness = FakeHarness(json.dumps({"items": ["A"]}), UsageLimit("usage limit reached", time.time() + 4 * 3600))
+        turn = self.ask(harness, "Go deep.", effort=180)["turns"][0]
+        self.assertEqual((turn["status"], turn["error"], turn["items"][0]["status"], len(slept)),
+                         ("failed", "usage limit reached", "todo", 3))
+
     def test_a_run_with_no_plan_or_no_finished_work_fails_plainly(self):
         for replies, error in (((json.dumps({"items": []}),), "The agent did not return a plan for this research."),
                                ((HarnessError("OAuth session expired"),), "OAuth session expired"),
@@ -265,8 +290,14 @@ class ClaudeCodeTests(unittest.TestCase):
         for build, message in ((lambda: self.executable(failed), "OAuth session expired"),
                                (lambda: self.executable("boom", status=3), "exited with status 3: boom"),
                                (lambda: str(self.directory / "absent"), "Could not start")):
-            with self.subTest(message=message), self.assertRaisesRegex(HarnessError, message):
+            with self.subTest(message=message), self.assertRaisesRegex(HarnessError, message) as raised:
                 ClaudeCode(build()).run("Why?", cwd=self.directory)
+            self.assertNotIsInstance(raised.exception, UsageLimit)
+        for message, resets_at in (("Claude AI usage limit reached|1790000000", 1790000000.0),
+                                   ("5-hour limit reached ∙ resets 3pm", None), ("You've hit your session limit", None)):
+            with self.subTest(message=message), self.assertRaises(UsageLimit) as raised:
+                ClaudeCode(self.executable({"type": "result", "is_error": True, "result": message})).run("Why?", cwd=self.directory)
+            self.assertEqual(raised.exception.resets_at, resets_at)
 
 
 
