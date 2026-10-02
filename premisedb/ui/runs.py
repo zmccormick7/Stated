@@ -13,6 +13,7 @@ ITEM_MINUTES = 15  # What a worker is told to spend; it is stopped at twice that
 REPORT_MINUTES = 10  # Kept back from the run's time for the report, and how far the report may run over.
 MAX_ITEMS = 40  # For each agent.
 FAILURES = 2  # This many pieces of work failing in a row ends the work early.
+START_MINUTES = 5  # A piece of work is not started with less working time left than this: it would only be cut off.
 
 
 def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: int) -> None:
@@ -60,7 +61,8 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
     failures, error, working = 0, "The time ran out before any of the work was done.", set()
     with ThreadPoolExecutor(agents) as pool:
         while True:
-            while len(working) < agents and left() > 60 and failures < FAILURES and (item := store.next_item(turn_id)):
+            while (len(working) < agents and left() > START_MINUTES * 60 and failures < FAILURES
+                   and (item := store.next_item(turn_id))):
                 working.add(pool.submit(work, item))
             if working:  # Wait for a worker to finish; it may have queued more.
                 finished, working = wait(working, return_when=FIRST_COMPLETED)
@@ -68,7 +70,7 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
                     failures, error = (0, error) if failure is None else (failures + 1, failure)
                 continue
             # Nobody is working and nothing was claimed: stop, or with time in hand ask what else would serve the brief.
-            if left() <= 60 or failures >= FAILURES or time.monotonic() - started >= USE_OF_TIME * effort * 60:
+            if left() <= START_MINUTES * 60 or failures >= FAILURES or time.monotonic() - started >= USE_OF_TIME * effort * 60:
                 break
             store.add_progress(turn_id, "Looking for what else would serve the brief")
             try:
