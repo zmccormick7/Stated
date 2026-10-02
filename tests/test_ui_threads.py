@@ -259,6 +259,46 @@ class ThreadTests(unittest.TestCase):
                          ("done", ["done", "todo", "todo"], 1))
         self.assertIn("Work done:\n- [done] A — Did A.", harness.calls[0]["prompt"])
 
+    def test_the_user_can_pause_finish_and_steer_a_run(self):
+        store, slept = self.store, []
+        self.addCleanup(setattr, runs, "_sleep", runs._sleep)
+        thread = store.create_thread("Go deep.", harness="fake")
+        turn_id = store.start_turn(thread, "Go deep.", 60, 1)
+        with self.assertRaisesRegex(ValueError, "pause, resume or finish"):
+            store.control(turn_id, "stop")
+        store.control(turn_id, "pause")  # Paused before it starts: the plan is made, then nothing starts.
+        store.add_note(turn_id, "Spend more time on who is financing the build-out.")
+
+        def sleeping(seconds):  # The run polls while paused; the user resumes it.
+            slept.append(seconds)
+            store.control(turn_id, "resume")
+
+        runs._sleep = sleeping
+        did = json.dumps({"summary": "Did it."})
+        harness = FakeHarness(json.dumps({"items": ["A", "B"]}), did, did, json.dumps({"items": []}), self.good)
+        run_turn(store, turn_id, db_path=self.db_path, harness=harness)
+        turn = store.thread(thread)["turns"][0]
+        self.assertEqual((turn["status"], slept, turn["paused"], [n["text"] for n in turn["notes"]]),
+                         ("done", [5], 0, ["Spend more time on who is financing the build-out."]))
+        for call in harness.calls[1:]:
+            self.assertIn("Notes from the user while this research was going, which take precedence:\n- Spend more", call["prompt"])
+        self.assertIn("progress", turn["items"][0])  # The page shows each piece's latest step.
+        with self.assertRaisesRegex(ValueError, "still going"):
+            store.add_note(turn_id, "Too late.")
+        with self.assertRaisesRegex(ValueError, "still going"):
+            store.control(turn_id, "pause")
+        # Finish now: the worker in hand sets it, as the user would from the page; the run reports with what is done.
+        turn_id = store.start_turn(thread, "More.", 60, 1)
+        harness = FakeHarness(json.dumps({"items": ["A", "B", "C"]}), did, self.good,
+                              write=lambda: len(harness.calls) == 2 and store.control(turn_id, "finish"))
+        run_turn(store, turn_id, db_path=self.db_path, harness=harness)
+        turn = store.thread(thread)["turns"][1]
+        self.assertEqual((turn["status"], [i["status"] for i in turn["items"]], len(harness.calls)), ("done", ["done", "todo", "todo"], 3))
+        with self.assertRaisesRegex(ValueError, "notes go to a research run"):
+            store.add_note(store.start_turn(thread, "Quick.", 5), "No.")
+        with self.assertRaises(KeyError):
+            store.control(999, "pause")
+
     def test_a_run_with_no_plan_or_no_finished_work_fails_plainly(self):
         for replies, error in (((json.dumps({"items": []}),), "The agent did not return a plan for this research."),
                                ((HarnessError("OAuth session expired"),), "OAuth session expired"),

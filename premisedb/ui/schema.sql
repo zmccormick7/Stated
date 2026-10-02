@@ -13,6 +13,8 @@ CREATE TABLE turns (
     question TEXT NOT NULL,
     effort INTEGER NOT NULL,  -- Minutes the user gave the turn.
     agents INTEGER NOT NULL DEFAULT 1,  -- Workers at a time, for a research run.
+    paused INTEGER NOT NULL DEFAULT 0,  -- The user asked a run to start nothing new until resumed.
+    finish INTEGER NOT NULL DEFAULT 0,  -- The user asked a run to go to its report now.
     status TEXT NOT NULL CHECK (status IN ('running', 'done', 'failed')),
     progress TEXT NOT NULL DEFAULT '[]',  -- JSON list of what the agent has done so far.
     answer TEXT,  -- The checked answer document as JSON, when done.
@@ -33,8 +35,19 @@ CREATE TABLE work_items (
     text TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'running', 'done', 'failed')),
     result TEXT,
+    progress TEXT,  -- The worker's latest step, for the page.
     started_at TEXT,
     finished_at TEXT
 ) STRICT;
 
 CREATE INDEX work_items_by_turn ON work_items(turn_id, id);
+
+-- What the user told a run while it was going; every later session of the run sees them.
+CREATE TABLE notes (
+    id INTEGER PRIMARY KEY,
+    turn_id INTEGER NOT NULL REFERENCES turns(id),
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+) STRICT;
+
+CREATE INDEX notes_by_turn ON notes(turn_id, id);
