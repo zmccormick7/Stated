@@ -164,12 +164,12 @@ function renderTurn(turn) {
     node.append(el("div", { class: "progress", text: last ? `${last}…` : "Starting…" }));
   } else if (turn.status === "done") {
     node.append(renderAnswer(turn.answer));
-  } else {
-    node.append(el("div", { class: "error", text: turn.error || "The answer failed." }));
+  } else {  // Refused tools are shown only here, where they may explain the failure.
+    const denied = (turn.denied || []).length ? ` Refused under your settings: ${turn.denied.join(", ")}.` : "";
+    node.append(el("div", { class: "error", text: (turn.error || "The answer failed.") + denied }));
   }
   const written = Object.entries(turn.written || {}).map(([kind, n]) => `${n} ${kind}${n === 1 ? "" : "s"}`);
   if (written.length) node.append(el("div", { class: "note", text: `Added to your layer: ${written.join(", ")}` }));
-  if ((turn.denied || []).length) node.append(el("div", { class: "note", text: `Refused under your settings: ${turn.denied.join(", ")}` }));
   return node;
 }
 
