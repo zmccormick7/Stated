@@ -40,6 +40,11 @@ class ServerTests(unittest.TestCase):
         db_path = Path(directory.name) / "research.sqlite"
         with RecordStore(db_path) as db:
             finding = db.create("Finding", text="Two customers were 22% and 14% of revenue.", author_id="a").id
+            self.model = db.create("Model", text="Revenue model", author_id="a").id
+            for attributes in ({"key": "growth", "role": "input", "value": 0.4},
+                               {"key": "revenue", "role": "output", "value": 541.3, "formula": "386.6 * (1 + growth)"}):
+                db.create_link(db.create("Variable", text=attributes["key"], author_id="a", attributes=attributes).id,
+                               self.model, "in_model", author_id="a")
         self.harness = SlowHarness(json.dumps({"title": "Two customers were 36% of revenue.", "body": "One was 22%. [1]",
                                                "sources": [{"record": finding}]}))
         self.server = make_server(db_path, harness=self.harness)
@@ -92,6 +97,13 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(b"/static/app.js", page)
         self.assertEqual(self.call("GET", "/static/app.js")[0], 200)
+
+    def test_a_lever_evaluates_the_model_through_the_api(self):
+        status, result = self.call("POST", f"/api/models/{self.model[:8]}/evaluate", {"overrides": {"growth": 0.2}})
+        self.assertEqual((status, result["changed"]), (200, ["growth", "revenue"]))
+        self.assertAlmostEqual(result["values"]["revenue"], 463.92)
+        self.assertEqual(self.call("POST", f"/api/models/{self.model}/evaluate", {"overrides": {"tariff": 1}})[0], 400)
+        self.assertEqual(self.call("POST", "/api/models/missing/evaluate", {"overrides": {}})[0], 404)
 
     def test_missing_skills_are_named(self):
         self.assertEqual(missing_skills(self.harness), ["premisedb-research", "premisedb-answer"])

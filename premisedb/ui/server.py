@@ -8,6 +8,7 @@ from pathlib import Path
 import threading
 from urllib.parse import urlparse
 
+from ..store import RecordStore
 from .harness import ClaudeCode
 from .threads import ThreadStore, run_turn
 
@@ -29,6 +30,13 @@ class App:
         self.db_path = Path(db_path).resolve()
         self.store = ThreadStore(self.db_path.with_name(self.db_path.stem + ".threads.sqlite"))
         self.harness = harness
+
+    def evaluate(self, model_id: str, overrides) -> dict:
+        """A model's values with some Variables held at other values; the lever block calls this as it moves."""
+        with RecordStore(self.db_path) as db:
+            result = db.evaluate_model(model_id, overrides)
+        return {"values": {v.key: v.value for v in result.variables},
+                "changed": [v.key for v in result.variables if v.changed]}
 
     def ask(self, thread_id: str | None, question: str) -> dict:
         """Start a turn and answer it in the background; one turn at a time per thread."""
@@ -67,20 +75,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path == "/api/threads":
-            thread_id = None
-        elif path.startswith("/api/threads/") and path.endswith("/turns"):
-            thread_id = path[13:-6]
-        else:
-            return self._error(HTTPStatus.NOT_FOUND, "not found")
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
             if not isinstance(body, dict):
                 raise ValueError("the request body must be a JSON object")
-            self._json(self.app.ask(thread_id, body.get("question")), HTTPStatus.CREATED)
-        except KeyError:
-            self._error(HTTPStatus.NOT_FOUND, "no such thread")
-        except ValueError as error:
+            if path == "/api/threads":
+                self._json(self.app.ask(None, body.get("question")), HTTPStatus.CREATED)
+            elif path.startswith("/api/threads/") and path.endswith("/turns"):
+                self._json(self.app.ask(path[13:-6], body.get("question")), HTTPStatus.CREATED)
+            elif path.startswith("/api/models/") and path.endswith("/evaluate"):
+                self._json(self.app.evaluate(path[12:-9], body.get("overrides")))
+            else:
+                self._error(HTTPStatus.NOT_FOUND, "not found")
+        except KeyError as error:
+            self._error(HTTPStatus.NOT_FOUND, f"not found: {error.args[0] if error.args else ''}")
+        except (ValueError, TypeError) as error:
             self._error(HTTPStatus.BAD_REQUEST, str(error))
 
     def _file(self, name):

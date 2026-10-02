@@ -39,6 +39,7 @@ Add a block only when it changes what the reader understands. At most six, and u
 
 - **`text`**: a further paragraph, `{"type": "text", "text": "…"}`, with `[n]` citations.
 - **`quote`**: shows a source's quote in full, `{"type": "quote", "source": 1}`. Use it when the exact words matter.
+- **`lever`**: one model input to drag and one output to watch, recomputed live through the model: `{"type": "lever", "model": MODEL_ID, "input": "accel_supply_growth_cy2027", "output": "dc_rev_fy28", "input_label": "Supply growth, 2027", "output_label": "FY28 Data Center revenue, $B"}`. Both keys name Variables of that model with a single numeric value; the output should have a formula so it moves. The slider spans the Variable's `low` and `high`, or a `range` of `[low, high]` you give. Use it when the answer rests on an assumption the reader would want to push on.
 - **`chart`**: labelled bars. `rows` is a list of `{"label", "parts"}`; one part draws a plain bar and several draw a stacked one. Give the `unit`. With `whole` (such as 100), each row's remainder is drawn and named by `rest_label`. Optional `caption`. Set `"lead": true` on at most one block to make it the centre of the answer.
 
 ## Figures
