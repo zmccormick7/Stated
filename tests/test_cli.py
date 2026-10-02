@@ -286,6 +286,12 @@ class CLITests(unittest.TestCase):
         self.assertEqual(result["checked"], [{"key": "revenue", "stored": [11400, 13680], "computed": [11400, 13680],
                                               "matches": True, "problems": []}])
         self.assertIn("not a Model", self.call("check-model", self.create("Finding", "x")["id"], status=1)["error"])
+        scenario = self.call("evaluate-model", model["id"][:8], "--set", "price=600", "--set", "gw=[10, 24]")
+        self.assertEqual(scenario["overrides"], {"price": 600, "gw": [10, 24]})
+        self.assertEqual(scenario["variables"][-1], {"key": "revenue", "role": "output", "stored": [11400, 13680],
+                                                     "value": [6000, 14400], "changed": True})
+        self.assertFalse(any(v["changed"] for v in self.call("evaluate-model", model["id"])["variables"]))
+        self.assertIn("not in the model", self.call("evaluate-model", model["id"], "--set", "tariff=1", status=1)["error"])
 
     def test_only_init_creates_a_database(self):
         self.path = self.directory / "typo.sqlite"
