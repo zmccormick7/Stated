@@ -33,11 +33,12 @@ function renderBlock(block, sources) {
   }
   if (block.type === "chart") return renderChart(block);
   if (block.type === "lever") return renderLever(block);
+  if (block.type === "flow") return renderFlow(block);
   return el("p", { class: "note", text: `(${block.type} block)` });
 }
 
 const number = (value) => Number.isInteger(value) ? value.toLocaleString("en-US")
-  : value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  : value.toLocaleString("en-US", { maximumFractionDigits: Math.abs(value) < 10 ? 2 : 1 });
 const SHADES = ["#1A1A1A", "#6B6B6B", "#A3A3A3", "#C9C9C9"];  // Parts in fixed order; the remainder is outlined.
 
 // Horizontal bars, one row per entry; several parts stack. Width is a share of `whole` when the chart
@@ -105,6 +106,37 @@ function renderLever(block) {
     el("div", { class: "head" }, [el("div", {}, [el("div", { class: "muted", text: output.label }), out]), base]),
     el("div", { class: "control" }, [el("div", { class: "row" }, [label, back]), slider]),
     el("figcaption", { text: block.caption || "" })]);
+}
+
+const node = (spec, cls) => el("div", { class: `node ${cls}` }, [
+  el("div", { class: "title", text: spec.label }),
+  ...(spec.note ? [el("div", { class: "note", text: spec.note })] : []),
+  ...(spec.items || []).map((item) => el("div", { class: "item", text: item }))]);
+
+// A source on the left, parts stacked in proportion in the middle, and an optional destination on the
+// right. Heights are shares of `whole`, or of the parts' sum when there is none.
+function renderFlow(block) {
+  const total = block.parts.reduce((sum, part) => sum + Math.max(0, part.value), 0);
+  const scale = block.whole || total || 1;
+  const show = block.whole === 1 ? (value) => `${number(value * 100)}%` : number;  // Shares of one read as percentages.
+  const column = el("div", { class: "column" });
+  block.parts.forEach((part, i) => {
+    const share = Math.max(0, part.value) / scale, shade = i % SHADES.length;
+    const segment = el("div", { class: "part", title: `${part.label}: ${show(part.value)} ${block.unit || ""}`,
+      style: `flex-grow:${share.toFixed(4)};background:${SHADES[shade]};color:${shade < 2 ? "#FFFFFF" : "#1A1A1A"}` }, [
+      el("span", { class: "name", text: part.label + (part.note && share >= 0.2 ? ` · ${part.note}` : "") }),
+      el("b", { text: show(part.value) })]);
+    column.append(segment);
+  });
+  if (block.whole && block.whole - total > 0) {
+    const rest = block.whole - total;
+    column.append(el("div", { class: "part rest", title: `${block.rest_label || "Rest"}: ${show(rest)} ${block.unit || ""}`,
+      style: `flex-grow:${(rest / scale).toFixed(4)}` }, [el("span", { class: "name", text: block.rest_label || "" }), el("b", { text: show(rest) })]));
+  }
+  const body = el("div", { class: "lanes" }, [node(block.from, "from"), el("div", { class: "link" }), column]);
+  if (block.to) body.append(el("div", { class: "link dashed" }), node(block.to, "to"));
+  return el("figure", { class: "flow" + (block.lead ? " lead" : "") }, [
+    body, el("figcaption", { text: [block.caption, block.unit].filter(Boolean).join(" · ") })]);
 }
 
 function renderAnswer(answer) {

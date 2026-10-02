@@ -106,6 +106,29 @@ class AnswerCheckTests(unittest.TestCase):
                 self.assertFalse(result.ok)
                 self.assertIn(message, result.problems[0])
 
+    def test_a_flow_runs_from_a_source_through_parts(self):
+        flow = {"type": "flow", "unit": "% of revenue", "whole": 100, "rest_label": "Other", "lead": True,
+                "from": {"label": "PowerFrame revenue", "note": "fiscal 2026"},
+                "parts": [{"label": "Largest", "record": self.finding, "value": 22, "as_written": "22%", "note": "unnamed"},
+                          {"label": "Second", "record": self.finding, "value": 14, "as_written": "14%"}],
+                "to": {"label": "Compute & Networking", "items": ["Data center", "Networking"]}}
+        result = check_answer(self.db, self.answer(blocks=[flow]))
+        self.assertEqual(result.problems, ())
+        self.assertEqual(result.answer["blocks"][0]["parts"], [
+            {"label": "Largest", "record": self.finding, "value": 22, "note": "unnamed"},
+            {"label": "Second", "record": self.finding, "value": 14}])
+        self.assertEqual(result.answer["blocks"][0]["to"], flow["to"])
+        for change, message in (({"from": {"label": ""}}, "from: label, note and items"),
+                                ({"to": {"label": "x", "items": []}}, "to: label, note and items"),
+                                ({"to": {"label": "x", "colour": "red"}}, "to has unknown keys: colour"),
+                                ({"parts": []}, "at least one part"), ({"whole": 30}, "more than the whole"),
+                                ({"parts": [{"label": "L", "record": self.finding, "value": 22, "as_written": "22%", "note": ""}]},
+                                 "note must be a nonblank string")):
+            with self.subTest(change=change):
+                result = check_answer(self.db, self.answer(blocks=[flow | change]))
+                self.assertFalse(result.ok)
+                self.assertIn(message, result.problems[0])
+
     def test_problems_are_reported_together(self):
         self.db.patch(self.scalar, author_id="a", attributes={"status": "retracted"})
         answer = self.answer(title="Two lines\nof title", body="See [1] and [3].", caveats="none")
@@ -121,7 +144,7 @@ class AnswerCheckTests(unittest.TestCase):
             f"sources[3]: record {self.scalar[:8]} is retracted",
             "blocks[1] cites [4], which is not among the sources",
             "blocks[2]: sources[3] has no quote to show",
-            "blocks[3]: type must be text, quote, chart or lever",
+            "blocks[3]: type must be text, quote, chart, lever or flow",
             "blocks[4] lacks text",
             "blocks[5].rows[1]: the parts add up to more than the whole",
             "at most one block may be the lead",
