@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 
 
 class HarnessError(RuntimeError):
@@ -19,6 +20,28 @@ class Reply:
 
 
 ALLOWED_TOOLS = ("Bash(premisedb:*)", "Read", "Write")
+WEB_TOOLS = ("WebSearch", "WebFetch")
+
+
+class _Deadline:
+    """Kills a process that runs past its time; `passed` says whether it had to."""
+
+    def __init__(self, process, timeout: float | None):
+        self.passed, self._process = False, process
+        self._timer = threading.Timer(timeout, self._stop) if timeout is not None else None
+
+    def _stop(self):
+        self.passed = True
+        self._process.kill()
+
+    def __enter__(self):
+        if self._timer:
+            self._timer.start()
+        return self
+
+    def __exit__(self, *exc):
+        if self._timer:
+            self._timer.cancel()
 
 
 class ClaudeCode:
@@ -35,12 +58,13 @@ class ClaudeCode:
         """Where Claude Code loads personal skills from, as the README's install step describes."""
         return (Path.home() / ".claude" / "skills",)
 
-    def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None,
-            on_progress=lambda text: None) -> Reply:
-        # The least the product needs: its own CLI, and files in the workspace. Everything else follows
-        # the user's own settings, so a tool they have not allowed is refused as usual.
+    def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None, web: bool = False,
+            timeout: float | None = None, on_progress=lambda text: None) -> Reply:
+        # The least the product needs: its own CLI, files in the workspace, and the web when the turn's
+        # effort calls for outside sources. Everything else follows the user's own settings, so a tool
+        # they have not allowed is refused as usual.
         command = [self.executable, "-p", prompt, "--output-format", "stream-json", "--verbose",
-                   "--allowedTools", *ALLOWED_TOOLS]
+                   "--allowedTools", *ALLOWED_TOOLS, *(WEB_TOOLS if web else ())]
         if session_id:
             command += ["--resume", session_id]
         try:
@@ -49,7 +73,7 @@ class ClaudeCode:
         except OSError as error:
             raise HarnessError(f"Could not start {self.executable}: {error}") from None
         result, other = None, []
-        with process:
+        with process, _Deadline(process, timeout) as deadline:
             for line in process.stdout:
                 try:
                     event = json.loads(line)
@@ -65,6 +89,8 @@ class ClaudeCode:
                 elif event.get("type") == "result":
                     result = event
         status = process.returncode
+        if deadline.passed:
+            raise HarnessError(_OVERTIME)
         if result is None:
             detail = " ".join(line for line in other[-3:] if line) or "no result"
             raise HarnessError(f"{self.executable} exited with status {status}: {detail}")
@@ -89,11 +115,12 @@ class Codex:
         """Where Codex loads personal skills from, as the README's install step describes."""
         return (Path.home() / ".agents" / "skills",)
 
-    def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None,
-            on_progress=lambda text: None) -> Reply:
+    def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None, web: bool = False,
+            timeout: float | None = None, on_progress=lambda text: None) -> Reply:
         # workspace-write: the least that lets SQLite open the workspace database; the rest is the user's config.
         options = ["--json", "--skip-git-repo-check", "-s", "workspace-write"] + (["-m", self.model] if self.model else []) + (
-            ["-c", f'model_reasoning_effort="{self.reasoning_effort}"'] if self.reasoning_effort else [])
+            ["-c", f'model_reasoning_effort="{self.reasoning_effort}"'] if self.reasoning_effort else []) + (
+            ["-c", 'web_search="live"', "-c", "sandbox_workspace_write.network_access=true"] if web else [])
         with tempfile.TemporaryDirectory() as directory:
             last = Path(directory) / "last.txt"
             command = [self.executable, "exec", *options, "-o", str(last)] + (
@@ -104,7 +131,7 @@ class Codex:
             except OSError as error:
                 raise HarnessError(f"Could not start {self.executable}: {error}") from None
             thread, finished, errors = session_id, False, []
-            with process:
+            with process, _Deadline(process, timeout) as deadline:
                 for line in process.stdout:
                     try:
                         event = json.loads(line)
@@ -117,11 +144,15 @@ class Codex:
                         thread = event.get("thread_id") or thread
                     elif kind == "item.started" and item.get("type") == "command_execution":
                         on_progress(_shell(item.get("command") or ""))
+                    elif kind == "item.completed" and item.get("type") == "web_search" and item.get("query"):
+                        on_progress(_shorten(f"Web: {item['query']}"))
                     elif kind == "turn.completed":
                         finished = True
                     elif kind in ("turn.failed", "error"):
                         errors.append(str(event.get("message") or (event.get("error") or {}).get("message") or kind))
                 stderr = process.stderr.read()
+            if deadline.passed:
+                raise HarnessError(_OVERTIME)
             if not finished:
                 detail = "; ".join(errors) or stderr.strip().splitlines()[-1:] and stderr.strip().splitlines()[-1] or "no result"
                 raise HarnessError(f"{self.executable} exited with status {process.returncode}: {detail}")
@@ -129,13 +160,20 @@ class Codex:
         return Reply(text, thread, ())
 
 
+_OVERTIME = "The agent ran well past the time it was given and was stopped."
+
+
+def _shorten(text: str) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= 160 else text[:159] + "…"
+
+
 def _shell(command: str) -> str:
     """A progress line for a Codex shell command, without the wrapper it runs commands through."""
     for prefix in ("/bin/zsh -lc ", "/bin/bash -lc ", "bash -lc ", "zsh -lc "):
         if command.startswith(prefix):
             command = command[len(prefix):].strip("'\"")
-    text = " ".join(f"Shell: {command}".split())
-    return text if len(text) <= 160 else text[:159] + "…"
+    return _shorten(f"Shell: {command}")
 
 
 def _describe(tool_use: dict) -> str:
@@ -143,6 +181,5 @@ def _describe(tool_use: dict) -> str:
     given = tool_use.get("input") or {}
     detail = next((given[key] for key in ("description", "command", "skill", "file_path", "pattern", "query", "url")
                    if isinstance(given.get(key), str) and given[key].strip()), "")
-    text = " ".join(f"{tool_use.get('name', 'tool')}: {detail}".split()).rstrip(": ")
-    return text if len(text) <= 160 else text[:159] + "…"
+    return _shorten(" ".join(f"{tool_use.get('name', 'tool')}: {detail}".split()).rstrip(": "))
 

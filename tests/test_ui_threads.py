@@ -8,6 +8,8 @@ import unittest
 
 from premisedb import RecordStore
 from premisedb.ui import ClaudeCode, Codex, HarnessError, Reply, ThreadStore, run_turn
+from premisedb.ui import threads
+from premisedb.ui.threads import time_limit
 
 
 class FakeHarness:
@@ -16,12 +18,13 @@ class FakeHarness:
     def __init__(self, *replies, write=None):
         self.replies, self.calls, self.write = list(replies), [], write
 
-    def run(self, prompt, *, cwd, env, session_id, on_progress):
-        self.calls.append({"prompt": prompt, "cwd": cwd, "db": env["PREMISEDB_DB"], "session_id": session_id})
+    def run(self, prompt, *, cwd, env, session_id, web, timeout, on_progress):
+        self.calls.append({"prompt": prompt, "cwd": cwd, "db": env["PREMISEDB_DB"], "session_id": session_id,
+                           "web": web, "timeout": timeout})
         on_progress("Bash: Recall what the graph holds")
         if self.write:
             self.write()
-        reply = self.replies.pop(0)
+        reply = self.replies.pop(0) if self.replies else "DONE"
         if isinstance(reply, Exception):
             raise reply
         return Reply(reply, "session-1", ("WebFetch",))
@@ -39,9 +42,9 @@ class ThreadTests(unittest.TestCase):
         self.good = json.dumps({"title": "Two customers were 36% of revenue.", "body": "One was 22%. [1]",
                                 "sources": [{"record": self.finding[:8]}]})
 
-    def ask(self, harness, question="How concentrated are the customers?", thread=None):
+    def ask(self, harness, question="How concentrated are the customers?", thread=None, **options):
         thread = thread or self.store.create_thread(question, harness=harness.name)
-        run_turn(self.store, self.store.start_turn(thread, question), db_path=self.db_path, harness=harness)
+        run_turn(self.store, self.store.start_turn(thread, question), db_path=self.db_path, harness=harness, **options)
         return self.store.thread(thread)
 
     def test_a_question_becomes_a_checked_answer_in_a_thread(self):
@@ -83,6 +86,48 @@ class ThreadTests(unittest.TestCase):
         self.assertIn("did not pass the check: the reply was not a JSON answer document", turn["error"])
         turn = self.ask(FakeHarness(HarnessError("OAuth session expired")))["turns"][0]
         self.assertEqual((turn["status"], turn["error"]), ("failed", "OAuth session expired"))
+
+    def test_effort_sets_what_the_agent_is_told_the_web_and_the_time_limit(self):
+        bad = json.dumps({"title": "Yes.", "body": "See [2]."})
+        for effort, told, web in ((1, "about one minute. Answer from what the graph already holds", False),
+                                  (5, "about five minutes.", False), (20, "outside sources on the web", True)):
+            with self.subTest(effort=effort):
+                harness = FakeHarness(bad, self.good)
+                thread = self.ask(harness, effort=effort)
+                first, repair = harness.calls[:2]
+                self.assertEqual(len(harness.calls), 3 if effort == 20 else 2)  # Only 20 minutes asks for more.
+                self.assertIn(told, first["prompt"])
+                self.assertEqual((first["web"], repair["web"]), (web, web))
+                # One clock for the whole turn: the repair gets what is left of it.
+                self.assertTrue(time_limit(effort) - 5 < repair["timeout"] <= first["timeout"] <= time_limit(effort))
+                self.ask(harness := FakeHarness(self.good), "And before?", thread=thread["id"], effort=effort)
+                self.assertIn(told, harness.calls[0]["prompt"])  # A follow-up carries its own effort.
+        self.assertEqual([time_limit(effort) for effort in (1, 5, 20)], [360, 600, 2400])
+        self.ask(harness := FakeHarness(self.good))
+        self.assertIn("about five minutes", harness.calls[0]["prompt"])  # The default.
+
+    def test_an_agent_that_finishes_early_is_asked_what_would_improve_the_answer(self):
+        better = json.dumps(json.loads(self.good) | {"body": "One was 22% and the other 14%. [1]"})
+        bad = json.dumps({"title": "Yes.", "body": "See [2]."})
+        harness = FakeHarness(self.good, better, "DONE")
+        turn = self.ask(harness, effort=20)["turns"][0]
+        self.assertEqual((turn["status"], turn["answer"]["body"]), ("done", "One was 22% and the other 14%. [1]"))
+        self.assertEqual(turn["progress"].count("Looking for what would improve the answer"), 2)
+        self.assertEqual([call["session_id"] for call in harness.calls], [None, "session-1", "session-1"])
+        self.assertIn("You have used under a minute of your 20 minutes", harness.calls[1]["prompt"])
+        self.assertIn("reply with the single word DONE", harness.calls[1]["prompt"])
+        # The answer in hand stands when the agent repeats it, breaks it beyond repair, or the harness fails.
+        for replies, calls in (((self.good, self.good), 2), ((self.good, bad, bad), 3),
+                               ((self.good, HarnessError("usage limit reached")), 2)):
+            with self.subTest(replies=replies):
+                harness = FakeHarness(*replies)
+                turn = self.ask(harness, effort=20)["turns"][0]
+                self.assertEqual((turn["status"], turn["error"], turn["answer"]["body"], len(harness.calls)),
+                                 ("done", None, "One was 22%. [1]", calls))
+        original, threads.USE_OF_TIME = threads.USE_OF_TIME, 0  # Time mostly used: nothing more is asked.
+        self.addCleanup(setattr, threads, "USE_OF_TIME", original)
+        self.ask(harness := FakeHarness(self.good), effort=20)
+        self.assertEqual(len(harness.calls), 1)
 
     def test_store_boundaries(self):
         with self.assertRaises(KeyError):
@@ -128,6 +173,16 @@ class ClaudeCodeTests(unittest.TestCase):
                           "--allowedTools", "Bash(premisedb:*)", "Read", "Write", "--resume", "s-1"])
         self.assertEqual(progress[0], "Bash: Recall x")
         self.assertEqual((len(progress[1]), progress[1][-1]), (160, "…"))
+        ClaudeCode(self.executable(result)).run("Why?", cwd=self.directory, web=True)
+        self.assertEqual(json.loads((self.directory / "argv.json").read_text())[5:],
+                         ["--allowedTools", "Bash(premisedb:*)", "Read", "Write", "WebSearch", "WebFetch"])
+
+    def test_an_agent_past_its_time_is_stopped(self):
+        path = self.directory / "claude"
+        path.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(30)\n")
+        path.chmod(path.stat().st_mode | stat.S_IEXEC)
+        with self.assertRaisesRegex(HarnessError, "past the time it was given"):
+            ClaudeCode(str(path)).run("Why?", cwd=self.directory, timeout=0.3)
 
     def test_failures_raise_harness_errors(self):
         failed = {"type": "result", "is_error": True, "result": "OAuth session expired"}
@@ -173,6 +228,12 @@ class CodexTests(unittest.TestCase):
         Codex(self.executable(*events, last="ok")).run("More?", cwd=self.directory, session_id="t-1")
         argv = json.loads((self.directory / "argv.json").read_text())
         self.assertEqual(argv[-3:], ["resume", "t-1", "More?"])
+        searched = {"type": "item.completed", "item": {"type": "web_search", "query": "PowerFrame 10-K"}}
+        Codex(self.executable(searched, *events, last="ok")).run("Why?", cwd=self.directory, web=True,
+                                                                 on_progress=progress.append)
+        argv = json.loads((self.directory / "argv.json").read_text())
+        self.assertEqual(argv[5:9], ["-c", 'web_search="live"', "-c", "sandbox_workspace_write.network_access=true"])
+        self.assertEqual(progress[1], "Web: PowerFrame 10-K")
 
     def test_failures_raise_harness_errors(self):
         for build, message in ((lambda: self.executable({"type": "thread.started", "thread_id": "t"},

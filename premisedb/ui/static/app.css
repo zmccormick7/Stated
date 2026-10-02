@@ -2,7 +2,7 @@
 html, body { margin: 0; height: 100%; background: #FFFFFF; color: var(--ink); font: 15px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
 body { display: flex; }
 .hidden { position: absolute; left: -9999px; }
-button, input { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); padding: 0 14px; height: 36px; }
 #sidebar { width: 260px; flex-shrink: 0; border-right: 1px solid var(--line); display: flex; flex-direction: column; height: 100vh; }
 #sidebar.collapsed { width: 60px; }
@@ -15,9 +15,13 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 #threads li.current { background: var(--fill); }
 #main { flex-grow: 1; min-width: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
 #thread { width: min(680px, 100% - 48px); padding: 40px 0 24px; display: flex; flex-direction: column; gap: 28px; flex-grow: 1; }
-#ask { width: min(680px, 100% - 48px); display: flex; gap: 8px; padding: 0 0 32px; }
-#ask input { flex-grow: 1; height: 44px; padding: 0 14px; border: 1px solid #8A8A8A; }
-#ask button { height: 44px; background: var(--ink); color: #FFFFFF; }
+#ask { width: min(680px, 100% - 48px); display: flex; flex-direction: column; gap: 8px; padding: 0 0 32px; }
+#ask .box { border: 1px solid #8A8A8A; display: flex; flex-direction: column; }
+#ask textarea { border: 0; resize: none; padding: 12px 14px 4px; }
+#ask .controls { display: flex; align-items: center; gap: 8px; padding: 8px; }
+#ask select { height: 36px; padding: 0 8px; border: 1px solid var(--ink); border-radius: 0; background: #FFFFFF; font-size: 13px; cursor: pointer; }
+#ask button { margin-left: auto; background: var(--ink); color: #FFFFFF; }
+#hint { color: var(--mute); font-size: 12px; }
 .turn { display: flex; flex-direction: column; gap: 14px; }
 .turn + .turn { border-top: 1px solid var(--line); padding-top: 28px; }
 .question { color: var(--mute); font-size: 14px; }
