@@ -3,30 +3,52 @@ one piece of work from a queue, several at a time when the user asks, and a repo
 nothing but the graph."""
 
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from datetime import datetime
 from pathlib import Path
 import time
 
-from .harness import HarnessError
+from .harness import HarnessError, UsageLimit
 from .threads import USE_OF_TIME, Agent, ThreadStore, document
 
 ITEM_MINUTES = 15  # What a worker is told to spend; it is stopped at twice that.
 REPORT_MINUTES = 10  # Kept back from the run's time for the report, and how far the report may run over.
 MAX_ITEMS = 40  # For each agent.
 FAILURES = 2  # This many pieces of work failing in a row ends the work early.
+RETRY_MINUTES = 15  # How long to wait at a usage limit when the harness does not say when it resets.
+REPORT_WAIT_HOURS = 6  # How long a finished run's report will wait for a usage limit to reset.
+_sleep = time.sleep
 START_MINUTES = 5  # A piece of work is not started with less working time left than this: it would only be cut off.
 
 
 def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: int) -> None:
     """Carry out a started turn as a run of `effort` minutes: plan pieces of work, do them in fresh
     sessions, as many at a time as the turn has agents, until the queue is empty or the time is used,
-    then report as a checked answer."""
+    then report as a checked answer. A usage limit is waited out, inside the run's time for the work
+    and beyond it for the report."""
     turn_id, brief, agents = turn["id"], turn["question"], turn["agents"]
-    agent = Agent(store, turn_id, db_path, harness, web=True, seconds=(effort + REPORT_MINUTES) * 60)
+    agent = Agent(store, turn_id, db_path, harness, web=True, seconds=effort * 60)
     started = time.monotonic()
+    work_ends = started + (effort - REPORT_MINUTES) * 60
 
     def left() -> float:
         """Seconds of working time left before the report must start."""
-        return started + (effort - REPORT_MINUTES) * 60 - time.monotonic()
+        return work_ends - time.monotonic()
+
+    def rest(limit: UsageLimit) -> None:
+        resets = limit.resets_at
+        store.add_progress(turn_id, "Waiting for your usage limit to reset" + (
+            f" (about {datetime.fromtimestamp(resets):%H:%M})" if resets else ""))
+        _sleep(_pause(limit))
+
+    def patient(call, until: float):
+        """A harness call that waits out a usage limit and tries again, unless the wait would pass `until`."""
+        while True:
+            try:
+                return call()
+            except UsageLimit as limit:
+                if time.monotonic() + _pause(limit) > until:
+                    raise
+                rest(limit)
 
     def queue(texts) -> int:
         """Add pieces of work to the queue, up to the run's limit; returns how many were added."""
@@ -38,56 +60,80 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
     def planned(reply) -> int:
         return queue((document(reply.text) or {}).get("items"))
 
-    store.add_progress(turn_id, "Planning the research")
-    try:
-        if not planned(agent.run(_plan(brief, effort, agents), turn["session_id"])):
-            return agent.fail("The agent did not return a plan for this research.")
-    except HarnessError as error:
-        return agent.fail(str(error))
-    def work(item) -> str | None:
-        """One piece of work in a fresh session; returns the error when it fails."""
+    def work(item) -> HarnessError | None:
+        """One piece of work in a fresh session; returns the error when it fails. A piece stopped by a
+        usage limit goes back in the queue."""
         store.add_progress(turn_id, f"Working on: {item['text']}")
         try:
             reply = agent.run(_work(brief, item["text"], store.items(turn_id), agent.name), None,
                               min(2 * ITEM_MINUTES * 60, max(1.0, left())))
+        except UsageLimit as limit:
+            store.requeue_item(item["id"])
+            return limit
         except HarnessError as failure:
             store.finish_item(item["id"], error=str(failure))
-            return str(failure)
+            return failure
         result = document(reply.text) or {}
         store.finish_item(item["id"], result=str(result.get("summary") or reply.text).strip()[:2000])
         queue((result.get("new_items") or [])[:2])
         return None
 
-    failures, error, working = 0, "The time ran out before any of the work was done.", set()
+    store.add_progress(turn_id, "Planning the research")
+    try:
+        if not planned(patient(lambda: agent.run(_plan(brief, effort, agents), turn["session_id"]), work_ends)):
+            return agent.fail("The agent did not return a plan for this research.")
+    except HarnessError as error:
+        return agent.fail(str(error))
+    failures, error, working, limit = 0, "The time ran out before any of the work was done.", set(), None
     with ThreadPoolExecutor(agents) as pool:
         while True:
-            while (len(working) < agents and left() > START_MINUTES * 60 and failures < FAILURES
+            if limit and not working:  # Everyone has stopped at the limit: wait it out if the time allows.
+                if _pause(limit) > left() - START_MINUTES * 60:
+                    break
+                rest(limit)
+                limit = None
+            while (not limit and len(working) < agents and left() > START_MINUTES * 60 and failures < FAILURES
                    and (item := store.next_item(turn_id))):
                 working.add(pool.submit(work, item))
             if working:  # Wait for a worker to finish; it may have queued more.
                 finished, working = wait(working, return_when=FIRST_COMPLETED)
                 for failure in (future.result() for future in finished):
-                    failures, error = (0, error) if failure is None else (failures + 1, failure)
+                    if isinstance(failure, UsageLimit):
+                        limit, error = failure, str(failure)
+                    else:
+                        failures, error = (0, error) if failure is None else (failures + 1, str(failure))
                 continue
             # Nobody is working and nothing was claimed: stop, or with time in hand ask what else would serve the brief.
             if left() <= START_MINUTES * 60 or failures >= FAILURES or time.monotonic() - started >= USE_OF_TIME * effort * 60:
                 break
             store.add_progress(turn_id, "Looking for what else would serve the brief")
             try:
-                if not planned(agent.run(_replan(brief, store.items(turn_id), round(left() / 60)))):
+                if not planned(patient(lambda: agent.run(_replan(brief, store.items(turn_id), round(left() / 60))), work_ends)):
                     break
             except HarnessError:
                 break
     done = [item for item in store.items(turn_id) if item["status"] == "done"]
     if not done:
         return agent.fail(error)
-    store.add_progress(turn_id, "Writing the report")
-    try:
-        check, session_id, _ = agent.answer(_report(brief, done, agent.name), None)
+
+    def report():
+        store.add_progress(turn_id, "Writing the report")
+        agent.stop_at = time.monotonic() + 2 * REPORT_MINUTES * 60  # The report has its own allowance.
+        return agent.answer(_report(brief, done, agent.name), None)
+
+    try:  # The work is done, so a usage limit here is worth waiting out even past the run's time.
+        check, session_id, _ = patient(report, time.monotonic() + REPORT_WAIT_HOURS * 3600)
     except HarnessError as failure:
         return agent.fail(str(failure))
     store._set_session(turn["thread_id"], session_id)  # A follow-up resumes the session that wrote the report.
     agent.finish(turn, check)
+
+
+def _pause(limit: UsageLimit) -> float:
+    """Seconds to wait before trying again: until the reset the harness named, else a fixed interval."""
+    if limit.resets_at and limit.resets_at > time.time():
+        return limit.resets_at - time.time() + 30
+    return RETRY_MINUTES * 60
 
 
 def _plan(brief: str, effort: int, agents: int) -> str:
@@ -99,12 +145,14 @@ def _plan(brief: str, effort: int, agents: int) -> str:
             "can act on it without this conversation: a specific question to settle or a concrete addition to the "
             "graph, naming the companies, periods and documents involved. Put first what matters most to the brief; "
             "later items may not be reached, and workers can add items as they learn. Reply with JSON alone: "
-            f'{{"items": ["...", "..."]}}, {max(effort // 20, agents)} to {max(effort // 10, 2 * agents)} items.\n\nBrief: {brief}')
+            f'{{"items": ["...", "..."]}}, {max(agents, min(effort // 20, 6))} to {max(2 * agents, min(effort // 10, 12))} items.'
+            f"\n\nBrief: {brief}")
 
 
-def _listing(items: list[dict]) -> str:
-    return "\n".join(f"- [{item['status']}] {item['text']}" + (f" — {item['result']}" if item["status"] == "done" else "")
-                     for item in items)
+def _listing(items: list[dict], results: int = 400) -> str:
+    """The pieces of work, one a line, with what the finished ones found cut to `results` characters."""
+    return "\n".join(f"- [{item['status']}] {item['text']}" + (
+        f" — {item['result'][:results]}" if item["status"] == "done" and results else "") for item in items)
 
 
 def _replan(brief: str, items: list[dict], minutes: int) -> str:
@@ -127,7 +175,7 @@ def _work(brief: str, text: str, items: list[dict], author: str) -> str:
             'could not settle. Then reply with JSON alone: {"summary": "two or three sentences on what you found '
             'and added", "new_items": ["at most two further pieces of work this turned up that are not on the list '
             'and matter to the brief"]}.'
-            f"\n\nBrief: {brief}\n\nYour item: {text}\n\nAll items in this research, so you do not repeat one:\n{_listing(items)}")
+            f"\n\nBrief: {brief}\n\nYour item: {text}\n\nAll items in this research, so you do not repeat one:\n{_listing(items, 0)}")
 
 
 def _report(brief: str, done: list[dict], author: str) -> str:
