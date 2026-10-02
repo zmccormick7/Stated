@@ -3,7 +3,7 @@ one piece of work from a queue, several at a time when the user asks, and a repo
 nothing but the graph."""
 
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 import time
 
@@ -25,10 +25,12 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
     """Carry out a started turn as a run of `effort` minutes: plan pieces of work, do them in fresh
     sessions, as many at a time as the turn has agents, until the queue is empty or the time is used,
     then report as a checked answer. A usage limit is waited out, inside the run's time for the work
-    and beyond it for the report."""
+    and beyond it for the report. The run's clock is the turn's start, so a run picked up again after
+    the app was stopped carries on from where it was, with whatever time is left."""
     turn_id, brief, agents = turn["id"], turn["question"], turn["agents"]
-    agent = Agent(store, turn_id, db_path, harness, web=True, seconds=effort * 60)
-    started = time.monotonic()
+    elapsed = (datetime.now(UTC) - datetime.fromisoformat(turn["started_at"])).total_seconds()
+    agent = Agent(store, turn_id, db_path, harness, web=True, seconds=max(60.0, effort * 60 - elapsed))
+    started = time.monotonic() - elapsed
     work_ends = started + (effort - REPORT_MINUTES) * 60
 
     def left() -> float:
@@ -87,14 +89,20 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
         except HarnessError:  # The review is a tidy-up; the work and the report do not depend on it.
             pass
 
-    store.add_progress(turn_id, "Planning the research")
-    try:
-        if not planned(patient(lambda: agent.run(_plan(brief, effort, agents), turn["session_id"]), work_ends)):
-            return agent.fail("The agent did not return a plan for this research.")
-    except HarnessError as error:
-        return agent.fail(str(error))
+    if store.items(turn_id):  # Planned already: the app was stopped while this run was under way.
+        back = store.requeue_running(turn_id)
+        store.add_progress(turn_id, "Picking the research up again after a restart" + (
+            f", with {back} piece{'s'[:back != 1]} of work put back in the queue" if back else ""))
+    else:
+        store.add_progress(turn_id, "Planning the research")
+        try:
+            if not planned(patient(lambda: agent.run(_plan(brief, effort, agents), turn["session_id"]), work_ends)):
+                return agent.fail("The agent did not return a plan for this research.")
+        except HarnessError as error:
+            return agent.fail(str(error))
     failures, error, working, limit = 0, "The time ran out before any of the work was done.", set(), None
-    reviewed, reviewing, done_count = 0, None, lambda: sum(item["status"] == "done" for item in store.items(turn_id))
+    reviewed = sum(item["status"] == "done" for item in store.items(turn_id))  # After a restart: reviewed as the run goes on.
+    reviewing, done_count = None, lambda: sum(item["status"] == "done" for item in store.items(turn_id))
     with ThreadPoolExecutor(agents) as pool, ThreadPoolExecutor(1) as reviewer:
         while True:
             if limit and not working:  # Everyone has stopped at the limit: wait it out if the time allows.

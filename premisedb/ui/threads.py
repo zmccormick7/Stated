@@ -122,6 +122,18 @@ class ThreadStore:
             db.execute("UPDATE work_items SET status = ?, result = ?, finished_at = ? WHERE id = ?",
                        ("done" if error is None else "failed", result if error is None else error, _now(), item_id))
 
+    def unfinished(self) -> list[dict]:
+        """Turns still marked running, as after the app was stopped mid-answer."""
+        with self._db() as db:
+            return [dict(row) for row in db.execute(
+                "SELECT id, thread_id, question, effort, agents, started_at FROM turns WHERE status = 'running' ORDER BY id")]
+
+    def requeue_running(self, turn_id: int) -> int:
+        """Put every piece of work a run had in hand back in the queue; returns how many."""
+        with self._db() as db:
+            return db.execute("UPDATE work_items SET status = 'todo', started_at = NULL WHERE turn_id = ? AND status = 'running'",
+                              (turn_id,)).rowcount
+
     def requeue_item(self, item_id: int) -> None:
         """Put a claimed piece of work back at the front of the queue, as when a usage limit stopped it."""
         with self._db() as db:

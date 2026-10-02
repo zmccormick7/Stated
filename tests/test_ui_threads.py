@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -226,6 +226,38 @@ class ThreadTests(unittest.TestCase):
         turn = self.ask(harness, "Go deep.", effort=180)["turns"][0]
         self.assertEqual((turn["status"], turn["error"], turn["items"][0]["status"], len(slept)),
                          ("failed", "usage limit reached", "todo", 3))
+
+    def test_a_run_picks_up_where_the_app_was_stopped(self):
+        def stranded(minutes_ago):
+            """A run turn left running with one piece done and one in hand, started some minutes ago."""
+            thread = self.store.create_thread("Go deep.", harness="fake")
+            turn_id = self.store.start_turn(thread, "Go deep.", 60, 1)
+            self.store.add_items(turn_id, ["A", "B", "C"])
+            self.store.finish_item(self.store.next_item(turn_id)["id"], result="Did A.")
+            self.store.next_item(turn_id)
+            with self.store._db() as db:
+                db.execute("UPDATE turns SET started_at = ? WHERE id = ?",
+                           ((datetime.now(UTC) - timedelta(minutes=minutes_ago)).isoformat(), turn_id))
+            return thread, turn_id
+
+        # Time left: the piece in hand goes back in the queue and the work carries on without a new plan.
+        thread, turn_id = stranded(20)
+        harness = FakeHarness(json.dumps({"summary": "Did B."}), json.dumps({"summary": "Did C."}), json.dumps({"items": []}), self.good)
+        run_turn(self.store, turn_id, db_path=self.db_path, harness=harness)
+        turn = self.store.thread(thread)["turns"][0]
+        self.assertEqual((turn["status"], [item["status"] for item in turn["items"]], len(harness.calls)), ("done", ["done"] * 3, 4))
+        self.assertEqual(turn["progress"][0], "Picking the research up again after a restart, with 1 piece of work put back in the queue")
+        self.assertIn("Your item: B", harness.calls[0]["prompt"])
+        self.assertTrue(harness.calls[0]["timeout"] <= 30 * 60)  # The clock is the turn's start, not now.
+        self.assertEqual(len(harness.reviews), 1)  # Only what finished since the restart is reviewed.
+        # Time over: straight to the report from what was done.
+        thread, turn_id = stranded(120)
+        harness = FakeHarness(self.good)
+        run_turn(self.store, turn_id, db_path=self.db_path, harness=harness)
+        turn = self.store.thread(thread)["turns"][0]
+        self.assertEqual((turn["status"], [item["status"] for item in turn["items"]], len(harness.calls)),
+                         ("done", ["done", "todo", "todo"], 1))
+        self.assertIn("Work done:\n- [done] A — Did A.", harness.calls[0]["prompt"])
 
     def test_a_run_with_no_plan_or_no_finished_work_fails_plainly(self):
         for replies, error in (((json.dumps({"items": []}),), "The agent did not return a plan for this research."),

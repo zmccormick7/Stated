@@ -44,6 +44,17 @@ class App:
         self.db_path = Path(db_path).resolve()
         self.store = ThreadStore(self.db_path.with_name(self.db_path.stem + ".threads.sqlite"))
         self.harness = harness
+        self.resume()
+
+    def resume(self) -> None:
+        """Pick up what the last run of the app left mid-answer: a research run carries on from its queue
+        with the time it has left; a single-session turn cannot be resumed and is marked failed."""
+        for turn in self.store.unfinished():
+            if turn["effort"] in RUN_EFFORTS:
+                threading.Thread(target=run_turn, args=(self.store, turn["id"]),
+                                 kwargs={"db_path": self.db_path, "harness": self.harness}, daemon=True).start()
+            else:
+                self.store.finish_turn(turn["id"], error="PremiseDB was stopped while this question was being answered.")
 
     def evaluate(self, model_id: str, overrides) -> dict:
         """A model's values with some Variables held at other values; the lever block calls this as it moves."""
