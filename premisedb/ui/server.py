@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 from ..store import RecordStore
 from .harness import ClaudeCode, Codex
-from .threads import DEFAULT_EFFORT, EFFORTS, RUN_EFFORTS, ThreadStore, run_turn
+from .threads import AGENTS, DEFAULT_AGENTS, DEFAULT_EFFORT, EFFORTS, RUN_EFFORTS, ThreadStore, run_turn
 
 STATIC = Path(__file__).with_name("static")
 HARNESSES = {"claude-code": ClaudeCode, "codex": Codex}
@@ -91,17 +91,20 @@ class App:
                 "attributes": {k: v for k, v in record.attributes.items() if k != "citations"},
                 "citations": citations, "connections": connections, "has_more": found.has_more}
 
-    def ask(self, thread_id: str | None, question: str, effort=None) -> dict:
+    def ask(self, thread_id: str | None, question: str, effort=None, agents=None) -> dict:
         """Start a turn and answer it in the background; one turn at a time per thread. `effort` is the
-        minutes the user gives it, one of EFFORTS."""
+        minutes the user gives it; `agents` is how many workers a research run has at a time."""
         effort = DEFAULT_EFFORT if effort is None else effort
         if isinstance(effort, bool) or effort not in (*EFFORTS, *RUN_EFFORTS):
             raise ValueError(f"effort must be one of {', '.join(map(str, (*EFFORTS, *RUN_EFFORTS)))} minutes")
+        agents = (DEFAULT_AGENTS if agents is None else agents) if effort in RUN_EFFORTS else 1
+        if isinstance(agents, bool) or agents not in AGENTS:
+            raise ValueError(f"agents must be one of {', '.join(map(str, AGENTS))}")
         if thread_id is None:
             thread_id = self.store.create_thread(question, harness=self.harness.name)
         elif any(turn["status"] == "running" for turn in self.store.thread(thread_id)["turns"]):
             raise ValueError("this thread is still answering the previous question")
-        turn_id = self.store.start_turn(thread_id, question, effort)
+        turn_id = self.store.start_turn(thread_id, question, effort, agents)
         threading.Thread(target=run_turn, args=(self.store, turn_id),
                          kwargs={"db_path": self.db_path, "harness": self.harness}, daemon=True).start()
         return {"thread_id": thread_id, "turn_id": turn_id}
@@ -151,9 +154,10 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 raise ValueError("the request body must be a JSON object")
             if path == "/api/threads":
-                self._json(self.app.ask(None, body.get("question"), body.get("effort")), HTTPStatus.CREATED)
+                self._json(self.app.ask(None, body.get("question"), body.get("effort"), body.get("agents")), HTTPStatus.CREATED)
             elif path.startswith("/api/threads/") and path.endswith("/turns"):
-                self._json(self.app.ask(path[13:-6], body.get("question"), body.get("effort")), HTTPStatus.CREATED)
+                self._json(self.app.ask(path[13:-6], body.get("question"), body.get("effort"), body.get("agents")),
+                           HTTPStatus.CREATED)
             elif path.startswith("/api/models/") and path.endswith("/evaluate"):
                 self._json(self.app.evaluate(path[12:-9], body.get("overrides")))
             else:

@@ -1,6 +1,8 @@
 """A research run: a turn too long for one session, done as a plan, short fresh sessions that each take
-one piece of work from a queue, and a report. Workers share nothing but the graph."""
+one piece of work from a queue, several at a time when the user asks, and a report. Workers share
+nothing but the graph."""
 
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 import time
 
@@ -9,14 +11,15 @@ from .threads import USE_OF_TIME, Agent, ThreadStore, document
 
 ITEM_MINUTES = 15  # What a worker is told to spend; it is stopped at twice that.
 REPORT_MINUTES = 10  # Kept back from the run's time for the report, and how far the report may run over.
-MAX_ITEMS = 40
+MAX_ITEMS = 40  # For each agent.
 FAILURES = 2  # This many pieces of work failing in a row ends the work early.
 
 
 def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: int) -> None:
-    """Carry out a started turn as a run of `effort` minutes: plan pieces of work, do them one at a time
-    in fresh sessions until the queue is empty or the time is used, then report as a checked answer."""
-    turn_id, brief = turn["id"], turn["question"]
+    """Carry out a started turn as a run of `effort` minutes: plan pieces of work, do them in fresh
+    sessions, as many at a time as the turn has agents, until the queue is empty or the time is used,
+    then report as a checked answer."""
+    turn_id, brief, agents = turn["id"], turn["question"], turn["agents"]
     agent = Agent(store, turn_id, db_path, harness, web=True, seconds=(effort + REPORT_MINUTES) * 60)
     started = time.monotonic()
 
@@ -27,7 +30,7 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
     def queue(texts) -> int:
         """Add pieces of work to the queue, up to the run's limit; returns how many were added."""
         texts = [" ".join(text.split()) for text in texts or [] if isinstance(text, str) and text.strip()]
-        texts = texts[:max(0, MAX_ITEMS - len(store.items(turn_id)))]
+        texts = texts[:max(0, MAX_ITEMS * agents - len(store.items(turn_id)))]
         store.add_items(turn_id, texts)
         return len(texts)
 
@@ -36,33 +39,43 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
 
     store.add_progress(turn_id, "Planning the research")
     try:
-        if not planned(agent.run(_plan(brief, effort), turn["session_id"])):
+        if not planned(agent.run(_plan(brief, effort, agents), turn["session_id"])):
             return agent.fail("The agent did not return a plan for this research.")
     except HarnessError as error:
         return agent.fail(str(error))
-    failures, error = 0, "The time ran out before any of the work was done."
-    while left() > 60 and failures < FAILURES:
-        item = store.next_item(turn_id)
+    def work(item) -> str | None:
+        """One piece of work in a fresh session; returns the error when it fails."""
+        store.add_progress(turn_id, f"Working on: {item['text']}")
         try:
-            if item is None:  # The queue is empty: with time in hand, ask what else would serve the brief.
-                if time.monotonic() - started >= USE_OF_TIME * effort * 60:
-                    break
-                store.add_progress(turn_id, "Looking for what else would serve the brief")
+            reply = agent.run(_work(brief, item["text"], store.items(turn_id), agent.name), None,
+                              min(2 * ITEM_MINUTES * 60, max(1.0, left())))
+        except HarnessError as failure:
+            store.finish_item(item["id"], error=str(failure))
+            return str(failure)
+        result = document(reply.text) or {}
+        store.finish_item(item["id"], result=str(result.get("summary") or reply.text).strip()[:2000])
+        queue((result.get("new_items") or [])[:2])
+        return None
+
+    failures, error, working = 0, "The time ran out before any of the work was done.", set()
+    with ThreadPoolExecutor(agents) as pool:
+        while True:
+            while len(working) < agents and left() > 60 and failures < FAILURES and (item := store.next_item(turn_id)):
+                working.add(pool.submit(work, item))
+            if working:  # Wait for a worker to finish; it may have queued more.
+                finished, working = wait(working, return_when=FIRST_COMPLETED)
+                for failure in (future.result() for future in finished):
+                    failures, error = (0, error) if failure is None else (failures + 1, failure)
+                continue
+            # Nobody is working and nothing was claimed: stop, or with time in hand ask what else would serve the brief.
+            if left() <= 60 or failures >= FAILURES or time.monotonic() - started >= USE_OF_TIME * effort * 60:
+                break
+            store.add_progress(turn_id, "Looking for what else would serve the brief")
+            try:
                 if not planned(agent.run(_replan(brief, store.items(turn_id), round(left() / 60)))):
                     break
-                continue
-            store.add_progress(turn_id, f"Working on: {item['text']}")
-            reply = agent.run(_work(brief, item["text"], store.items(turn_id), agent.name), None,
-                              min(2 * ITEM_MINUTES * 60, left()))
-            result = document(reply.text) or {}
-            store.finish_item(item["id"], result=str(result.get("summary") or reply.text).strip()[:2000])
-            queue((result.get("new_items") or [])[:2])
-            failures = 0
-        except HarnessError as failure:
-            failures, error = failures + 1, str(failure)
-            if item is None:
+            except HarnessError:
                 break
-            store.finish_item(item["id"], error=error)
     done = [item for item in store.items(turn_id) if item["status"] == "done"]
     if not done:
         return agent.fail(error)
@@ -75,15 +88,16 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
     agent.finish(turn, check)
 
 
-def _plan(brief: str, effort: int) -> str:
+def _plan(brief: str, effort: int, agents: int) -> str:
     return ("Plan research for the brief below. Do not do the research yet: with the premisedb-research skill, look "
             "only at what the graph (the database PREMISEDB_DB names) already holds on it, so the plan starts from "
             f"there. The work will take about {effort} minutes and be done by workers that each start fresh, take "
-            f"one item and spend about {ITEM_MINUTES} minutes on it, one after another. Write each item so a worker "
+            f"one item and spend about {ITEM_MINUTES} minutes on it, "
+            f"{'one after another' if agents == 1 else f'{agents} at a time, so items must not overlap'}. Write each item so a worker "
             "can act on it without this conversation: a specific question to settle or a concrete addition to the "
             "graph, naming the companies, periods and documents involved. Put first what matters most to the brief; "
             "later items may not be reached, and workers can add items as they learn. Reply with JSON alone: "
-            f'{{"items": ["...", "..."]}}, {effort // 20} to {effort // 10} items.\n\nBrief: {brief}')
+            f'{{"items": ["...", "..."]}}, {max(effort // 20, agents)} to {max(effort // 10, 2 * agents)} items.\n\nBrief: {brief}')
 
 
 def _listing(items: list[dict]) -> str:

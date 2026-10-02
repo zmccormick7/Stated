@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import stat
 import sys
+import threading
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -163,6 +164,32 @@ class ThreadTests(unittest.TestCase):
         turn = self.ask(harness, "And suppliers?", thread=thread["id"], effort=60)["turns"][1]
         self.assertEqual((harness.calls[0]["session_id"], turn["status"], len(harness.calls)), ("session-1", "done", 5))
         self.assertEqual([item["status"] for item in turn["items"]], ["done", "failed", "failed"])  # Two failures end the work.
+
+    def test_a_run_with_three_agents_works_three_pieces_at_a_time(self):
+        good, prompts, together = self.good, [], threading.Barrier(3, timeout=5)
+
+        class Crew:
+            name = "fake"
+
+            def run(self, prompt, *, cwd, env, session_id, web, timeout, on_progress):
+                prompts.append(prompt)
+                if prompt.startswith("Plan research"):
+                    return Reply(json.dumps({"items": ["A", "B", "C", "D"]}), "s", ())
+                if prompt.startswith("You are one worker"):
+                    item = prompt.split("Your item: ")[1][0]
+                    if item in "ABC":
+                        together.wait()  # Passes only when three workers are in flight at once.
+                    return Reply(json.dumps({"summary": f"Did {item}."}), "s", ())
+                return Reply('{"items": []}' if "has done the work listed" in prompt else good, "s", ())
+
+        thread = self.store.create_thread("Go deep.", harness="fake")
+        run_turn(self.store, self.store.start_turn(thread, "Go deep.", 60, 3), db_path=self.db_path, harness=Crew())
+        turn = self.store.thread(thread)["turns"][0]
+        self.assertEqual((turn["status"], turn["agents"]), ("done", 3))
+        self.assertEqual([(item["status"], item["result"]) for item in turn["items"]],
+                         [("done", f"Did {item}.") for item in "ABCD"])
+        self.assertIn("3 at a time, so items must not overlap", prompts[0])
+        self.assertIn("3 to 6 items.", prompts[0])
 
     def test_a_run_with_no_plan_or_no_finished_work_fails_plainly(self):
         for replies, error in (((json.dumps({"items": []}),), "The agent did not return a plan for this research."),

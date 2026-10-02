@@ -12,6 +12,7 @@ CREATE TABLE turns (
     thread_id TEXT NOT NULL REFERENCES threads(id),
     question TEXT NOT NULL,
     effort INTEGER NOT NULL,  -- Minutes the user gave the turn.
+    agents INTEGER NOT NULL DEFAULT 1,  -- Workers at a time, for a research run.
     status TEXT NOT NULL CHECK (status IN ('running', 'done', 'failed')),
     progress TEXT NOT NULL DEFAULT '[]',  -- JSON list of what the agent has done so far.
     answer TEXT,  -- The checked answer document as JSON, when done.
