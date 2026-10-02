@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 from ..store import RecordStore
 from .harness import ClaudeCode, Codex
-from .threads import DEFAULT_EFFORT, EFFORTS, ThreadStore, run_turn
+from .threads import DEFAULT_EFFORT, EFFORTS, RUN_EFFORTS, ThreadStore, run_turn
 
 STATIC = Path(__file__).with_name("static")
 HARNESSES = {"claude-code": ClaudeCode, "codex": Codex}
@@ -95,15 +95,15 @@ class App:
         """Start a turn and answer it in the background; one turn at a time per thread. `effort` is the
         minutes the user gives it, one of EFFORTS."""
         effort = DEFAULT_EFFORT if effort is None else effort
-        if isinstance(effort, bool) or effort not in EFFORTS:
-            raise ValueError(f"effort must be one of {', '.join(map(str, EFFORTS))} minutes")
+        if isinstance(effort, bool) or effort not in (*EFFORTS, *RUN_EFFORTS):
+            raise ValueError(f"effort must be one of {', '.join(map(str, (*EFFORTS, *RUN_EFFORTS)))} minutes")
         if thread_id is None:
             thread_id = self.store.create_thread(question, harness=self.harness.name)
         elif any(turn["status"] == "running" for turn in self.store.thread(thread_id)["turns"]):
             raise ValueError("this thread is still answering the previous question")
-        turn_id = self.store.start_turn(thread_id, question)
+        turn_id = self.store.start_turn(thread_id, question, effort)
         threading.Thread(target=run_turn, args=(self.store, turn_id),
-                         kwargs={"db_path": self.db_path, "harness": self.harness, "effort": effort}, daemon=True).start()
+                         kwargs={"db_path": self.db_path, "harness": self.harness}, daemon=True).start()
         return {"thread_id": thread_id, "turn_id": turn_id}
 
 

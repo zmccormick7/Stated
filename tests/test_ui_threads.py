@@ -8,7 +8,7 @@ import unittest
 
 from premisedb import RecordStore
 from premisedb.ui import ClaudeCode, Codex, HarnessError, Reply, ThreadStore, run_turn
-from premisedb.ui import threads
+from premisedb.ui import runs, threads
 from premisedb.ui.threads import time_limit
 
 
@@ -42,9 +42,9 @@ class ThreadTests(unittest.TestCase):
         self.good = json.dumps({"title": "Two customers were 36% of revenue.", "body": "One was 22%. [1]",
                                 "sources": [{"record": self.finding[:8]}]})
 
-    def ask(self, harness, question="How concentrated are the customers?", thread=None, **options):
+    def ask(self, harness, question="How concentrated are the customers?", thread=None, effort=5):
         thread = thread or self.store.create_thread(question, harness=harness.name)
-        run_turn(self.store, self.store.start_turn(thread, question), db_path=self.db_path, harness=harness, **options)
+        run_turn(self.store, self.store.start_turn(thread, question, effort), db_path=self.db_path, harness=harness)
         return self.store.thread(thread)
 
     def test_a_question_becomes_a_checked_answer_in_a_thread(self):
@@ -129,6 +129,54 @@ class ThreadTests(unittest.TestCase):
         self.addCleanup(setattr, threads, "USE_OF_TIME", original)
         self.ask(harness := FakeHarness(self.good), effort=20)
         self.assertEqual(len(harness.calls), 1)
+
+    def test_an_hour_is_a_run_of_planned_work_and_a_report(self):
+        plan = json.dumps({"items": ["Who are the two customers?", " Read the\n10-K note ", "", 7]})
+        worked = json.dumps({"summary": "They are unnamed.", "new_items": ["Check the 10-Q", "Ask the 8-K", "A third"]})
+        harness = FakeHarness(plan, worked, HarnessError("the page would not load"), "Plain words, no JSON.", "Nothing new.",
+                              json.dumps({"items": []}), self.good)
+        thread = self.ask(harness, "Go deep on the customers.", effort=60)
+        turn = thread["turns"][0]
+        self.assertEqual((turn["status"], turn["error"], turn["effort"], turn["answer"]["title"]),
+                         ("done", None, 60, "Two customers were 36% of revenue."))
+        self.assertEqual([(item["text"], item["status"], item["result"]) for item in turn["items"]], [
+            ("Who are the two customers?", "done", "They are unnamed."),
+            ("Read the 10-K note", "failed", "the page would not load"),
+            ("Check the 10-Q", "done", "Plain words, no JSON."),  # A worker may add two items, no more.
+            ("Ask the 8-K", "done", "Nothing new.")])
+        plan_call, first, *_, replan, report = harness.calls
+        self.assertEqual(len(harness.calls), 7)
+        self.assertIn("Plan research for the brief below", plan_call["prompt"])
+        self.assertIn("3 to 6 items.\n\nBrief: Go deep on the customers.", plan_call["prompt"])
+        self.assertIn("Your item: Who are the two customers?", first["prompt"])
+        self.assertIn("- [todo] Read the 10-K note", first["prompt"])  # A worker sees the other items.
+        self.assertEqual((first["session_id"], first["web"], first["fetch"], first["timeout"]), (None, True, "1", 1800))
+        self.assertIn("- [done] Who are the two customers? — They are unnamed.", replan["prompt"])
+        self.assertIn("- [failed] Read the 10-K note", replan["prompt"])
+        self.assertIn("Work done:\n- [done] Who are the two customers? — They are unnamed.", report["prompt"])
+        self.assertNotIn("Read the 10-K note", report["prompt"])
+        self.assertEqual(report["session_id"], None)  # The report starts fresh, from the graph.
+        self.assertEqual(turn["progress"][::2][:2], ["Planning the research", "Working on: Who are the two customers?"])
+        self.assertIn("Writing the report", turn["progress"])
+        # A follow-up plans in the session that wrote the report.
+        harness = FakeHarness(json.dumps({"items": ["More"]}), worked, HarnessError("usage limit"), HarnessError("usage limit"), self.good)
+        turn = self.ask(harness, "And suppliers?", thread=thread["id"], effort=60)["turns"][1]
+        self.assertEqual((harness.calls[0]["session_id"], turn["status"], len(harness.calls)), ("session-1", "done", 5))
+        self.assertEqual([item["status"] for item in turn["items"]], ["done", "failed", "failed"])  # Two failures end the work.
+
+    def test_a_run_with_no_plan_or_no_finished_work_fails_plainly(self):
+        for replies, error in (((json.dumps({"items": []}),), "The agent did not return a plan for this research."),
+                               ((HarnessError("OAuth session expired"),), "OAuth session expired"),
+                               ((json.dumps({"items": ["A", "B", "C"]}), HarnessError("usage limit"), HarnessError("usage limit")),
+                                "usage limit")):
+            with self.subTest(error=error):
+                turn = self.ask(harness := FakeHarness(*replies), effort=60)["turns"][0]
+                self.assertEqual((turn["status"], turn["error"], len(harness.calls)), ("failed", error, len(replies)))
+        original, runs.REPORT_MINUTES = runs.REPORT_MINUTES, 60  # No working time left once the plan is in.
+        self.addCleanup(setattr, runs, "REPORT_MINUTES", original)
+        turn = self.ask(harness := FakeHarness(json.dumps({"items": ["A"]})), effort=60)["turns"][0]
+        self.assertEqual((turn["error"], [item["status"] for item in turn["items"]], len(harness.calls)),
+                         ("The time ran out before any of the work was done.", ["todo"], 1))
 
     def test_store_boundaries(self):
         with self.assertRaises(KeyError):
