@@ -118,15 +118,40 @@ def _evidence(db, record):
 
 
 def _source(db, source, where, problems):
+    """A source resolved for the reader: the record's own text, and for a quote, the document it is from."""
     if not _shape(source, "source", where, problems) or (record := _record(db, source["record"], where, problems)) is None:
         return None
-    resolved = {"record": record.id, "kind": record.kind}
+    resolved = {"record": record.id, "kind": record.kind, "text": record.text}
     if "quote" in source:
         quote = source["quote"]
         if not _text(quote) or not any(quote in text for text in _evidence(db, record)):
             problems.append(f"{where}: the quote is not in record {record.id[:8]} or the passages it cites")
+            return resolved | {"quote": quote}
         resolved["quote"] = quote
+        if (document := _cited_in(db, record, quote)) is not None:
+            resolved["cited"] = document
     return resolved
+
+
+def _cited_in(db, record, quote):
+    """The Source whose cited passage holds the quote, as {source, title}; None when it is the record's own words."""
+    for citation in record.attributes.get("citations") or []:
+        if not isinstance(citation, dict):
+            continue
+        passage = citation.get("quote")
+        if not isinstance(passage, str):
+            try:
+                passage = db.read_source_text(citation.get("source_id"), start_byte=citation.get("start_byte"),
+                                              end_byte=citation.get("end_byte"))
+            except (KeyError, ValueError):
+                continue
+        if quote in passage:
+            try:
+                document = db.read(citation["source_id"])
+            except (KeyError, TypeError):
+                return None
+            return {"source": document.id, "title": document.text.split(". ")[0][:120]}
+    return None
 
 
 def _markers(text, where, count, used, problems):

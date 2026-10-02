@@ -20,7 +20,8 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .turn { display: flex; flex-direction: column; gap: 14px; }
 .turn + .turn { border-top: 1px solid var(--line); padding-top: 28px; }
 .question { color: var(--mute); font-size: 14px; }
-.answer h1 { margin: 0 0 12px; font-size: 30px; line-height: 1.25; font-weight: 600; text-wrap: balance; }
+.answer { display: flex; flex-direction: column; gap: 20px; }
+.answer h1 { margin: 0 0 -8px; font-size: 30px; line-height: 1.25; font-weight: 600; text-wrap: balance; }
 .answer p { margin: 0; text-wrap: pretty; }
 .answer sup a { color: var(--ink); text-decoration: none; font-size: 12px; }
 .answer blockquote { margin: 0; border-left: 2px solid var(--ink); padding: 2px 0 2px 14px; }
@@ -40,7 +41,11 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .chart .part.rest { color: #555555; font-weight: 400; background: #FFFFFF; border: 1px solid var(--line); justify-content: flex-start; padding-left: 8px; }
 .chart .bar b { margin-left: 8px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .chart figcaption { color: var(--mute); font-size: 12px; }
-.answer .sources { margin: 0; padding-left: 18px; }
+.answer .sources { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink); }
+.answer .sources summary { cursor: pointer; color: #555555; }
+.answer .sources details[open] summary { color: var(--ink); }
+.answer .sources details p { margin: 6px 0 0; font-size: 13px; }
+.answer .sources .muted { color: var(--mute); font-size: 12px; }
 .progress { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .error { border: 1px solid var(--ink); padding: 10px 14px; font-size: 14px; }
 .empty { color: var(--mute); margin-top: 25vh; text-align: center; }

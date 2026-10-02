@@ -41,8 +41,11 @@ class AnswerCheckTests(unittest.TestCase):
     def test_a_grounded_answer_is_resolved(self):
         result = check_answer(self.db, self.answer())
         self.assertEqual((result.ok, result.problems), (True, ()))
-        self.assertEqual(result.answer["sources"], [{"record": self.finding, "kind": "Finding",
-                                                     "quote": "Compute revenue was $193,479 million."}])
+        self.assertEqual(result.answer["sources"], [{
+            "record": self.finding, "kind": "Finding", "text": "PowerFrame's two largest customers were 22% and 14% of revenue.",
+            "quote": "Compute revenue was $193,479 million.", "cited": {"source": self.source, "title": "PowerFrame 10-K"}}])
+        own = check_answer(self.db, self.answer(sources=[{"record": self.finding, "quote": "22% and 14%"}]))
+        self.assertNotIn("cited", own.answer["sources"][0])  # The record's own words, not a document's.
         self.assertEqual(result.answer["blocks"][0]["rows"][0]["parts"], [
             {"label": "Largest", "record": self.finding, "value": 22},
             {"label": "Second", "record": self.finding, "value": 14}])
