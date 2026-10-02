@@ -219,7 +219,7 @@ def prepare_workspace(db_path: Path | None, *, base: Path | None = None) -> tupl
 
 
 def serve(db_path=None, *, harness_name="claude-code", port=8765, model=None, reasoning_effort=None, base=None,
-          open_browser=True) -> int:
+          contact=None, open_browser=True) -> int:
     """Run the answer UI until interrupted, setting the workspace up on first run; returns the exit status."""
     if harness_name not in HARNESSES:
         raise ValueError(f"unknown harness {harness_name}; choose from {', '.join(HARNESSES)}")
@@ -231,6 +231,11 @@ def serve(db_path=None, *, harness_name="claude-code", port=8765, model=None, re
     db_path, notes = prepare_workspace(None if db_path is None else Path(db_path), base=None if base is None else Path(base))
     for note in notes:
         print(note)
+    if contact is not None:
+        if "@" not in contact:
+            raise ValueError('--contact needs a name and an email, such as "Your Name you@example.com"')
+        db_path.with_name("contact.txt").write_text(contact.strip() + "\n", encoding="utf-8")
+        print(f"Saved your contact in {db_path.with_name('contact.txt')}; it is sent only to SEC.gov")
     if written := install_skills(harness):
         print(f"Installed the {' and '.join(written)} skill(s) for {harness.name} in {harness.skills_directories()[0]}")
     if shutil.which(harness.executable) is None:  # Both real harnesses have one.
