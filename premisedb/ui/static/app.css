@@ -60,7 +60,7 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 #main.empty { justify-content: center; }
 #main.empty #thread { display: none; }
 #main.empty #ask { padding: 0; }
-#status { margin-top: auto; padding: 12px 18px 14px; color: var(--mute); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status { margin-top: auto; padding: 12px 18px 14px; color: var(--mute); font-size: 12px; line-height: 1.5; }
 #sidebar.collapsed #status { display: none; }
 #problem { width: min(680px, 100% - 48px); font-size: 14px; padding: 12px 0 24px; }
 #problem:empty { display: none; }
