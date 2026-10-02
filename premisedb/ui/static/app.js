@@ -31,14 +31,44 @@ function renderBlock(block, sources) {
     return el("blockquote", {}, [el("p", { text: `“${source.quote}”` }),
                                  el("small", { text: `${block.source} · ${source.kind} ${source.record.slice(0, 8)}` })]);
   }
-  if (block.type === "chart") {  // Drawn as figures until the chart renderer lands.
-    const grid = el("div", { class: "figures" });
-    for (const row of block.rows) for (const part of row.parts)
-      grid.append(el("span", { text: row.label === part.label ? part.label : `${row.label} · ${part.label}` }),
-                  el("b", { text: `${part.value} ${block.unit}` }));
-    return grid;
-  }
+  if (block.type === "chart") return renderChart(block);
   return el("p", { class: "note", text: `(${block.type} block)` });
+}
+
+const number = (value) => Number.isInteger(value) ? value.toLocaleString("en-US")
+  : value.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const SHADES = ["#1A1A1A", "#6B6B6B", "#A3A3A3", "#C9C9C9"];  // Parts in fixed order; the remainder is outlined.
+
+// Horizontal bars, one row per entry; several parts stack. Width is a share of `whole` when the chart
+// has one, else of the largest row. Labels sit inside a segment when it is wide enough; every segment
+// carries its full label and value as a tooltip.
+function renderChart(block) {
+  const figure = el("figure", { class: "chart" + (block.lead ? " lead" : "") });
+  const labels = [...new Set(block.rows.flatMap((row) => row.parts.map((part) => part.label)))];
+  const totals = block.rows.map((row) => row.parts.reduce((sum, part) => sum + part.value, 0));
+  const scale = block.whole || Math.max(...totals, 0) || 1;
+  if (labels.length > 1) figure.append(el("div", { class: "legend" }, labels.map((label, i) =>
+    el("span", {}, [el("i", { style: `background:${SHADES[i % SHADES.length]}` }), el("span", { text: label })]))));
+  const grid = el("div", { class: "rows" });
+  block.rows.forEach((row, r) => {
+    const bar = el("div", { class: "bar" });
+    row.parts.forEach((part) => {
+      const share = Math.max(0, part.value) / scale;
+      const shade = labels.indexOf(part.label) % SHADES.length;
+      const segment = el("div", { class: "part", title: `${row.label} · ${part.label}: ${number(part.value)} ${block.unit}`,
+        style: `width:${(share * 100).toFixed(2)}%;background:${SHADES[shade]};color:${shade < 2 ? "#FFFFFF" : "#1A1A1A"}` });
+      if (share >= 0.07) segment.append(el("span", { text: number(part.value) }));
+      bar.append(segment);
+    });
+    if (block.whole) {
+      const rest = block.whole - totals[r];
+      if (rest > 0) bar.append(el("div", { class: "part rest", title: `${row.label} · ${block.rest_label || "Rest"}: ${number(rest)} ${block.unit}`,
+                                           style: `width:${(rest / scale * 100).toFixed(2)}%` }, [el("span", { text: block.rest_label || "" })]));
+    } else bar.append(el("b", { text: number(totals[r]) }));
+    grid.append(el("span", { class: "label", text: row.label }), bar);
+  });
+  figure.append(grid, el("figcaption", { text: [block.caption, block.unit].filter(Boolean).join(" · ") }));
+  return figure;
 }
 
 function renderAnswer(answer) {
