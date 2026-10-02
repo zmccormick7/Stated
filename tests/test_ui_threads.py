@@ -127,6 +127,21 @@ class ClaudeCodeTests(unittest.TestCase):
         self.assertEqual(progress[0], "Bash: Recall x")
         self.assertEqual((len(progress[1]), progress[1][-1]), (160, "…"))
 
+    def test_permission_advice_reads_the_workspace_settings_and_trust(self):
+        home = self.directory / "home"
+        (home / ".claude").mkdir(parents=True)
+        advice = ClaudeCode.permission_advice(self.directory, home)
+        self.assertIn('"Bash(premisedb:*)"', advice or "")
+        (self.directory / ".claude").mkdir()
+        (self.directory / ".claude" / "settings.json").write_text("not json")
+        self.assertIn("No settings file", ClaudeCode.permission_advice(self.directory, home))
+        (self.directory / ".claude" / "settings.local.json").write_text(
+            json.dumps({"permissions": {"allow": ["Bash(premisedb:*)"]}}))
+        self.assertIn("trust", ClaudeCode.permission_advice(self.directory, home))
+        (home / ".claude.json").write_text(json.dumps({"projects": {str(self.directory.resolve()): {
+            "hasTrustDialogAccepted": True}}}))
+        self.assertIsNone(ClaudeCode.permission_advice(self.directory, home))
+
     def test_failures_raise_harness_errors(self):
         failed = {"type": "result", "is_error": True, "result": "OAuth session expired"}
         for build, message in ((lambda: self.executable(failed), "OAuth session expired"),

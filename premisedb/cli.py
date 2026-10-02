@@ -111,6 +111,9 @@ def _parser():
     command("check-answer", "check_answer",
             "Check an answer document against the graph: its sources, quotes and every charted figure.",
             payload="an answer document: title, body, optional sources and blocks")
+    ui = command("ui", "ui", "Run the local answer UI for this workspace until interrupted.")
+    ui.add_argument("--port", type=int, default=8765)
+    ui.add_argument("--harness", default="claude-code", help="The coding agent that answers (default: claude-code).")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     listing.add_argument("--kind")
@@ -314,6 +317,9 @@ def main(argv=None):
             options["quote"] = sys.stdin.read().removesuffix("\n")
         if options.keys() & payload.keys():
             raise ValueError("JSON input must not repeat arguments supplied by the command")
+        if method == "ui":
+            from .ui.server import serve
+            return serve(path, harness_name=options["harness"], port=options["port"])
         with RecordStore(path, layer=options.pop("layer", "workspace")) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
             for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id"):
