@@ -15,6 +15,27 @@ const el = (tag, attrs = {}, children = []) => {
   return node;
 };
 const RUNS = { 60: "1 hour", 180: "3 hours", 480: "8 hours" };  // Efforts that are research runs, which have agents.
+
+// Patch `node` so it matches `target`, touching only what differs, so a page that polls keeps what the
+// reader did to it: open folds, a text selection, the scroll of a log. Children with data-key are matched
+// by key; a fold's open state belongs to the reader and is left alone.
+function morph(node, target) {
+  if (node.nodeType !== target.nodeType || node.nodeName !== target.nodeName) return node.replaceWith(target);
+  if (node.nodeType === Node.TEXT_NODE) { if (node.data !== target.data) node.data = target.data; return; }
+  for (const { name, value } of [...target.attributes]) if (name !== "open" && node.getAttribute(name) !== value) node.setAttribute(name, value);
+  for (const { name } of [...node.attributes]) if (name !== "open" && !target.hasAttribute(name)) node.removeAttribute(name);
+  for (const key of ["onclick", "ontoggle", "oninput", "onchange"]) if (target[key]) node[key] = target[key];
+  const keyed = new Map([...node.childNodes].filter((c) => c.dataset && c.dataset.key).map((c) => [c.dataset.key, c]));
+  const have = [...node.childNodes], want = [...target.childNodes];
+  want.forEach((child, i) => {
+    const key = child.dataset && child.dataset.key;
+    const match = key && keyed.has(key) ? keyed.get(key) : (have[i] && !(have[i].dataset && have[i].dataset.key) ? have[i] : null);
+    if (!match) return node.insertBefore(child, node.childNodes[i] || null);
+    if (node.childNodes[i] !== match) node.insertBefore(match, node.childNodes[i] || null);
+    morph(match, child);
+  });
+  while (node.childNodes.length > want.length) node.lastChild.remove();
+}
 const escape = (text) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // Text with [n] markers becomes paragraphs (split on blank lines) whose markers link to the sources list.
@@ -202,10 +223,10 @@ function used(turn) {
 // The lists of a run's pieces of work: the first few shown, the rest behind "Show all".
 function pieces(title, items, shown = 4) {
   // Each piece by its title; its detail opens on click, and a piece in hand shows its worker's latest step.
-  const row = (item) => el("details", { class: "piece" }, [el("summary", { text: item.title || item.text }),
+  const row = (item) => el("details", { class: "piece", "data-key": String(item.id) }, [el("summary", { text: item.title || item.text }),
     ...(item.status === "running" && item.progress ? [el("div", { class: "note", text: item.progress })] : []),
     ...(item.title && item.text !== item.title ? [el("div", { class: "detail", text: item.text })] : [])]);
-  const section = el("section", { class: "pieces" }, [el("h2", { text: title }), ...items.slice(0, shown).map(row)]);
+  const section = el("section", { class: "pieces", "data-key": title }, [el("h2", { text: title }), ...items.slice(0, shown).map(row)]);
   if (items.length > shown) {
     section.append(el("details", {}, [el("summary", { text: `Show all ${items.length}` }), ...items.slice(shown).map(row)]));
   }
@@ -230,7 +251,7 @@ function renderRun(turn) {
   const count = (n, label) => el("div", { class: "count" }, [el("b", { text: String(n) }), el("span", { text: label })]);
   // The agent's latest step, so the run is never a closed box; the whole log folds out below the lists.
   const step = waiting ? "" : last;
-  const box = el("section", { class: "run" }, [
+  const box = el("section", { class: "run", "data-key": "run" }, [
     el("div", { class: "head" }, [el("div", {}, [el("div", { class: "state", text: heading }), el("div", { class: "muted", text: sub }),
                                                  ...(step ? [el("div", { class: "progress", text: `${step}…` })] : [])]),
                                   ...(turn.finish ? [] : [el("div", { class: "buttons" }, [pause, finish])])]),
@@ -243,7 +264,7 @@ function renderRun(turn) {
   if (done.length) node.push(pieces("Done", done));
   if (todo.length) node.push(pieces("To do", todo));
   const steps = turn.progress.length;
-  node.push(el("details", { class: "log" }, [el("summary", { text: `Show all ${steps} step${steps === 1 ? "" : "s"}` }),
+  node.push(el("details", { class: "log", "data-key": "log" }, [el("summary", { text: `Show all ${steps} step${steps === 1 ? "" : "s"}` }),
     el("div", { class: "lines" }, turn.progress.map((line) => el("div", { text: line })))]));
   return node;
 }
@@ -286,14 +307,26 @@ function renderTurn(turn) {
 
 function render() {
   const list = $("threads");
-  list.replaceChildren(...state.threads.map((thread) => {
-    const item = el("li", { class: thread.id === state.current ? "current" : "", text: thread.title, title: thread.title });
+  morph(list, el("ul", { id: "threads" }, state.threads.map((thread) => {
+    const item = el("li", { class: thread.id === state.current ? "current" : "", text: thread.title, title: thread.title, "data-key": thread.id });
     item.onclick = () => select(thread.id);
     return item;
-  }));
+  })));
   const main = $("thread");
   $("main").classList.toggle("empty", !state.thread);
-  main.replaceChildren(...(state.thread ? state.thread.turns.map(renderTurn) : []));
+  // A finished turn is left exactly as the reader has it (opened records, a moved lever); a running one is
+  // patched in place as it changes, so the poll does not undo what the reader did.
+  const existing = new Map([...main.children].map((node) => [node.dataset.key, node]));
+  const turns = (state.thread ? state.thread.turns : []).map((turn) => {
+    const key = String(turn.id), old = existing.get(key);
+    if (old && old.dataset.status === turn.status && turn.status !== "running") return old;
+    const fresh = renderTurn(turn);
+    fresh.dataset.key = key;
+    fresh.dataset.status = turn.status;
+    if (old && turn.status === "running") { morph(old, fresh); return old; }
+    return fresh;
+  });
+  if (turns.length !== main.children.length || turns.some((node, i) => node !== main.children[i])) main.replaceChildren(...turns);
   renderStatus();
   const run = runningRun();
   $("question").placeholder = run ? "Add a note to steer this research" : state.thread ? "Ask a follow-up" : "Ask a question";
