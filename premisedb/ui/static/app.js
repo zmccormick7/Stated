@@ -1,5 +1,5 @@
 // The answer UI: a sidebar of threads and the current thread's turns, polled while a turn is running.
-const state = { threads: [], current: null, thread: null };
+const state = { threads: [], current: null, thread: null, status: null };
 const $ = (id) => document.getElementById(id);
 const api = async (path, body) => {
   const response = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" },
@@ -210,12 +210,28 @@ function render() {
     return item;
   }));
   const main = $("thread");
-  if (!state.thread) main.replaceChildren(el("div", { class: "empty", text: "Ask a question about the graph." }));
+  if (!state.thread) main.replaceChildren(renderWelcome());
   else main.replaceChildren(...state.thread.turns.map(renderTurn));
   $("question").placeholder = state.thread ? "Ask a follow-up" : "Ask a question";
 }
 
+// Before the first question: where the research lives, which base is attached, and whether the agent is there.
+function renderWelcome() {
+  const status = state.status;
+  const node = el("div", { class: "empty" }, [el("div", { text: "Ask a question about the graph." })]);
+  if (!status) return node;
+  const base = (status.layers || []).filter((layer) => !layer.writable);
+  const lines = [`Research folder: ${status.workspace}`,
+                 base.length ? base.map((layer) => `${layer.name} layer, version ${layer.version}`).join(" · ")
+                             : "No base layer attached yet. Start with premisedb ui --base FILE once.",
+                 status.harness_found ? `Answers come from your ${status.harness === "codex" ? "Codex" : "Claude Code"}.`
+                                      : `${status.harness === "codex" ? "Codex" : "Claude Code"} was not found. Install it and sign in, then ask.`];
+  node.append(el("div", { class: "status" }, lines.map((line) => el("div", { text: line }))));
+  return node;
+}
+
 async function refresh() {
+  if (!state.status) { try { state.status = await api("/api/status"); } catch (error) { state.status = null; } }
   state.threads = await api("/api/threads");
   if (state.current) state.thread = await api(`/api/threads/${state.current}`);
   render();

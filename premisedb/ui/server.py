@@ -6,7 +6,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import shutil
+import sys
 import threading
+import webbrowser
 from urllib.parse import urlparse
 
 from ..store import RecordStore
@@ -18,7 +20,7 @@ HARNESSES = {"claude-code": ClaudeCode, "codex": Codex}
 _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 
 
-SKILLS = Path(__file__).resolve().parents[2] / "skills"
+SKILLS = Path(__file__).resolve().parents[1] / "skills"
 
 
 def install_skills(harness, source: Path = SKILLS) -> list[str]:
@@ -49,6 +51,14 @@ class App:
             result = db.evaluate_model(model_id, overrides)
         return {"values": {v.key: v.value for v in result.variables},
                 "changed": [v.key for v in result.variables if v.changed]}
+
+    def status(self) -> dict:
+        """What the page shows before the first question: the folder, the layers and whether the agent is there."""
+        with RecordStore(self.db_path) as db:
+            layers = [{"name": l.name, "version": l.version, "writable": l.writable} for l in db.layers()]
+        return {"workspace": str(self.db_path.parent), "database": str(self.db_path), "layers": layers,
+                "harness": self.harness.name,
+                "harness_found": shutil.which(getattr(self.harness, "executable", self.harness.name)) is not None}
 
     def record(self, record_id: str) -> dict:
         """A record for the reader: its text and attributes, the passages it cites, and one hop of links."""
@@ -114,6 +124,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._file("index.html")
         if path.startswith("/static/") and "/" not in path[8:] and ".." not in path:
             return self._file(path[8:])
+        if path == "/api/status":
+            return self._json(self.app.status())
         if path == "/api/threads":
             return self._json(self.app.store.threads())
         if path.startswith("/api/threads/"):
@@ -173,8 +185,38 @@ def make_server(db_path, *, harness, host="127.0.0.1", port=0) -> ThreadingHTTPS
     return ThreadingHTTPServer((host, port), partial(Handler, App(db_path, harness=harness)))
 
 
-def serve(db_path, *, harness_name="claude-code", port=8765, model=None, reasoning_effort=None) -> int:
-    """Run the answer UI for a workspace until interrupted; returns the exit status."""
+DEFAULT_WORKSPACE = Path.home() / "PremiseDB"
+
+
+def prepare_workspace(db_path: Path | None, *, base: Path | None = None) -> tuple[Path, list[str]]:
+    """The database the UI will use, created on first run, with the base layer attached when a file is
+    given or found beside it. Returns the path and lines describing what happened."""
+    notes = []
+    if db_path is None:
+        db_path = Path("research.sqlite") if Path("research.sqlite").is_file() else DEFAULT_WORKSPACE / "research.sqlite"
+    db_path = Path(db_path).resolve()
+    if not db_path.is_file():
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        with RecordStore(db_path, layer="fund"):
+            pass
+        notes.append(f"Created your research folder at {db_path.parent}")
+    with RecordStore(db_path) as db:
+        attached = [l for l in db.layers() if not l.writable]
+        found = db_path.with_name("base.sqlite")
+        if base is None and not attached and found.is_file():
+            base = found
+        if base is not None:
+            result = db.attach_layer(base)
+            notes.append(f"Attached the {result.name} layer, version {result.version}, from {Path(base).resolve()}")
+        elif not attached:
+            notes.append("No base layer is attached yet: run with --base FILE once, or put the file beside the database "
+                         "as base.sqlite")
+    return db_path, notes
+
+
+def serve(db_path=None, *, harness_name="claude-code", port=8765, model=None, reasoning_effort=None, base=None,
+          open_browser=True) -> int:
+    """Run the answer UI until interrupted, setting the workspace up on first run; returns the exit status."""
     if harness_name not in HARNESSES:
         raise ValueError(f"unknown harness {harness_name}; choose from {', '.join(HARNESSES)}")
     if harness_name != "codex" and (model or reasoning_effort):
@@ -182,10 +224,19 @@ def serve(db_path, *, harness_name="claude-code", port=8765, model=None, reasoni
     harness = Codex(model=model, reasoning_effort=reasoning_effort) if harness_name == "codex" else ClaudeCode()
     if not SKILLS.is_dir():
         raise ValueError(f"the bundled skills are missing from {SKILLS}")
+    db_path, notes = prepare_workspace(None if db_path is None else Path(db_path), base=None if base is None else Path(base))
+    for note in notes:
+        print(note)
     if written := install_skills(harness):
         print(f"Installed the {' and '.join(written)} skill(s) for {harness.name} in {harness.skills_directories()[0]}")
+    if shutil.which(harness.executable) is None:  # Both real harnesses have one.
+        print(f"{harness.name} is not installed ({harness.executable} not found on PATH); install it and sign in, "
+              f"then ask a question.", file=sys.stderr)
     server = make_server(db_path, harness=harness, port=port)
-    print(f"PremiseDB answer UI for {Path(db_path).resolve()} at http://127.0.0.1:{server.server_address[1]}")
+    url = f"http://127.0.0.1:{server.server_address[1]}"
+    print(f"PremiseDB at {url} for {db_path.parent}")
+    if open_browser:
+        threading.Timer(0.5, webbrowser.open, (url,)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

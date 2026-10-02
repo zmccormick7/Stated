@@ -1,6 +1,7 @@
 from http.client import HTTPConnection
 import json
 from pathlib import Path
+import shutil
 from tempfile import TemporaryDirectory
 import threading
 import time
@@ -8,7 +9,7 @@ import unittest
 
 from premisedb import RecordStore
 from premisedb.ui import Reply
-from premisedb.ui.server import install_skills, make_server
+from premisedb.ui.server import install_skills, make_server, prepare_workspace
 
 
 class SlowHarness:
@@ -121,6 +122,35 @@ class ServerTests(unittest.TestCase):
         status, entity = self.call("GET", f"/api/records/{self.entity}")
         self.assertEqual((entity["connections"][0]["direction"], entity["connections"][0]["record"]["id"]), ("in", self.finding))
         self.assertEqual(self.call("GET", "/api/records/missing")[0], 404)
+
+    def test_status_describes_the_workspace(self):
+        status, result = self.call("GET", "/api/status")
+        self.assertEqual((status, result["harness"], result["harness_found"]), (200, "fake", False))
+        self.assertEqual([(layer["name"], layer["writable"]) for layer in result["layers"]], [("workspace", True)])
+        self.assertTrue(result["database"].endswith("research.sqlite"))
+
+    def test_first_run_creates_the_database_and_attaches_a_base(self):
+        with TemporaryDirectory() as directory:
+            folder = Path(directory)
+            with RecordStore(folder / "publisher.sqlite", layer="base") as db:
+                db.create("Entity", text="PowerFrame", author_id="a")
+                db.export_layer(folder / "base.sqlite", version="2026.10.01")
+            db_path, notes = prepare_workspace(folder / "fund" / "research.sqlite")
+            self.assertTrue(db_path.is_file())
+            self.assertEqual(len(notes), 2)
+            self.assertIn("Created your research folder", notes[0])
+            self.assertIn("No base layer is attached yet", notes[1])
+            db_path, notes = prepare_workspace(db_path, base=folder / "base.sqlite")
+            self.assertIn("Attached the base layer, version 2026.10.01", notes[0])
+            with RecordStore(db_path) as db:
+                self.assertEqual([(l.name, l.version, l.writable) for l in db.layers()],
+                                 [("fund", "", True), ("base", "2026.10.01", False)])
+            # A base.sqlite beside a new database is attached without being named.
+            (folder / "other").mkdir()
+            shutil.copyfile(folder / "base.sqlite", folder / "other" / "base.sqlite")
+            db_path, notes = prepare_workspace(folder / "other" / "research.sqlite")
+            self.assertIn("Attached the base layer", notes[1])
+            self.assertEqual(prepare_workspace(db_path)[1], [])  # Nothing to do the second time.
 
     def test_skills_are_installed_and_updated(self):
         with TemporaryDirectory() as directory:
