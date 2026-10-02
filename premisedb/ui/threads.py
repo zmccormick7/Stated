@@ -15,7 +15,6 @@ from ..store import RecordStore
 from .harness import HarnessError
 
 _VERSION = 1
-_SKILL = Path(__file__).resolve().parents[2] / "skills" / "premisedb-answer" / "SKILL.md"
 
 
 def _now() -> str:
@@ -134,11 +133,12 @@ def run_turn(store: ThreadStore, turn_id: int, *, db_path: str | Path, harness) 
 
 
 def _prompt(question: str, author: str, *, first: bool) -> str:
+    """The skills are installed in the harness, as the README describes; the prompt only names them."""
     if not first:
         return f"Answer this follow-up as an answer document in the same format, checked with check-answer.\n\n{question}"
-    skill = _SKILL.read_text(encoding="utf-8") if _SKILL.is_file() else "Use the premisedb-answer skill."
-    return (f"{skill}\n\nThe research database is the one PREMISEDB_DB names. Use the premisedb-research skill "
-            f"for the research itself, and the author ID {author} for anything you write.\n\nQuestion: {question}")
+    return ("Use the premisedb-research skill for the research and the premisedb-answer skill for the reply. "
+            f"The research database is the one PREMISEDB_DB names; use the author ID {author} for anything you write."
+            f"\n\nQuestion: {question}")
 
 
 def _check(db_path: Path, text: str) -> AnswerCheck:

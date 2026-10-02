@@ -60,7 +60,7 @@ class ThreadTests(unittest.TestCase):
         self.assertEqual(turn["written"], {"Question": 1})  # What the agent added during the turn.
         call = harness.calls[0]
         self.assertEqual((call["cwd"], call["db"], call["session_id"]), (self.directory, str(self.db_path), None))
-        self.assertIn("check-answer", call["prompt"])  # The first prompt carries the answer skill.
+        self.assertIn("the premisedb-answer skill", call["prompt"])  # The first prompt names the installed skills.
         self.assertTrue(call["prompt"].endswith("Question: How concentrated\nare the customers?"))
 
         thread = self.ask(harness, "And a year earlier?", thread=thread["id"])
