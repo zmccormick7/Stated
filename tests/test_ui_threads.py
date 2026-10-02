@@ -8,6 +8,7 @@ import unittest
 
 from premisedb import RecordStore
 from premisedb.ui import ClaudeCode, Codex, HarnessError, Reply, ThreadStore, run_turn
+from premisedb.ui import threads
 from premisedb.ui.threads import time_limit
 
 
@@ -23,7 +24,7 @@ class FakeHarness:
         on_progress("Bash: Recall what the graph holds")
         if self.write:
             self.write()
-        reply = self.replies.pop(0)
+        reply = self.replies.pop(0) if self.replies else "DONE"
         if isinstance(reply, Exception):
             raise reply
         return Reply(reply, "session-1", ("WebFetch",))
@@ -93,7 +94,8 @@ class ThreadTests(unittest.TestCase):
             with self.subTest(effort=effort):
                 harness = FakeHarness(bad, self.good)
                 thread = self.ask(harness, effort=effort)
-                first, repair = harness.calls
+                first, repair = harness.calls[:2]
+                self.assertEqual(len(harness.calls), 3 if effort == 20 else 2)  # Only 20 minutes asks for more.
                 self.assertIn(told, first["prompt"])
                 self.assertEqual((first["web"], repair["web"]), (web, web))
                 # One clock for the whole turn: the repair gets what is left of it.
@@ -103,6 +105,29 @@ class ThreadTests(unittest.TestCase):
         self.assertEqual([time_limit(effort) for effort in (1, 5, 20)], [360, 600, 2400])
         self.ask(harness := FakeHarness(self.good))
         self.assertIn("about five minutes", harness.calls[0]["prompt"])  # The default.
+
+    def test_an_agent_that_finishes_early_is_asked_what_would_improve_the_answer(self):
+        better = json.dumps(json.loads(self.good) | {"body": "One was 22% and the other 14%. [1]"})
+        bad = json.dumps({"title": "Yes.", "body": "See [2]."})
+        harness = FakeHarness(self.good, better, "DONE")
+        turn = self.ask(harness, effort=20)["turns"][0]
+        self.assertEqual((turn["status"], turn["answer"]["body"]), ("done", "One was 22% and the other 14%. [1]"))
+        self.assertEqual(turn["progress"].count("Looking for what would improve the answer"), 2)
+        self.assertEqual([call["session_id"] for call in harness.calls], [None, "session-1", "session-1"])
+        self.assertIn("You have used under a minute of your 20 minutes", harness.calls[1]["prompt"])
+        self.assertIn("reply with the single word DONE", harness.calls[1]["prompt"])
+        # The answer in hand stands when the agent repeats it, breaks it beyond repair, or the harness fails.
+        for replies, calls in (((self.good, self.good), 2), ((self.good, bad, bad), 3),
+                               ((self.good, HarnessError("usage limit reached")), 2)):
+            with self.subTest(replies=replies):
+                harness = FakeHarness(*replies)
+                turn = self.ask(harness, effort=20)["turns"][0]
+                self.assertEqual((turn["status"], turn["error"], turn["answer"]["body"], len(harness.calls)),
+                                 ("done", None, "One was 22%. [1]", calls))
+        original, threads.USE_OF_TIME = threads.USE_OF_TIME, 0  # Time mostly used: nothing more is asked.
+        self.addCleanup(setattr, threads, "USE_OF_TIME", original)
+        self.ask(harness := FakeHarness(self.good), effort=20)
+        self.assertEqual(len(harness.calls), 1)
 
     def test_store_boundaries(self):
         with self.assertRaises(KeyError):

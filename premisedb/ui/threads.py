@@ -17,15 +17,17 @@ from .harness import HarnessError
 
 _VERSION = 1
 
-# What the user may give a turn, in minutes: what the agent is told, and whether it may use the web.
+# What the user may give a turn, in minutes: what the agent is told, whether it may use the web, and
+# whether an agent that finishes early is asked to go on.
 EFFORTS = {
     1: ("You have about one minute. Answer from what the graph already holds: a few lookups, no new records "
-        "and no outside sources.", False),
-    5: ("You have about five minutes.", False),
+        "and no outside sources.", False, False),
+    5: ("You have about five minutes.", False, False),
     20: ("You have about twenty minutes. Where the graph falls short, go to outside sources on the web, ingest "
-         "what you rely on and add what you learn to your layer.", True),
+         "what you rely on and add what you learn to your layer.", True, True),
 }
 DEFAULT_EFFORT = 5
+USE_OF_TIME = 0.75  # An agent that has used less of its time than this is asked whether more work would help.
 
 
 def time_limit(effort: int) -> float:
@@ -121,34 +123,70 @@ def run_turn(store: ThreadStore, turn_id: int, *, db_path: str | Path, harness, 
     """Answer a started turn: run its question through the harness in the workspace, check the answer
     document against the graph, give the agent one chance to fix what the check reports, and store the
     result. The agent works with the user's own settings and may add to the graph as it goes. `effort`,
-    in minutes, sets what the agent is told about time, whether it may use the web, and when it is stopped."""
+    in minutes, sets what the agent is told about time, whether it may use the web, and when it is stopped.
+    An agent has no clock, so at the longer efforts one that finishes early is told how much time is left
+    and asked what would most improve the answer, until it has nothing to add or the time is mostly used."""
     turn, db_path = store._turn(turn_id), Path(db_path).resolve()
-    budget, web = EFFORTS[effort]
-    stop_at = time.monotonic() + time_limit(effort)
+    budget, web, goes_on = EFFORTS[effort]
+    started = time.monotonic()
+    stop_at = started + time_limit(effort)
     run = partial(harness.run, cwd=db_path.parent, web=web, on_progress=partial(store.add_progress, turn_id), env=os.environ | {
         "PREMISEDB_DB": str(db_path), "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"})
-    denied: tuple[str, ...] = ()
-    try:
-        reply = run(_prompt(turn["question"], harness.name, budget, first=turn["session_id"] is None),
-                    session_id=turn["session_id"], timeout=max(1.0, stop_at - time.monotonic()))
-        store._set_session(turn["thread_id"], reply.session_id)
-        check, denied = _check(db_path, reply.text), reply.denied
-        if not check.ok:
+    denied: list[str] = []
+
+    def ask(prompt: str, session_id: str | None, may_decline: bool = False) -> tuple[AnswerCheck, str | None, bool]:
+        """One prompt and, when its answer fails the check, one repair; the last value says whether the
+        reply held a document at all, which a reply that may decline need not."""
+        reply = run(prompt, session_id=session_id, timeout=max(1.0, stop_at - time.monotonic()))
+        denied.extend(reply.denied)
+        session_id, check, document = reply.session_id or session_id, _check(db_path, reply.text), "{" in reply.text
+        if not check.ok and (document or not may_decline):
             store.add_progress(turn_id, "Fixing the answer")
             reply = run("The answer document did not pass check-answer:\n- " + "\n- ".join(check.problems)
                         + "\nFix these and reply with the corrected JSON document alone.",
-                        session_id=reply.session_id or turn["session_id"], timeout=max(1.0, stop_at - time.monotonic()))
-            check, denied = _check(db_path, reply.text), tuple(dict.fromkeys(denied + reply.denied))
+                        session_id=session_id, timeout=max(1.0, stop_at - time.monotonic()))
+            denied.extend(reply.denied)
+            session_id, check = reply.session_id or session_id, _check(db_path, reply.text)
+        return check, session_id, document
+
+    try:
+        check, session_id, _ = ask(_prompt(turn["question"], harness.name, budget, first=turn["session_id"] is None),
+                                   turn["session_id"])
+        store._set_session(turn["thread_id"], session_id)
     except HarnessError as error:
-        store.finish_turn(turn_id, error=str(error), denied=denied)
+        store.finish_turn(turn_id, error=str(error), denied=tuple(dict.fromkeys(denied)))
         return
+    while goes_on and check.ok and session_id and time.monotonic() - started < USE_OF_TIME * effort * 60:
+        store.add_progress(turn_id, "Looking for what would improve the answer")
+        try:
+            again, session_id, document = ask(_go_on(time.monotonic() - started, effort), session_id, True)
+        except HarnessError:  # The answer in hand stands.
+            break
+        if not document or not again.ok or again.answer == check.answer:
+            break
+        check = again
     with RecordStore(db_path) as db:
         written, own = {}, db.layers()[0].name
         for record in db.list_records(since=turn["started_at"], limit=1000).records:
             if record.layer == own:
                 written[record.kind] = written.get(record.kind, 0) + 1
-    store.finish_turn(turn_id, answer=check.answer, written=written, denied=denied, error=None if check.ok else (
-        "The agent's answer did not pass the check: " + "; ".join(check.problems)))
+    store.finish_turn(turn_id, answer=check.answer, written=written, denied=tuple(dict.fromkeys(denied)),
+                      error=None if check.ok else "The agent's answer did not pass the check: " + "; ".join(check.problems))
+
+
+def _go_on(elapsed: float, effort: int) -> str:
+    """What an agent that finished early is told: the time, where answers are usually thin, and that
+    stopping is allowed."""
+    used = "under a minute" if elapsed < 60 else f"about {round(elapsed / 60)}"
+    return (f"You have used {used} of your {effort} minutes; you cannot see a clock, so this is how you know. "
+            "The time is there to be used where it would make the answer better. Look at the answer as its reader "
+            "would and name what is weakest in it: a figure taken from a summary and not checked against the "
+            "source's own text, a primary source you have not read, an earlier period or a counterparty that would "
+            "put the figure in context, an open Question in the graph that bears on it, a claim that rests on one "
+            "source, or a chart, lever or flow that would show it better than prose. If one of these would change or "
+            "strengthen the answer, do that work, add what you learn to your layer, and reply with the updated answer "
+            "document alone, checked with check-answer. If the answer is already as good as more time would make "
+            "it, reply with the single word DONE.")
 
 
 def _prompt(question: str, author: str, budget: str, *, first: bool) -> str:
