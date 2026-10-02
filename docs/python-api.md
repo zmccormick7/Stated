@@ -93,6 +93,14 @@ Every charted figure names a record. A Variable supplies its stored `value` (wit
 
 Nothing is raised for a bad document: unknown keys at any level, missing or retired (`superseded`, `retracted`) records, uncited sources, misplaced `[n]` markers, quotes or figures that are not in the record, and parts that exceed `whole` are all listed in `problems`, and `answer` is `None`. When `ok`, `answer` is the document with full record IDs, each source's `kind`, and each part reduced to `label`, `record` and `value`.
 
+## Ask through the user's own agent
+
+`premisedb.ui` holds the first pieces of the answer UI; no server or page exists yet. `ThreadStore(path)` keeps conversation threads in their own SQLite file, apart from the graph: `create_thread(question, harness=name)`, `threads()`, `thread(thread_id)` (with its turns), `start_turn(thread_id, question)`, `add_progress(turn_id, text)` and `finish_turn(...)`. A file with another schema version is refused.
+
+`run_turn(store, turn_id, db_path=..., harness=...)` answers a started turn. It runs the question through the harness in the workspace directory with `PREMISEDB_DB` set, parses the JSON answer document from the agent's final message, checks it with `check_answer`, and gives the agent one chance to fix what the check reports. The turn ends `done` with the resolved `answer`, or `failed` with an `error`; either way it records `progress` (one line per tool call), `written` (records the agent added or edited in the workspace's own layer during the turn, by kind) and `denied` (tools the harness refused). The first prompt of a thread names the research and answer skills, which must be installed in the harness as the README describes; later turns resume the harness's session.
+
+`ClaudeCode(executable="claude")` is the first harness: `run(prompt, cwd=..., env=..., session_id=..., on_progress=...)` starts Claude Code headless (`-p --output-format stream-json`, plus `--resume` for a follow-up) and returns a `Reply` of `text`, `session_id` and `denied`. It passes no permission flags, so the agent has exactly the login and permission settings of that workspace. A harness that cannot start, ends without a result or reports an error raises `HarnessError`. Any object with a `name` and the same `run` works as a harness.
+
 ## Recall connected research
 
 ```python
