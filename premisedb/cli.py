@@ -9,6 +9,7 @@ import sqlite3
 import sys
 
 from .context import OpenRouterContextWriter, write_document_context
+from .fetch import contact, fetch_page
 from .store import RecordStore
 from .reranking import OpenRouterReranker
 from .answers import check_answer
@@ -118,6 +119,8 @@ def _parser():
     ui.add_argument("--model", help="With --harness codex: the model to pass to codex exec.")
     ui.add_argument("--effort", dest="reasoning_effort", help="With --harness codex: the model_reasoning_effort to set.")
     ui.add_argument("--base", metavar="FILE", help="A published base layer file to attach, or to update to.")
+    ui.add_argument("--contact", metavar="TEXT", help="Your name and email, kept beside the database and sent only to "
+                                                      "SEC.gov, which requires one to fetch filings.")
     ui.add_argument("--no-open", dest="open_browser", action="store_false", help="Do not open the page in a browser.")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
@@ -137,9 +140,12 @@ def _parser():
     links.add_argument("--since", metavar="UTC_TIME", help="Created or edited at or after this UTC time or date.")
     links.add_argument("--after", metavar="LINK_ID")
     links.add_argument("--limit", type=int, default=100)
-    ingest = command("ingest", "ingest_source", "Ingest an extracted UTF-8 text file without normalization.",
+    ingest = command("ingest", "ingest_source",
+                     "Ingest an extracted UTF-8 text file without normalization, or the text of a web page.",
                      payload="description, author_id, optional attributes")
-    ingest.add_argument("source_file", help="Path to the extracted text file")
+    ingest.add_argument("source_file", nargs="?", help="Path to the extracted text file")
+    ingest.add_argument("--url", help="Fetch this HTML or plain-text page and ingest its text instead of a file; "
+                                      "records url and retrieved_at in the Source's attributes.")
     source = command("source-text", "read_source_text", "Read source text as a JSON string; offsets are UTF-8 bytes.", "source_id")
     source.add_argument("--start-byte", type=int, default=0)
     source.add_argument("--end-byte", type=int)
@@ -305,7 +311,7 @@ def main(argv=None):
         try:
             return serve(given, harness_name=options["harness"], port=options["port"], model=options["model"],
                          reasoning_effort=options["reasoning_effort"], base=options["base"],
-                         open_browser=options["open_browser"])
+                         contact=options["contact"], open_browser=options["open_browser"])
         except (OSError, ValueError, sqlite3.Error) as error:
             print(json.dumps({"error": str(error)}), file=sys.stderr)
             return 1
@@ -326,8 +332,18 @@ def main(argv=None):
             payload = json.loads(raw)
             if not isinstance(payload, dict):
                 raise ValueError("--input must contain a JSON object")
-        if filename := options.pop("source_file", None):
-            options["document_text"] = Path(filename).read_bytes().decode("utf-8")
+        if method == "ingest_source":
+            filename, url = options.pop("source_file"), options.pop("url")
+            if (filename is None) == (url is None):
+                raise ValueError("give ingest a text file or --url, not both")
+            if url is None:
+                options["document_text"] = Path(filename).read_bytes().decode("utf-8")
+            else:
+                page = fetch_page(url, contact=contact(path))
+                options["document_text"] = page.text
+                if not isinstance(payload.get("attributes") or {}, dict):
+                    raise ValueError("attributes must be a JSON object")
+                payload["attributes"] = {"url": page.url, "retrieved_at": page.retrieved_at} | (payload.get("attributes") or {})
         if options.get("quote") == "-":  # Drop the final newline a heredoc adds.
             options["quote"] = sys.stdin.read().removesuffix("\n")
         if options.keys() & payload.keys():

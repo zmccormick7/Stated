@@ -24,7 +24,7 @@ EFFORTS = {
         "and no outside sources.", False, False),
     5: ("You have about five minutes.", False, False),
     20: ("You have about twenty minutes. Where the graph falls short, go to outside sources on the web, ingest "
-         "what you rely on and add what you learn to your layer.", True, True),
+         "what you rely on with `premisedb ingest --url` and add what you learn to your layer.", True, True),
 }
 DEFAULT_EFFORT = 5
 USE_OF_TIME = 0.75  # An agent that has used less of its time than this is asked whether more work would help.
@@ -131,7 +131,7 @@ def run_turn(store: ThreadStore, turn_id: int, *, db_path: str | Path, harness, 
     started = time.monotonic()
     stop_at = started + time_limit(effort)
     run = partial(harness.run, cwd=db_path.parent, web=web, on_progress=partial(store.add_progress, turn_id), env=os.environ | {
-        "PREMISEDB_DB": str(db_path), "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"})
+        "PREMISEDB_DB": str(db_path), "PREMISEDB_FETCH": "1" if web else "0", "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"})
     denied: list[str] = []
 
     def ask(prompt: str, session_id: str | None, may_decline: bool = False) -> tuple[AnswerCheck, str | None, bool]:

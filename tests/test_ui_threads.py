@@ -20,7 +20,7 @@ class FakeHarness:
 
     def run(self, prompt, *, cwd, env, session_id, web, timeout, on_progress):
         self.calls.append({"prompt": prompt, "cwd": cwd, "db": env["PREMISEDB_DB"], "session_id": session_id,
-                           "web": web, "timeout": timeout})
+                           "web": web, "timeout": timeout, "fetch": env["PREMISEDB_FETCH"]})
         on_progress("Bash: Recall what the graph holds")
         if self.write:
             self.write()
@@ -98,6 +98,7 @@ class ThreadTests(unittest.TestCase):
                 self.assertEqual(len(harness.calls), 3 if effort == 20 else 2)  # Only 20 minutes asks for more.
                 self.assertIn(told, first["prompt"])
                 self.assertEqual((first["web"], repair["web"]), (web, web))
+                self.assertEqual(first["fetch"], "1" if web else "0")  # ingest --url follows the web.
                 # One clock for the whole turn: the repair gets what is left of it.
                 self.assertTrue(time_limit(effort) - 5 < repair["timeout"] <= first["timeout"] <= time_limit(effort))
                 self.ask(harness := FakeHarness(self.good), "And before?", thread=thread["id"], effort=effort)
