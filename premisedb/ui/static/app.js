@@ -16,11 +16,15 @@ const el = (tag, attrs = {}, children = []) => {
 };
 const escape = (text) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-// Text with [n] markers becomes a paragraph whose markers link to the sources list.
+// Text with [n] markers becomes paragraphs (split on blank lines) whose markers link to the sources list.
 function cited(text, sources) {
-  const node = el("p");
-  node.innerHTML = escape(text).replace(/\[(\d+)\]/g, (match, n) =>
-    n >= 1 && n <= sources.length ? `<sup><a href="#source-${n}">${n}</a></sup>` : match);
+  const node = el("div", { class: "prose" });
+  for (const part of text.split(/\n\s*\n/).filter((p) => p.trim())) {
+    const paragraph = el("p");
+    paragraph.innerHTML = escape(part.trim()).replace(/\[(\d+)\]/g, (match, n) =>
+      n >= 1 && n <= sources.length ? `<sup><a href="#source-${n}">${n}</a></sup>` : match);
+    node.append(paragraph);
+  }
   return node;
 }
 
