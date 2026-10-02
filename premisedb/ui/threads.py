@@ -15,7 +15,7 @@ from ..answers import AnswerCheck, check_answer
 from ..store import RecordStore
 from .harness import HarnessError
 
-_VERSION = 4
+_VERSION = 5
 
 # What the user may give a turn, in minutes: what the agent is told, whether it may use the web, and
 # whether an agent that finishes early is asked to go on.
@@ -89,7 +89,7 @@ class ThreadStore:
             if row is None:
                 raise KeyError(thread_id)
             turns = db.execute("SELECT * FROM turns WHERE thread_id = ? ORDER BY id", (thread_id,)).fetchall()
-            items = db.execute("""SELECT w.id, w.turn_id, w.text, w.status, w.result, w.progress FROM work_items w
+            items = db.execute("""SELECT w.id, w.turn_id, w.title, w.text, w.status, w.result, w.progress FROM work_items w
                                   JOIN turns t ON t.id = w.turn_id WHERE t.thread_id = ? ORDER BY w.id""", (thread_id,)).fetchall()
             notes = db.execute("""SELECT n.id, n.turn_id, n.text, n.created_at FROM notes n
                                   JOIN turns t ON t.id = n.turn_id WHERE t.thread_id = ? ORDER BY n.id""", (thread_id,)).fetchall()
@@ -107,17 +107,18 @@ class ThreadStore:
             return db.execute("""INSERT INTO turns (thread_id, question, effort, agents, status, started_at)
                                  VALUES (?, ?, ?, ?, 'running', ?)""", (thread_id, question, effort, agents, _now())).lastrowid
 
-    def add_items(self, turn_id: int, texts: list[str]) -> None:
-        """Queue pieces of work for a run, in order."""
+    def add_items(self, turn_id: int, items: list[tuple[str, str]]) -> None:
+        """Queue pieces of work for a run, in order, each a (title, text) pair."""
         with self._db() as db:
-            db.executemany("INSERT INTO work_items (turn_id, text) VALUES (?, ?)", [(turn_id, text) for text in texts])
+            db.executemany("INSERT INTO work_items (turn_id, title, text) VALUES (?, ?, ?)",
+                           [(turn_id, title, text) for title, text in items])
 
     def next_item(self, turn_id: int) -> dict | None:
         """Claim the first piece of work nobody has started; None when the queue is empty."""
         with self._db() as db:
             row = db.execute("""UPDATE work_items SET status = 'running', started_at = ? WHERE id = (
                                     SELECT id FROM work_items WHERE turn_id = ? AND status = 'todo' ORDER BY id LIMIT 1)
-                                RETURNING id, text""", (_now(), turn_id)).fetchone()
+                                RETURNING id, title, text""", (_now(), turn_id)).fetchone()
         return None if row is None else dict(row)
 
     def finish_item(self, item_id: int, *, result: str | None = None, error: str | None = None) -> None:
@@ -145,7 +146,7 @@ class ThreadStore:
     def items(self, turn_id: int) -> list[dict]:
         with self._db() as db:
             return [dict(row) for row in db.execute(
-                "SELECT id, text, status, result FROM work_items WHERE turn_id = ? ORDER BY id", (turn_id,))]
+                "SELECT id, title, text, status, result FROM work_items WHERE turn_id = ? ORDER BY id", (turn_id,))]
 
     def add_progress(self, turn_id: int, text: str, item_id: int | None = None) -> None:
         with self._db() as db:

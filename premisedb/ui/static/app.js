@@ -201,8 +201,10 @@ function used(turn) {
 
 // The lists of a run's pieces of work: the first few shown, the rest behind "Show all".
 function pieces(title, items, shown = 4) {
-  const row = (item) => el("div", { class: "piece" }, [el("div", { text: item.text }),
-    ...(item.status === "running" && item.progress ? [el("div", { class: "note", text: item.progress })] : [])]);
+  // Each piece by its title; its detail opens on click, and a piece in hand shows its worker's latest step.
+  const row = (item) => el("details", { class: "piece" }, [el("summary", { text: item.title || item.text }),
+    ...(item.status === "running" && item.progress ? [el("div", { class: "note", text: item.progress })] : []),
+    ...(item.title && item.text !== item.title ? [el("div", { class: "detail", text: item.text })] : [])]);
   const section = el("section", { class: "pieces" }, [el("h2", { text: title }), ...items.slice(0, shown).map(row)]);
   if (items.length > shown) {
     section.append(el("details", {}, [el("summary", { text: `Show all ${items.length}` }), ...items.slice(shown).map(row)]));
@@ -253,7 +255,7 @@ function runSummary(turn) {
   const summary = `Researched for ${used(turn).text} with ${turn.agents === 1 ? "1 agent" : `${turn.agents} agents`}: `
     + `${done.length} piece${done.length === 1 ? "" : "s"} of work, ${added} record${added === 1 ? "" : "s"} added to your layer`;
   return el("details", { class: "summary" }, [el("summary", { text: summary }),
-    ...done.map((item) => el("div", { class: "piece" }, [el("div", { text: item.text }), el("div", { class: "note", text: item.result || "" })]))]);
+    ...done.map((item) => el("div", { class: "piece" }, [el("div", { text: item.title || item.text }), el("div", { class: "note", text: item.result || "" })]))]);
 }
 
 function renderTurn(turn) {

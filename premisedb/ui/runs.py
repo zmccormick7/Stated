@@ -54,12 +54,13 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
                     raise
                 rest(limit)
 
-    def queue(texts) -> int:
-        """Add pieces of work to the queue, up to the run's limit; returns how many were added."""
-        texts = [" ".join(text.split()) for text in texts or [] if isinstance(text, str) and text.strip()]
-        texts = texts[:max(0, MAX_ITEMS * agents - len(store.items(turn_id)))]
-        store.add_items(turn_id, texts)
-        return len(texts)
+    def queue(given) -> int:
+        """Add pieces of work to the queue, up to the run's limit; returns how many were added. An agent
+        gives each as {"title", "detail"}; a bare string is taken as both."""
+        items = [pair for pair in map(_piece, given or []) if pair]
+        items = items[:max(0, MAX_ITEMS * agents - len(store.items(turn_id)))]
+        store.add_items(turn_id, items)
+        return len(items)
 
     def planned(reply) -> int:
         return queue((document(reply.text) or {}).get("items"))
@@ -67,9 +68,9 @@ def run_research(store: ThreadStore, turn, *, db_path: Path, harness, effort: in
     def work(item) -> HarnessError | None:
         """One piece of work in a fresh session; returns the error when it fails. A piece stopped by a
         usage limit goes back in the queue."""
-        store.add_progress(turn_id, f"Working on: {item['text']}")
+        store.add_progress(turn_id, f"Working on: {item['title']}")
         try:
-            reply = agent.run(_work(brief, item["text"], store.items(turn_id), agent.name, store.notes(turn_id)), None,
+            reply = agent.run(_work(brief, item, store.items(turn_id), agent.name, store.notes(turn_id)), None,
                               min(2 * ITEM_MINUTES * 60, max(1.0, left())),
                               on_progress=lambda line: store.add_progress(turn_id, line, item["id"]))
         except UsageLimit as limit:
@@ -185,13 +186,27 @@ def _plan(brief: str, effort: int, agents: int) -> str:
             "can act on it without this conversation: a specific question to settle or a concrete addition to the "
             "graph, naming the companies, periods and documents involved. Put first what matters most to the brief; "
             "later items may not be reached, and workers can add items as they learn. Reply with JSON alone: "
-            f'{{"items": ["...", "..."]}}, {max(agents, min(effort // 20, 6))} to {max(2 * agents, min(effort // 10, 12))} items.'
+            f'{{"items": [{{"title": "one line of up to 80 characters", "detail": "what to do and where to look"}}, ...]}}, '
+            f'{max(agents, min(effort // 20, 6))} to {max(2 * agents, min(effort // 10, 12))} items.'
             f"\n\nBrief: {brief}")
 
 
+def _piece(given) -> tuple[str, str] | None:
+    """A (title, text) pair from what an agent gave for a piece of work, or None when it gave nothing usable."""
+    if isinstance(given, str):
+        given = {"title": given, "detail": given}
+    if not isinstance(given, dict):
+        return None
+    title = " ".join(str(given.get("title") or "").split())
+    text = " ".join(str(given.get("detail") or given.get("text") or "").split())
+    if not (title or text):
+        return None
+    return (title or text)[:120], text or title
+
+
 def _listing(items: list[dict], results: int = 400) -> str:
-    """The pieces of work, one a line, with what the finished ones found cut to `results` characters."""
-    return "\n".join(f"- [{item['status']}] {item['text']}" + (
+    """The pieces of work by title, one a line, with what the finished ones found cut to `results` characters."""
+    return "\n".join(f"- [{item['status']}] {item['title']}" + (
         f" — {item['result'][:results]}" if item["status"] == "done" and results else "") for item in items)
 
 
@@ -206,11 +221,12 @@ def _replan(brief: str, items: list[dict], minutes: int, notes: list[str] = ()) 
             "pieces of work would most improve the answer to the brief: a thin or single-sourced claim, a figure not "
             "checked against a primary source, a counterparty or period not yet covered, an open Question that "
             f"bears on it. Each will be done by a fresh worker in about {ITEM_MINUTES} minutes. Reply with JSON "
-            'alone: {"items": ["...", "..."]}, or {"items": []} if the brief is already well served.'
+            'alone: {"items": [{"title": "one line", "detail": "what to do and where to look"}, ...]}, or {"items": []} '
+            "if the brief is already well served."
             f"\n\nBrief: {brief}{_notes(notes)}\n\nWork so far:\n{_listing(items)}")
 
 
-def _work(brief: str, text: str, items: list[dict], author: str, notes: list[str] = ()) -> str:
+def _work(brief: str, item: dict, items: list[dict], author: str, notes: list[str] = ()) -> str:
     return ("You are one worker in a longer piece of research. Other workers take the other items, each starting "
             "fresh like you, so only what you put in the graph carries forward. Use the premisedb-research skill; the "
             f"research database is the one PREMISEDB_DB names; use the author ID {author} for anything you write. "
@@ -218,9 +234,10 @@ def _work(brief: str, text: str, items: list[dict], author: str, notes: list[str
             "outside it. Ingest the sources you rely on with `premisedb ingest --url`, record Findings with "
             "citations, link them to the Entities they are about, and open a Question for anything material you "
             'could not settle. Then reply with JSON alone: {"summary": "two or three sentences on what you found '
-            'and added", "new_items": ["at most two further pieces of work this turned up that are not on the list '
-            'and matter to the brief"]}.'
-            f"\n\nBrief: {brief}{_notes(notes)}\n\nYour item: {text}\n\nAll items in this research, so you do not repeat one:"
+            'and added", "new_items": [{"title": "one line", "detail": "what to do and where to look"}]} with at most '
+            "two further pieces of work this turned up that are not on the list and matter to the brief."
+            f"\n\nBrief: {brief}{_notes(notes)}\n\nYour item: {item['title']}\n{item['text']}"
+            "\n\nAll items in this research, so you do not repeat one:"
             f"\n{_listing(items, 0)}")
 
 

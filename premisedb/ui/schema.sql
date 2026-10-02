@@ -32,7 +32,8 @@ CREATE INDEX turns_by_thread ON turns(thread_id, id);
 CREATE TABLE work_items (
     id INTEGER PRIMARY KEY,
     turn_id INTEGER NOT NULL REFERENCES turns(id),
-    text TEXT NOT NULL,
+    title TEXT NOT NULL,  -- One line, for the page and the lists agents see.
+    text TEXT NOT NULL,  -- What to do, for the worker that takes it.
     status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'running', 'done', 'failed')),
     result TEXT,
     progress TEXT,  -- The worker's latest step, for the page.
