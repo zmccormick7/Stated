@@ -9,11 +9,11 @@ import threading
 from urllib.parse import urlparse
 
 from ..store import RecordStore
-from .harness import ClaudeCode
+from .harness import ClaudeCode, Codex
 from .threads import ThreadStore, run_turn
 
 STATIC = Path(__file__).with_name("static")
-HARNESSES = {"claude-code": ClaudeCode}
+HARNESSES = {"claude-code": ClaudeCode, "codex": Codex}
 _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 
 
@@ -118,11 +118,13 @@ def make_server(db_path, *, harness, host="127.0.0.1", port=0) -> ThreadingHTTPS
     return ThreadingHTTPServer((host, port), partial(Handler, App(db_path, harness=harness)))
 
 
-def serve(db_path, *, harness_name="claude-code", port=8765) -> int:
+def serve(db_path, *, harness_name="claude-code", port=8765, model=None, reasoning_effort=None) -> int:
     """Run the answer UI for a workspace until interrupted; returns the exit status."""
     if harness_name not in HARNESSES:
         raise ValueError(f"unknown harness {harness_name}; choose from {', '.join(HARNESSES)}")
-    harness = HARNESSES[harness_name]()
+    if harness_name != "codex" and (model or reasoning_effort):
+        raise ValueError("--model and --effort apply to the codex harness")
+    harness = Codex(model=model, reasoning_effort=reasoning_effort) if harness_name == "codex" else ClaudeCode()
     if missing := missing_skills(harness):
         root = Path(__file__).resolve().parents[2] / "skills"
         print(f"{harness.name} cannot see the {' and '.join(missing)} skill(s). Install them with:")

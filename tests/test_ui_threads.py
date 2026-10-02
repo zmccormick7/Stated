@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from premisedb import RecordStore
-from premisedb.ui import ClaudeCode, HarnessError, Reply, ThreadStore, run_turn
+from premisedb.ui import ClaudeCode, Codex, HarnessError, Reply, ThreadStore, run_turn
 
 
 class FakeHarness:
@@ -150,6 +150,59 @@ class ClaudeCodeTests(unittest.TestCase):
                                (lambda: str(self.directory / "absent"), "Could not start")):
             with self.subTest(message=message), self.assertRaisesRegex(HarnessError, message):
                 ClaudeCode(build()).run("Why?", cwd=self.directory)
+
+
+
+class CodexTests(unittest.TestCase):
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+
+    def executable(self, *events, last=None, status=0):
+        """A stand-in for codex: records its arguments, prints the events, writes the -o file."""
+        path = self.directory / "codex"
+        lines = [json.dumps(event) for event in events]
+        path.write_text(f"#!{sys.executable}\nimport json, sys\nargv = sys.argv[1:]\n"
+                        f"open('argv.json', 'w').write(json.dumps(argv))\n"
+                        f"print({chr(10).join(lines)!r})\n"
+                        f"if {last!r} is not None: open(argv[argv.index('-o') + 1], 'w').write({last!r})\n"
+                        f"sys.exit({status})\n")
+        path.chmod(path.stat().st_mode | stat.S_IEXEC)
+        return str(path)
+
+    def test_events_become_progress_and_the_last_message_is_the_reply(self):
+        events = [{"type": "thread.started", "thread_id": "t-1"}, {"type": "turn.started"},
+                  {"type": "item.started", "item": {"type": "command_execution", "command": "/bin/zsh -lc 'premisedb recall x'"}},
+                  {"type": "item.completed", "item": {"type": "agent_message", "text": "{}"}},
+                  {"type": "turn.completed", "usage": {}}]
+        progress = []
+        harness = Codex(self.executable(*events, last='{"title": "x"}'), model="gpt-6.1-sol", reasoning_effort="high")
+        reply = harness.run("Why?", cwd=self.directory, env=dict(os.environ), on_progress=progress.append)
+        self.assertEqual((reply, progress), (Reply('{"title": "x"}', "t-1", ()), ["Shell: premisedb recall x"]))
+        argv = json.loads((self.directory / "argv.json").read_text())
+        self.assertEqual(argv[:8], ["exec", "--json", "--skip-git-repo-check", "-m", "gpt-6.1-sol", "-c",
+                                    'model_reasoning_effort="high"', "-o"])
+        self.assertEqual(argv[9:], ["Why?"])
+        Codex(self.executable(*events, last="ok")).run("More?", cwd=self.directory, session_id="t-1")
+        argv = json.loads((self.directory / "argv.json").read_text())
+        self.assertEqual(argv[-3:], ["resume", "t-1", "More?"])
+
+    def test_failures_raise_harness_errors(self):
+        for build, message in ((lambda: self.executable({"type": "thread.started", "thread_id": "t"},
+                                                         {"type": "turn.failed", "message": "quota exhausted"}, status=1),
+                                "status 1: quota exhausted"),
+                               (lambda: str(self.directory / "absent"), "Could not start")):
+            with self.subTest(message=message), self.assertRaisesRegex(HarnessError, message):
+                Codex(build()).run("Why?", cwd=self.directory)
+        self.assertEqual(Codex.skills_directories(), (Path.home() / ".agents" / "skills",))
+        home = self.directory / "home"
+        (home / ".codex").mkdir(parents=True)
+        self.assertIn('sandbox_mode = "workspace-write"', Codex.permission_advice(self.directory, home))
+        (home / ".codex" / "config.toml").write_text('sandbox_mode = "read-only"\n')
+        self.assertIn("is read-only", Codex.permission_advice(self.directory, home))
+        (home / ".codex" / "config.toml").write_text('model = "x"\nsandbox_mode = "workspace-write"\n')
+        self.assertIsNone(Codex.permission_advice(self.directory, home))
 
 
 if __name__ == "__main__":

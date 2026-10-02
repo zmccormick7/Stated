@@ -26,7 +26,7 @@ Use this when the reply will be rendered as an answer: a headline, a paragraph, 
 }
 ```
 
-- **`title`** is the answer itself in one line of at most 120 characters: a statement that replies to the question, not a topic.
+- **`title`** is the answer itself in one line of at most 120 characters: a statement that replies to the question, not a topic. Title, body and text blocks are plain text: no markdown, links or URLs, since `[n]` markers are the only references.
 - **`body`** is one paragraph of three to five sentences that explains the title. Cite with `[n]`, the number of an entry in `sources`. Anything beyond that goes in a `text` block, or is left out.
 - **`sources`** lists only the records the answer cites, each by ID (a unique prefix of 8 or more characters works). An optional `quote` is exact text from the record or from a passage it cites. Every source must be cited by a `[n]` or shown by a quote block.
 - **`blocks`** is optional. Most answers need none.

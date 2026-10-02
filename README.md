@@ -74,7 +74,7 @@ mkdir -p ~/.claude/skills
 cp -R skills/premisedb-research ~/.claude/skills/
 ```
 
-A second skill, `skills/premisedb-answer`, teaches an agent to return a structured answer (a headline, a paragraph, sources and charts whose figures are checked against the graph with `check-answer`). Copy it the same way. With both skills installed, `premisedb --db research.sqlite ui` serves a local page at `http://127.0.0.1:8765` where you ask questions and your own Claude Code answers them in the workspace, with its own login and permission settings.
+A second skill, `skills/premisedb-answer`, teaches an agent to return a structured answer (a headline, a paragraph, sources and charts whose figures are checked against the graph with `check-answer`). Copy it the same way. With both skills installed, `premisedb --db research.sqlite ui` serves a local page at `http://127.0.0.1:8765` where you ask questions and your own Claude Code answers them in the workspace, with its own login and permission settings; `--harness codex` uses Codex instead.
 
 Open a new agent session in your research workspace and ask:
 

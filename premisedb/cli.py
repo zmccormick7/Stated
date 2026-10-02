@@ -113,7 +113,10 @@ def _parser():
             payload="an answer document: title, body, optional sources and blocks")
     ui = command("ui", "ui", "Run the local answer UI for this workspace until interrupted.")
     ui.add_argument("--port", type=int, default=8765)
-    ui.add_argument("--harness", default="claude-code", help="The coding agent that answers (default: claude-code).")
+    ui.add_argument("--harness", default="claude-code", choices=["claude-code", "codex"],
+                    help="The coding agent that answers (default: claude-code).")
+    ui.add_argument("--model", help="With --harness codex: the model to pass to codex exec.")
+    ui.add_argument("--effort", dest="reasoning_effort", help="With --harness codex: the model_reasoning_effort to set.")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     listing.add_argument("--kind")
@@ -319,7 +322,8 @@ def main(argv=None):
             raise ValueError("JSON input must not repeat arguments supplied by the command")
         if method == "ui":
             from .ui.server import serve
-            return serve(path, harness_name=options["harness"], port=options["port"])
+            return serve(path, harness_name=options["harness"], port=options["port"], model=options["model"],
+                         reasoning_effort=options["reasoning_effort"])
         with RecordStore(path, layer=options.pop("layer", "workspace")) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
             for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id"):
