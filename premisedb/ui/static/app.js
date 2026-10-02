@@ -210,24 +210,24 @@ function render() {
     return item;
   }));
   const main = $("thread");
-  if (!state.thread) main.replaceChildren(renderWelcome());
-  else main.replaceChildren(...state.thread.turns.map(renderTurn));
+  $("main").classList.toggle("empty", !state.thread);
+  main.replaceChildren(...(state.thread ? state.thread.turns.map(renderTurn) : []));
+  renderStatus();
   $("question").placeholder = state.thread ? "Ask a follow-up" : "Ask a question";
 }
 
-// Before the first question: where the research lives, which base is attached, and whether the agent is there.
-function renderWelcome() {
+// Status lives in the sidebar's foot; only a problem gets a sentence under the question box.
+function renderStatus() {
   const status = state.status;
-  const node = el("div", { class: "empty" }, [el("div", { text: "Ask a question about the graph." })]);
-  if (!status) return node;
-  const base = (status.layers || []).filter((layer) => !layer.writable);
-  const lines = [`Research folder: ${status.workspace}`,
-                 base.length ? base.map((layer) => `${layer.name} layer, version ${layer.version}`).join(" · ")
-                             : "No base layer attached yet. Start with premisedb ui --base FILE once.",
-                 status.harness_found ? `Answers come from your ${status.harness === "codex" ? "Codex" : "Claude Code"}.`
-                                      : `${status.harness === "codex" ? "Codex" : "Claude Code"} was not found. Install it and sign in, then ask.`];
-  node.append(el("div", { class: "status" }, lines.map((line) => el("div", { text: line }))));
-  return node;
+  $("status").textContent = "";
+  $("problem").textContent = "";
+  if (!status) return;
+  const home = status.workspace.replace(/^\/Users\/[^/]+|^\/home\/[^/]+/, "~");
+  const base = (status.layers || []).filter((layer) => !layer.writable).map((layer) => `${layer.name} ${layer.version}`);
+  const agent = status.harness === "codex" ? "Codex" : "Claude Code";
+  $("status").textContent = [home, ...base, agent].join(" · ");
+  if (!base.length) $("problem").textContent = "No base layer is attached. Run premisedb ui --base FILE once.";
+  else if (!status.harness_found) $("problem").textContent = `${agent} was not found. Install it and sign in, then ask.`;
 }
 
 async function refresh() {

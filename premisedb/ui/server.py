@@ -232,7 +232,13 @@ def serve(db_path=None, *, harness_name="claude-code", port=8765, model=None, re
     if shutil.which(harness.executable) is None:  # Both real harnesses have one.
         print(f"{harness.name} is not installed ({harness.executable} not found on PATH); install it and sign in, "
               f"then ask a question.", file=sys.stderr)
-    server = make_server(db_path, harness=harness, port=port)
+    try:
+        server = make_server(db_path, harness=harness, port=port)
+    except OSError as error:
+        if error.errno in (48, 98):  # Address in use, on macOS and Linux.
+            raise ValueError(f"Port {port} is already in use, perhaps by another premisedb ui. "
+                             f"Stop it, or run with --port {port + 1}.") from None
+        raise
     url = f"http://127.0.0.1:{server.server_address[1]}"
     print(f"PremiseDB at {url} for {db_path.parent}")
     if open_browser:

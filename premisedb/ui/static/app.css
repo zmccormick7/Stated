@@ -57,8 +57,14 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .answer .sources .muted { color: var(--mute); font-size: 12px; }
 .progress { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .error { border: 1px solid var(--ink); padding: 10px 14px; font-size: 14px; }
-.empty { color: var(--mute); margin-top: 25vh; text-align: center; display: flex; flex-direction: column; gap: 24px; align-items: center; }
-.empty .status { font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+#main.empty { justify-content: center; }
+#main.empty #thread { display: none; }
+#main.empty #ask { padding: 0; }
+#status { margin-top: auto; padding: 12px 18px 14px; color: var(--mute); font-size: 12px; line-height: 1.5; }
+#sidebar.collapsed #status { display: none; }
+#problem { width: min(680px, 100% - 48px); font-size: 14px; padding: 12px 0 24px; }
+#problem:empty { display: none; }
+#main.empty #problem { padding: 12px 0 0; }
 .lever { margin: 0; display: flex; flex-direction: column; gap: 18px; }
 .lever.lead { border: 1px solid var(--ink); padding: 24px 28px; }
 .lever .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
