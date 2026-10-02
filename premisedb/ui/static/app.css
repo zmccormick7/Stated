@@ -26,8 +26,20 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .answer blockquote { margin: 0; border-left: 2px solid var(--ink); padding: 2px 0 2px 14px; }
 .answer blockquote p { font-style: italic; font-size: 16px; }
 .answer blockquote small, .answer .sources, .note, .progress { color: var(--mute); font-size: 12px; }
-.answer .figures { display: grid; grid-template-columns: max-content auto; gap: 4px 16px; font-size: 14px; }
-.answer .figures b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.answer sup + sup { margin-left: 3px; }
+.chart { margin: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.chart.lead { border: 1px solid var(--ink); padding: 22px 24px; gap: 14px; }
+.chart .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; color: #555555; }
+.chart .legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart .legend i { width: 12px; height: 12px; }
+.chart .rows { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 8px 12px; }
+.chart .label { color: #555555; }
+.chart .bar { display: flex; align-items: center; gap: 2px; height: 28px; }
+.chart .part { height: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; color: #FFFFFF; font-weight: 500; font-variant-numeric: tabular-nums; overflow: hidden; white-space: nowrap; }
+.chart .part:last-of-type { border-radius: 0 4px 4px 0; }
+.chart .part.rest { color: #555555; font-weight: 400; background: #FFFFFF; border: 1px solid var(--line); justify-content: flex-start; padding-left: 8px; }
+.chart .bar b { margin-left: 8px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.chart figcaption { color: var(--mute); font-size: 12px; }
 .answer .sources { margin: 0; padding-left: 18px; }
 .progress { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .error { border: 1px solid var(--ink); padding: 10px 14px; font-size: 14px; }
