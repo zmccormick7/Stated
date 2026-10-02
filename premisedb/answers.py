@@ -18,6 +18,7 @@ _KEYS = {
     "text": ({"type", "text"}, set()),
     "quote": ({"type", "source"}, set()),
     "chart": ({"type", "unit", "rows"}, {"caption", "whole", "rest_label", "lead"}),
+    "lever": ({"type", "model", "input", "output"}, {"input_label", "output_label", "range", "caption", "lead"}),
     "row": ({"label", "parts"}, set()),
     "part": ({"label", "record"}, {"value", "as_written", "scale", "period"}),
 }
@@ -53,10 +54,12 @@ def check_answer(db, answer: object) -> AnswerCheck:
     for i, block in enumerate(blocks):
         where = f"blocks[{i + 1}]"
         kind = block.get("type") if isinstance(block, dict) else None
-        if kind not in ("text", "quote", "chart"):
-            problems.append(f"{where}: type must be text, quote or chart")
+        if kind not in _BLOCKS:
+            problems.append(f"{where}: type must be text, quote, chart or lever")
         elif _shape(block, kind, where, problems):
             resolved_blocks.append(_BLOCKS[kind](db, block, where, sources, used, problems))
+    if any(isinstance(b, dict) and "lead" in b and not isinstance(b["lead"], bool) for b in blocks):
+        problems.append("lead must be true or false")
     if sum(isinstance(b, dict) and b.get("lead") is True for b in blocks) > 1:
         problems.append("at most one block may be the lead")
     for unused in sorted(set(range(1, len(sources) + 1)) - used):
@@ -154,8 +157,6 @@ def _chart_block(db, block, where, sources, used, problems):
     if not _text(block["unit"]) or not isinstance(block["rows"], list) or not block["rows"]:
         problems.append(f"{where}: a chart needs a unit and at least one row")
         return None
-    if not isinstance(block.get("lead", False), bool):
-        problems.append(f"{where}: lead must be true or false")
     if whole is not None and not _is_number(whole):
         problems.append(f"{where}: whole must be a number")
         whole = None
@@ -173,6 +174,49 @@ def _chart_block(db, block, where, sources, used, problems):
             problems.append(f"{at}: the parts add up to more than the whole")
         rows.append({"label": row["label"], "parts": parts})
     return {**block, "rows": rows}
+
+
+def _lever_block(db, block, where, sources, used, problems):
+    """A lever: one input Variable to drag and one output to watch, evaluated live through the model."""
+    try:
+        model_id, variables = db._model_variables(block["model"])
+    except (KeyError, ValueError, TypeError):
+        problems.append(f"{where}: no Model {block['model']!r}")
+        return None
+    by_key = {v.get("key"): v for v in variables}
+    ends = {}
+    for role in ("input", "output"):
+        variable = by_key.get(block[role])
+        if variable is None or variable.get("status") in RETIRED_STATUSES:
+            problems.append(f"{where}: the model has no current Variable with key {block[role]!r}")
+            return None
+        if not _is_number(variable.get("value")):
+            problems.append(f"{where}: {role} {block[role]} must have a single numeric value")
+            return None
+        label = block.get(role + "_label", block[role])
+        if not _text(label):
+            problems.append(f"{where}: {role}_label must be a nonblank string")
+            return None
+        ends[role] = {"key": block[role], "record": variable["id"], "label": label, "value": variable["value"],
+                      "units": variable.get("units")}
+    if block["input"] == block["output"]:
+        problems.append(f"{where}: input and output must differ")
+        return None
+    given, value = block.get("range"), ends["input"]["value"]
+    if given is not None and not (isinstance(given, list) and len(given) == 2 and all(map(_is_number, given))
+                                  and given[0] < given[1]):
+        problems.append(f"{where}: range must be [low, high] with low below high")
+        return None
+    # The slider's span: the block's range, else the Variable's own low and high, else half to one and a half.
+    low, high = given or (by_key[block["input"]].get("low"), by_key[block["input"]].get("high"))
+    if not (_is_number(low) and _is_number(high) and low < high):
+        low, high = sorted((value * 0.5, value * 1.5)) if value else (-1, 1)
+    if not low <= value <= high:
+        problems.append(f"{where}: the input's value {value} is outside the range {[low, high]}")
+        return None
+    ends["input"].update(low=low, high=high)
+    return {k: v for k, v in block.items() if k not in ("input_label", "output_label", "range")} | {
+        "model": model_id, "input": ends["input"], "output": ends["output"]}
 
 
 def _figure(db, part, where, problems):
@@ -227,4 +271,4 @@ def _parse(written):
     return -number if negative else number
 
 
-_BLOCKS = {"text": _text_block, "quote": _quote_block, "chart": _chart_block}
+_BLOCKS = {"text": _text_block, "quote": _quote_block, "chart": _chart_block, "lever": _lever_block}

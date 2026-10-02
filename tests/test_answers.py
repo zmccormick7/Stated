@@ -72,6 +72,40 @@ class AnswerCheckTests(unittest.TestCase):
                 self.assertIsNone(result.answer)
                 self.assertIn(message, result.problems[0])
 
+    def test_a_lever_names_an_input_and_an_output_of_a_model(self):
+        model = self.db.create("Model", text="Revenue model", author_id="a").id
+        growth = self.db.create("Variable", text="Growth", author_id="a", attributes={
+            "key": "growth", "role": "input", "value": 0.4, "low": 0.2, "high": 0.6, "units": "fraction y/y"}).id
+        revenue = self.db.create("Variable", text="Revenue", author_id="a", attributes={
+            "key": "revenue", "role": "output", "value": 541.3, "formula": "386.6 * (1 + growth)", "units": "USD bn"}).id
+        self.db.create("Variable", text="Row", author_id="a", attributes={"key": "row", "value": [1, 2], "periods": ["a", "b"]})
+        for variable in (growth, revenue, self.db.search_records("Row")[0].id):
+            self.db.create_link(variable, model, "in_model", author_id="a")
+        lever = {"type": "lever", "model": model[:8], "input": "growth", "output": "revenue", "lead": True,
+                 "input_label": "Supply growth"}
+        result = check_answer(self.db, self.answer(blocks=[lever]))
+        self.assertEqual(result.problems, ())
+        self.assertEqual(result.answer["blocks"][0], {
+            "type": "lever", "model": model, "lead": True,
+            "input": {"key": "growth", "record": growth, "label": "Supply growth", "value": 0.4, "units": "fraction y/y",
+                      "low": 0.2, "high": 0.6},
+            "output": {"key": "revenue", "record": revenue, "label": "revenue", "value": 541.3, "units": "USD bn"}})
+        spanned = check_answer(self.db, self.answer(blocks=[lever | {"range": [0, 1]}])).answer["blocks"][0]["input"]
+        self.assertEqual((spanned["low"], spanned["high"]), (0, 1))
+        defaulted = check_answer(self.db, self.answer(blocks=[lever | {"input": "revenue", "output": "growth"}]))
+        span = defaulted.answer["blocks"][0]["input"]
+        self.assertEqual((round(span["low"], 6), round(span["high"], 6)), (270.65, 811.95))  # Half to one and a half.
+        for change, message in (({"model": self.finding}, "no Model"), ({"model": "nope"}, "no Model"),
+                                ({"input": "tariff"}, "no current Variable with key 'tariff'"),
+                                ({"input": "row"}, "must have a single numeric value"),
+                                ({"output": "growth"}, "input and output must differ"),
+                                ({"range": [1, 0]}, "range must be"), ({"range": [0.5, 0.6]}, "outside the range"),
+                                ({"input_label": ""}, "input_label must be"), ({"lead": "yes"}, "lead must be true or false")):
+            with self.subTest(change=change):
+                result = check_answer(self.db, self.answer(blocks=[lever | change]))
+                self.assertFalse(result.ok)
+                self.assertIn(message, result.problems[0])
+
     def test_problems_are_reported_together(self):
         self.db.patch(self.scalar, author_id="a", attributes={"status": "retracted"})
         answer = self.answer(title="Two lines\nof title", body="See [1] and [3].", caveats="none")
@@ -87,7 +121,7 @@ class AnswerCheckTests(unittest.TestCase):
             f"sources[3]: record {self.scalar[:8]} is retracted",
             "blocks[1] cites [4], which is not among the sources",
             "blocks[2]: sources[3] has no quote to show",
-            "blocks[3]: type must be text, quote or chart",
+            "blocks[3]: type must be text, quote, chart or lever",
             "blocks[4] lacks text",
             "blocks[5].rows[1]: the parts add up to more than the whole",
             "at most one block may be the lead",

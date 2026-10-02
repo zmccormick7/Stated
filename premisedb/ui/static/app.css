@@ -44,3 +44,14 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .progress { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .error { border: 1px solid var(--ink); padding: 10px 14px; font-size: 14px; }
 .empty { color: var(--mute); margin-top: 25vh; text-align: center; }
+.lever { margin: 0; display: flex; flex-direction: column; gap: 18px; }
+.lever.lead { border: 1px solid var(--ink); padding: 24px 28px; }
+.lever .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.lever .muted, .lever .base { color: #555555; font-size: 13px; }
+.lever .value { font-size: 56px; line-height: 1; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.lever .control { display: flex; flex-direction: column; gap: 6px; }
+.lever .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+.lever .back { border: 0; background: none; padding: 0; height: auto; font-size: 13px; text-decoration: underline; }
+.lever input[type=range] { width: 100%; margin: 0; accent-color: #1F5FA8; }
+.lever figcaption { color: var(--mute); font-size: 12px; }
+.lever figcaption:empty { display: none; }

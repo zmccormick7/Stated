@@ -32,6 +32,7 @@ function renderBlock(block, sources) {
                                  el("small", { text: `${block.source} · ${source.kind} ${source.record.slice(0, 8)}` })]);
   }
   if (block.type === "chart") return renderChart(block);
+  if (block.type === "lever") return renderLever(block);
   return el("p", { class: "note", text: `(${block.type} block)` });
 }
 
@@ -69,6 +70,41 @@ function renderChart(block) {
   });
   figure.append(grid, el("figcaption", { text: [block.caption, block.unit].filter(Boolean).join(" · ") }));
   return figure;
+}
+
+// A value in the Variable's units: fractions read as percentages, everything else as a plain number.
+const inUnits = (value, units) => (units || "").startsWith("fraction") ? `${number(value * 100)}%` : number(value);
+
+// One input to drag and one output to watch, recomputed through the model on the server as the slider moves.
+function renderLever(block) {
+  const { input, output } = block;
+  const out = el("div", { class: "value", text: inUnits(output.value, output.units) });
+  const base = el("div", { class: "base", text: "base case" });
+  const label = el("label", { for: `lever-${input.key}`, text: `${input.label}: ${inUnits(input.value, input.units)}` });
+  const slider = el("input", { id: `lever-${input.key}`, type: "range", min: input.low, max: input.high,
+                               step: (input.high - input.low) / 200, value: input.value });
+  const back = el("button", { type: "button", class: "back", text: `Back to ${inUnits(input.value, input.units)}` });
+  let pending = null;
+  const move = (value) => {
+    label.textContent = `${input.label}: ${inUnits(value, input.units)}`;
+    clearTimeout(pending);
+    pending = setTimeout(async () => {
+      try {
+        const result = await api(`/api/models/${block.model}/evaluate`, { overrides: { [input.key]: value } });
+        const now = result.values[output.key];
+        out.textContent = inUnits(now, output.units);
+        const delta = now - output.value;
+        base.textContent = Math.abs(delta) < 1e-9 ? "base case"
+          : `base case ${inUnits(output.value, output.units)} · ${delta > 0 ? "+" : "−"}${inUnits(Math.abs(delta), output.units)}`;
+      } catch (error) { base.textContent = error.message; }
+    }, 120);
+  };
+  slider.oninput = () => move(parseFloat(slider.value));
+  back.onclick = () => { slider.value = input.value; move(input.value); };
+  return el("figure", { class: "lever" + (block.lead ? " lead" : "") }, [
+    el("div", { class: "head" }, [el("div", {}, [el("div", { class: "muted", text: output.label }), out]), base]),
+    el("div", { class: "control" }, [el("div", { class: "row" }, [label, back]), slider]),
+    el("figcaption", { text: block.caption || "" })]);
 }
 
 function renderAnswer(answer) {
