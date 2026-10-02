@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -7,10 +8,12 @@ import threading
 import time
 from tempfile import TemporaryDirectory
 import unittest
+from zoneinfo import ZoneInfo
 
 from premisedb import RecordStore
 from premisedb.ui import ClaudeCode, Codex, HarnessError, Reply, ThreadStore, UsageLimit, run_turn
 from premisedb.ui import runs, threads
+from premisedb.ui.harness import _failure
 from premisedb.ui.threads import time_limit
 
 
@@ -294,10 +297,18 @@ class ClaudeCodeTests(unittest.TestCase):
                 ClaudeCode(build()).run("Why?", cwd=self.directory)
             self.assertNotIsInstance(raised.exception, UsageLimit)
         for message, resets_at in (("Claude AI usage limit reached|1790000000", 1790000000.0),
-                                   ("5-hour limit reached ∙ resets 3pm", None), ("You've hit your session limit", None)):
+                                   ("You've hit your session limit", None), ("Weekly limit reached", None)):
             with self.subTest(message=message), self.assertRaises(UsageLimit) as raised:
                 ClaudeCode(self.executable({"type": "result", "is_error": True, "result": message})).run("Why?", cwd=self.directory)
             self.assertEqual(raised.exception.resets_at, resets_at)
+        # The form seen live, with a clock time and zone: the next such time, in that zone.
+        denver = ZoneInfo("America/Denver")
+        at = datetime(2026, 10, 2, 14, 20, tzinfo=denver)
+        seen = _failure("You've hit your session limit · resets 3:10pm (America/Denver)", at)
+        self.assertEqual(datetime.fromtimestamp(seen.resets_at, denver), datetime(2026, 10, 2, 15, 10, tzinfo=denver))
+        later = _failure("5-hour limit reached ∙ resets 1pm (America/Denver)", at)  # Already past today: tomorrow.
+        self.assertEqual(datetime.fromtimestamp(later.resets_at, denver), datetime(2026, 10, 3, 13, 0, tzinfo=denver))
+        self.assertIsInstance(_failure("limit reached, resets 3pm (Mars/Olympus)", at).resets_at, float)
 
 
 
