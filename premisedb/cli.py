@@ -72,6 +72,8 @@ def _parser():
     command("link", "create_link", "Connect two records with a named relationship.",
             "from_id", "to_id", "relation", payload="author_id, optional explanation")
     command("get-link", "read_link", "Read a current link.", "link_id")
+    command("merge", "merge", "Fold a duplicate record into the one kept: move its links, retire it as superseded.",
+            "keep_id", "duplicate_id", payload="author_id")
     command("patch-link", "patch_link", "Change some of a link's fields, keeping the rest.", "link_id",
             payload="author_id, optional from_id, to_id, relation, explanation")
     command("update-link", "update_link", "Replace a link's endpoints, relation and explanation.",
@@ -350,7 +352,7 @@ def main(argv=None):
             raise ValueError("JSON input must not repeat arguments supplied by the command")
         with RecordStore(path, layer=options.pop("layer", "workspace")) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
-            for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id"):
+            for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id", "keep_id", "duplicate_id"):
                 if name in options:
                     options[name] = db.resolve_id(options[name], link=name == "link_id")
             if "seed_ids" in options:

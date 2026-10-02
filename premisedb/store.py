@@ -114,6 +114,15 @@ class Contribution:
 
 
 @dataclass(frozen=True)
+class Merge:
+    """The outcome of folding a duplicate record into the one kept."""
+    keep_id: str
+    duplicate_id: str
+    moved: int  # Links moved from the duplicate to the kept record.
+    dropped: int  # Links the duplicate had that the kept record already had.
+
+
+@dataclass(frozen=True)
 class Passage:
     source_id: str
     ordinal: int
@@ -621,6 +630,48 @@ class RecordStore:
             self._link_sources(record_id, source_ids, author_id)
             record = self.read(record_id)
         return record
+
+    def merge(self, keep_id: str, duplicate_id: str, *, author_id: str) -> Merge:
+        """Fold a duplicate record into the one kept: every link of the duplicate is moved to the kept
+        record (one the kept record already has is left on the duplicate), the duplicate's aliases and
+        name join the kept record's aliases when it can be edited, and the duplicate is retired as
+        superseded by the kept record. The duplicate must be in the workspace's own layer; the kept
+        record may be anywhere. Each step is its own transaction, as with the commands it is built from.
+        """
+        keep, duplicate = self.read(keep_id), self.read(duplicate_id)
+        if keep.id == duplicate.id:
+            raise ValueError("the kept record and the duplicate are the same record")
+        if keep.kind != duplicate.kind or keep.kind == "Source":
+            raise ValueError("merge folds together two records of the same kind other than Source")
+        if duplicate.attributes.get("status") == "superseded":
+            raise ValueError(f"{duplicate.id} is already superseded")
+        own = self.layers()[0].name
+        if duplicate.layer != own:
+            raise ValueError(f"the duplicate is in the read-only {duplicate.layer} layer; only a record in the "
+                             f"writable {own} layer can be folded into another")
+        moved = dropped = 0
+        for direction, field in (("in", "to_id"), ("out", "from_id")):
+            for link in self._links_of(duplicate.id, direction, None, 10000)[0]:
+                other = link.from_id if direction == "in" else link.to_id
+                if other == keep.id:
+                    continue  # A link between the two is kept as it is.
+                try:
+                    self.patch_link(link.id, author_id=author_id, **{field: keep.id})
+                    moved += 1
+                except ValueError:
+                    dropped += 1
+        if keep.layer == own:
+            aliases = keep.attributes.get("aliases") if isinstance(keep.attributes.get("aliases"), list) else []
+            others = duplicate.attributes.get("aliases") if isinstance(duplicate.attributes.get("aliases"), list) else []
+            name = duplicate.text.split(" (")[0].split(",")[0].strip()
+            joined = [a for a in dict.fromkeys([*aliases, *others, name]) if isinstance(a, str) and a and a != keep.text]
+            if joined != aliases:
+                self.patch(keep.id, author_id=author_id, attributes={"aliases": joined})
+        self.create_link(keep.id, duplicate.id, "supersedes", author_id=author_id,
+                         explanation="Duplicate record for the same thing; its links were moved to this one.")
+        self.patch(duplicate.id, author_id=author_id, attributes={
+            "status": "superseded", "status_reason": f"Duplicate of {keep.kind} {keep.id}; its links were moved there."})
+        return Merge(keep.id, duplicate.id, moved, dropped)
 
     def read_link(self, link_id: str) -> Link:
         row = self._db.execute(_LINK_SELECT + " WHERE l.id = ?", (link_id,)).fetchone()
