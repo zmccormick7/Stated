@@ -1,12 +1,14 @@
 """Run a prompt through the user's own coding agent, headless, and report what it does."""
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import re
 import subprocess
 import tempfile
 import threading
+from zoneinfo import ZoneInfo
 
 
 class HarnessError(RuntimeError):
@@ -24,12 +26,28 @@ class UsageLimit(HarnessError):
 _LIMIT = re.compile(r"(usage|session|weekly|hourly|5-hour|rate)[ -]limit|limit reached|hit your [\w -]*limit|quota", re.I)
 
 
-def _failure(message: str) -> HarnessError:
+_RESETS = re.compile(r"resets?\s+(?:at\s+)?(\d{1,2})(?::(\d\d))?\s*([ap]m)(?:\s+\(([\w/+-]+)\))?", re.I)
+
+
+def _failure(message: str, now: datetime | None = None) -> HarnessError:
     """The error for a harness's own account of what went wrong, told apart when it is a usage limit."""
     if not _LIMIT.search(message):
         return HarnessError(message)
-    epoch = re.search(r"\|(\d{10})\b", message)  # Claude Code appends the reset time to some limit messages.
-    return UsageLimit(message, float(epoch.group(1)) if epoch else None)
+    if epoch := re.search(r"\|(\d{10})\b", message):  # One Claude Code form: the reset as a Unix time.
+        return UsageLimit(message, float(epoch.group(1)))
+    if clock := _RESETS.search(message):  # Another: "resets 3:10pm (America/Denver)".
+        hour, minute, half, zone = clock.groups()
+        try:
+            tz = ZoneInfo(zone) if zone else None
+        except (KeyError, ValueError):
+            tz = None
+        now = now or datetime.now(tz).astimezone(tz)
+        hour = int(hour) % 12 + (12 if half.lower() == "pm" else 0)
+        resets = now.replace(hour=hour, minute=int(minute or 0), second=0, microsecond=0)
+        if resets < now:
+            resets += timedelta(days=1)
+        return UsageLimit(message, resets.timestamp())
+    return UsageLimit(message, None)
 
 
 @dataclass(frozen=True)
