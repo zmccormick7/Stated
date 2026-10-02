@@ -11,6 +11,7 @@ import sys
 from .context import OpenRouterContextWriter, write_document_context
 from .store import RecordStore
 from .reranking import OpenRouterReranker
+from .answers import check_answer
 from .recall import recall
 from .retrieval import retrieve
 
@@ -107,6 +108,9 @@ def _parser():
                        "model_id")
     scenario.add_argument("--set", dest="overrides", action="append", type=_where_item, metavar="KEY=VALUE",
                           help="Hold a Variable at VALUE, a number or a JSON list for a row; repeatable.")
+    command("check-answer", "check_answer",
+            "Check an answer document against the graph: its sources, quotes and every charted figure.",
+            payload="an answer document: title, body, optional sources and blocks")
     listing = command("list", "list_records", "List records in creation order; continue with --after LAST_ID.")
     listing.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     listing.add_argument("--kind")
@@ -319,6 +323,8 @@ def main(argv=None):
                 options["seed_ids"] = [db.resolve_id(seed) for seed in options["seed_ids"]]
             if method == "recall":
                 result = _recall(db, options)
+            elif method == "check_answer":
+                result = check_answer(db, payload)
             elif method == "search_documents":
                 result = _search_documents(db, options)
             else:
