@@ -11,7 +11,29 @@ import unittest
 from unittest import mock
 
 from premisedb import RecordStore
-from premisedb.fetch import contact, fetch_page, html_text
+from premisedb.fetch import contact, fetch_page, html_text, pdf_text
+
+
+def make_pdf(*pages):
+    """A small PDF with one line of text on each page (an empty string makes a page with no text)."""
+    objects = ["<< /Type /Catalog /Pages 2 0 R >>",
+               f"<< /Type /Pages /Kids [{' '.join(f'{4 + 2 * i} 0 R' for i in range(len(pages)))}] /Count {len(pages)} >>",
+               "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    for i, line in enumerate(pages):
+        stream = f"BT /F1 12 Tf 72 720 Td ({line}) Tj ET" if line else ""
+        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {5 + 2 * i} 0 R "
+                       "/Resources << /Font << /F1 3 0 R >> >> >>")
+        objects.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
+    out, offsets = b"%PDF-1.4\n", []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n{body}\nendobj\n".encode()
+    xref = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode() + b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    return out + f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+
+
+PDF = make_pdf("Sales to one customer were 22% of revenue.", "Grid approval is pending.")
 
 HTML = """<!DOCTYPE html><html><head><title>PowerFrame 10-Q</title><style>p{color:red}</style>
 <script>var x = "<p>not text</p>";</script></head><body><ix:header><p>hidden facts</p></ix:header>
@@ -23,7 +45,9 @@ PAGES = {"/filing.htm": ("text/html; charset=utf-8", HTML.encode()),
          "/latin.htm": ("text/html; charset=iso-8859-1", "<p>Café</p>".encode("latin-1")),
          "/zipped.htm": ("text/html", gzip.compress(HTML.encode())),
          "/note.txt": ("text/plain", "A€Z\r\nGrid approval is pending.\n".encode()),
-         "/report.pdf": ("application/pdf", b"%PDF-1.7"), "/empty.htm": ("text/html", b"<p> </p>")}
+         "/report.pdf": ("application/pdf", PDF), "/download": ("application/octet-stream", PDF),
+         "/scan.pdf": ("application/pdf", make_pdf("")), "/broken.pdf": ("application/pdf", b"%PDF-1.7 not really"),
+         "/sheet.xlsx": ("application/vnd.ms-excel", b"PK"), "/empty.htm": ("text/html", b"<p> </p>")}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -68,8 +92,16 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(fetch_page(self.base + "/latin.htm").text, "Café\n")
         self.assertEqual(fetch_page(self.base + "/note.txt").text, "A€Z\r\nGrid approval is pending.\n")  # As served.
 
+    def test_a_pdf_becomes_its_text_page_by_page(self):
+        text = "Sales to one customer were 22% of revenue.\n\fGrid approval is pending.\n"
+        self.assertEqual(pdf_text(PDF), text)
+        self.assertEqual(fetch_page(self.base + "/report.pdf").text, text)
+        self.assertEqual(fetch_page(self.base + "/download").text, text)  # Known by its first bytes, not its label.
+
     def test_what_cannot_be_fetched_says_why(self):
-        for url, message in ((self.base + "/report.pdf", "only HTML and plain-text pages can be fetched; .* is application/pdf"),
+        for url, message in ((self.base + "/sheet.xlsx", "only HTML, plain-text and PDF documents can be fetched; .* is application/vnd.ms-excel"),
+                             (self.base + "/scan.pdf", "scan.pdf: the PDF has no text; a scanned document needs OCR"),
+                             (self.base + "/broken.pdf", "broken.pdf: the PDF could not be read"),
                              (self.base + "/absent", "could not fetch .*404"), (self.base + "/empty.htm", "has no text"),
                              ("file:///etc/hosts", "must be an http or https address"), (None, "must be an http"),
                              ("https://www.sec.gov/Archives/x.htm", "SEC.gov requires a contact name and email")):
@@ -112,6 +144,10 @@ class FetchTests(unittest.TestCase):
             self.assertEqual(call()["error"], "give ingest a text file or --url, not both")
             self.assertEqual(call("x.txt", "--url", self.base + "/note.txt")["error"], "give ingest a text file or --url, not both")
             self.assertIn("SEC.gov requires a contact", call("--url", "https://www.sec.gov/x.htm")["error"])
+            (Path(directory) / "report.pdf").write_bytes(PDF)  # A PDF on disk is read for its text too.
+            filed = call(str(Path(directory) / "report.pdf"))
+            with RecordStore(path) as db:
+                self.assertTrue(db.read_source_text(filed["id"]).startswith("Sales to one customer were 22% of revenue.\n\f"))
             self.assertIsNone(contact(path))
             (Path(directory) / "contact.txt").write_text("Ada ada@example.com\n")
             self.assertEqual(contact(path), "Ada ada@example.com")

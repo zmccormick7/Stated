@@ -18,5 +18,5 @@ include = ["premisedb*"]
 premisedb = ["schema.sql", "ui/schema.sql", "ui/static/*", "skills/*/SKILL.md"]
 
 [project.optional-dependencies]
-cli = ["tiktoken>=0.12,<1"]
+cli = ["tiktoken>=0.12,<1", "pypdf>=5,<7"]
 evaluation = ["scipy>=1.14,<2", "tiktoken>=0.12,<1"]
