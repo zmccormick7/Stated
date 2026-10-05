@@ -1,9 +1,11 @@
-"""Fetch a web page's text for ingestion, so an agent needs no general download tool."""
+"""Fetch a web page's or PDF's text for ingestion, so an agent needs no general download tool."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import gzip
 from html.parser import HTMLParser
+import io
+import logging
 import os
 from pathlib import Path
 import re
@@ -64,6 +66,27 @@ def html_text(html: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def pdf_text(data: bytes) -> str:
+    """A PDF's text, page by page with a form feed between pages. A scanned PDF has none; that needs OCR,
+    which is not done here."""
+    try:
+        from pypdf import PdfReader
+        from pypdf.errors import PyPdfError
+    except ImportError:
+        raise ValueError('reading a PDF needs the pypdf package: pip install "premisedb[cli]"') from None
+    logging.getLogger("pypdf").setLevel(logging.ERROR)  # Its warnings about odd files are not ours to print.
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        if reader.is_encrypted and not reader.decrypt(""):
+            raise ValueError("the PDF is protected by a password")
+        pages = [(page.extract_text() or "").strip() for page in reader.pages]
+    except (PyPdfError, OSError, KeyError, IndexError, TypeError) as error:
+        raise ValueError(f"the PDF could not be read: {error}") from None
+    if not any(pages):
+        raise ValueError("the PDF has no text; a scanned document needs OCR, which is not supported")
+    return "\n\f".join(pages) + "\n"
+
+
 def contact(db_path: str | Path | None = None) -> str | None:
     """Who is asking, for sites that require it: $PREMISEDB_CONTACT, else contact.txt beside the database."""
     value = os.environ.get("PREMISEDB_CONTACT", "").strip()
@@ -74,7 +97,7 @@ def contact(db_path: str | Path | None = None) -> str | None:
 
 
 def fetch_page(url: str, *, contact: str | None = None, open_url=urlopen) -> Page:
-    """Download an HTML or plain-text page and return its text. SEC.gov refuses requests that do not say
+    """Download an HTML or plain-text page or a PDF and return its text. SEC.gov refuses requests that do not say
     who is asking, so it needs `contact` (a name and email), which is sent to SEC.gov and nowhere else."""
     if os.environ.get("PREMISEDB_FETCH", "").strip() == "0":
         raise ValueError("fetching from the web is off for this question: it was asked at an effort that works "
@@ -101,8 +124,14 @@ def fetch_page(url: str, *, contact: str | None = None, open_url=urlopen) -> Pag
         raise ValueError(f"{url} is larger than {MAX_BYTES // 1_000_000} MB")
     if encoding.lower() == "gzip":
         body = gzip.decompress(body)
+    if body.startswith(b"%PDF-"):  # Whatever the server calls it.
+        try:
+            text = pdf_text(body)
+        except ValueError as error:
+            raise ValueError(f"{url}: {error}") from None
+        return Page(final, text, datetime.now(UTC).isoformat(timespec="seconds"))
     if kind not in ("text/html", "application/xhtml+xml", "text/plain"):
-        raise ValueError(f"only HTML and plain-text pages can be fetched; {url} is {kind or 'of an unknown type'}")
+        raise ValueError(f"only HTML, plain-text and PDF documents can be fetched; {url} is {kind or 'of an unknown type'}")
     try:
         text = body.decode(charset)
     except (LookupError, UnicodeDecodeError):

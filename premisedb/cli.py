@@ -9,7 +9,7 @@ import sqlite3
 import sys
 
 from .context import OpenRouterContextWriter, write_document_context
-from .fetch import contact, fetch_page
+from .fetch import contact, fetch_page, pdf_text
 from .store import RecordStore
 from .reranking import OpenRouterReranker
 from .answers import check_answer
@@ -145,8 +145,8 @@ def _parser():
     ingest = command("ingest", "ingest_source",
                      "Ingest an extracted UTF-8 text file without normalization, or the text of a web page.",
                      payload="description, author_id, optional attributes")
-    ingest.add_argument("source_file", nargs="?", help="Path to the extracted text file")
-    ingest.add_argument("--url", help="Fetch this HTML or plain-text page and ingest its text instead of a file; "
+    ingest.add_argument("source_file", nargs="?", help="Path to the extracted text file, or to a PDF")
+    ingest.add_argument("--url", help="Fetch this HTML or plain-text page or PDF and ingest its text instead of a file; "
                                       "records url and retrieved_at in the Source's attributes.")
     source = command("source-text", "read_source_text", "Read source text as a JSON string; offsets are UTF-8 bytes.", "source_id")
     source.add_argument("--start-byte", type=int, default=0)
@@ -339,7 +339,8 @@ def main(argv=None):
             if (filename is None) == (url is None):
                 raise ValueError("give ingest a text file or --url, not both")
             if url is None:
-                options["document_text"] = Path(filename).read_bytes().decode("utf-8")
+                data = Path(filename).read_bytes()  # A PDF is read for its text; anything else is the text itself.
+                options["document_text"] = pdf_text(data) if data.startswith(b"%PDF-") else data.decode("utf-8")
             else:
                 page = fetch_page(url, contact=contact(path))
                 options["document_text"] = page.text
