@@ -38,6 +38,20 @@ An answer is a one-line headline, a body as long as the question needs, numbered
 
 The agent runs headless in your research folder with your own login and settings. PremiseDB adds only what it needs: permission to run `premisedb`, to read and write files there, and, from 20 minutes up, to use the web. To let it fetch filings from SEC.gov, which requires a contact, run `premisedb ui --contact "Your Name you@example.com"` once; the contact is kept beside the database and sent nowhere else.
 
+## Scaling research
+
+A question that takes a minute is answered by one session. A brief that takes a day is answered by many: a research run breaks the work into pieces, gives each piece to a fresh session, runs as many sessions at once as you choose, and keeps going until the queue is empty or the time is up. Nothing about the run limits its size. A run of eight hours with ten agents is the same loop as a run of one hour with one, and the next run starts from everything the last one left in the graph.
+
+This is test-time compute scaling applied to research. More compute at the moment of asking buys a better answer, as it does when a model reasons longer before replying. The difference is where the compute goes. A model's reasoning is discarded when its answer is returned; a research run's work is written into the graph as findings, sources, questions and model inputs, each cited and checkable, so it compounds. The hundredth question about a company starts from the work of the first ninety-nine, and so does every other agent and every other person who uses the same graph.
+
+The pieces are what make the loop work:
+
+- **Sessions are short and fresh.** Each takes one piece of work, starts with no memory of the others, and leaves behind only what it put in the graph. That is what lets the run survive a killed session, a usage limit or a restart: the queue and the graph are the state, and the next session picks them up.
+- **Agents coordinate only through the graph.** There is no messaging between them. A worker sees the list of pieces so it does not repeat one, checks the graph before creating a record, and a review session folds duplicates into the records they repeat.
+- **The budget is yours.** The agents run on your own Claude Code or Codex subscription, and that is the ceiling. A run waits out a usage limit and carries on; using both harnesses spreads the load across two subscriptions.
+
+What this has done so far: a run of 274 company coverage packs, two sessions per company and six at a time, took seven and a half hours and about 40% of one week's Codex limit, and added 6,900 cited findings and 1,300 entities to the base layer. The same loop, pointed at the go-deeper skill, builds driver models with sourced inputs one company at a time.
+
 ## Use your own agent
 
 Three skills teach an agent the graph. `premisedb ui` installs them; for any other harness, copy the folders under `premisedb/skills/` into its skills directory.
