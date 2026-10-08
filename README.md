@@ -1,195 +1,114 @@
 # PremiseDB
 
-**PremiseDB lets research agents build an evolving knowledge graph of companies, markets and the forces connecting them.** Agents contribute findings, connect them to evidence and existing knowledge, and revise their understanding as they learn. Each investigation becomes part of a shared picture that other agents can explore, challenge and extend.
+**A shared, evolving knowledge graph for fundamental investment research.** Research agents record what they find about companies, connect it to the evidence and to each other's work, and revise it as they learn. Ask a question and your own coding agent answers it from the graph, with every figure checked against the record it came from.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
-[Quickstart](#quickstart) · [CLI](docs/cli.md) · [Research skill](premisedb/skills/premisedb-research/SKILL.md) · [Python API](docs/python-api.md) · [Design](docs/database-spec.md) · [Contribute](#contributing)
+[Install](#install) · [Ask a question](#ask-a-question) · [Use your own agent](#use-your-own-agent) · [How the graph is organised](#how-the-graph-is-organised) · [Status](#status) · [CLI](docs/cli.md) · [Python API](docs/python-api.md)
 
-## Follow the connections
+## Install
 
-An agent researching a supplier's backlog learns that customers can postpone deliveries. It saves the evidence, the implication for revenue timing, and an unresolved question about customers' exposure to grid delays.
+You need Python 3.12 or later built against SQLite 3.51.3 or later with FTS5 (`python -c "import sqlite3; print(sqlite3.sqlite_version)"` shows the version), plus [Claude Code](https://code.claude.com) or [Codex](https://openai.com/codex) signed in to your own account.
 
-A later investigation can pick up that entire line of reasoning. A search for **backlog** becomes a path to **grid constraints**, **delivery terms** and **the assumptions in a revenue forecast**.
-
-```mermaid
-flowchart LR
-    V["Variable<br/>FY27 revenue timing"] -->|depends_on| F["Finding<br/>Backlog may shift across quarters"]
-    F -->|supported_by| S["Source<br/>Delivery rescheduling terms"]
-    F -->|raises| Q["Question<br/>Could grid delays trigger deferrals?"]
+```bash
+git clone https://github.com/zmccormick7/PremiseDB.git
+pipx install "./PremiseDB[cli]"
+premisedb ui
 ```
 
-*A fictional research example. Agents author the findings and connections; PremiseDB stores them and makes them retrievable.*
+The first run creates a research folder at `~/PremiseDB`, installs the bundled skills for your agent, and opens the app in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `premisedb ui --base base-2026.10.01.sqlite`.
 
-The same pattern supports company coverage, thesis reviews and financial model assumptions:
+To work on PremiseDB itself, clone the repository and install it in editable mode (`python -m pip install -e '.[cli]'` inside a virtual environment); `premisedb` then runs from your checkout.
 
-| Research question | What the graph gives your agent a path to inspect |
+## Ask a question
+
+`premisedb ui` runs a small local web app on your machine, next to your research folder: a Python server and a plain web page, with nothing hosted elsewhere. The page holds threads of questions and their answers, like a chat, in a sidebar on the left. The answers come from your own Claude Code or Codex, which the app runs in your research folder each time you ask.
+
+Type a question and pick an effort beside the Ask button:
+
+| Effort | What the agent does |
 | --- | --- |
-| What do we already know about this company? | Earlier findings, their sources and unresolved questions. |
-| What could this disclosure change? | Connected conclusions and assumptions to reassess. |
-| What supports this forecast? | The research behind a model variable, including gaps in the evidence. |
+| 1 minute | Answers from what the graph already holds. |
+| 5 minutes | Looks through the graph, adds what it learns to your layer, and answers. |
+| 20 minutes | Also reads outside sources: SEC filings, releases, transcripts, pages and PDFs. |
+| 1, 3 or 8 hours | A research run: plans pieces of work, has fresh sessions do them in parallel, and reports. You can pause it, finish it early or add a note to steer it. |
 
-## Connect research to financial models
+An answer is a one-line headline, a body as long as the question needs, numbered sources, and where they help a chart, a quote, a flow of who gets what, or a lever you can drag to move a model's input and watch its output. Every figure on the page is checked against the record it cites before the answer is shown.
 
-Every forecast rests on a view of how a business works. PremiseDB lets agents connect model variables to the findings, evidence and unresolved questions behind that view.
+The agent runs headless in your research folder with your own login and settings. PremiseDB adds only what it needs: permission to run `premisedb`, to read and write files there, and, from 20 minutes up, to use the web. To let it fetch filings from SEC.gov, which requires a contact, run `premisedb ui --contact "Your Name you@example.com"` once; the contact is kept beside the database and sent nowhere else.
 
-For example, a hypothetical forecast might assume that **80% of PowerFrame's backlog converts to revenue next year**. An agent can link that assumption to the delivery terms, findings about customer expansion plans, and open questions about grid connections. A new disclosure about a customer's project delay then gives the agent a path to an assumption worth revisiting and a financial model in which to assess the impact.
+## Scaling research
 
-The connection works in both directions:
+A question that takes a minute is answered by one session. A brief that takes a day is answered by many: a research run breaks the work into pieces, gives each piece to a fresh session, runs as many sessions at once as you choose, and keeps going until the queue is empty or the time is up. Nothing about the run limits its size. A run of eight hours with ten agents is the same loop as a run of one hour with one, and the next run starts from everything the last one left in the graph.
 
-- **Research informs the model.** Trace new evidence to the assumptions and forecasts it could change.
-- **The model guides the research.** Start with an important assumption, inspect its basis and identify what still needs to be investigated.
+This is test-time compute scaling applied to research. More compute at the moment of asking buys a better answer, as it does when a model reasons longer before replying. The difference is where the compute goes. A model's reasoning is discarded when its answer is returned; a research run's work is written into the graph as findings, sources, questions and model inputs, each cited and checkable, so it compounds. The hundredth question about a company starts from the work of the first ninety-nine, and so does every other agent and every other person who uses the same graph.
 
-Your financial model can live in Excel, Python or another tool. PremiseDB's **Model** and **Variable** records connect it to the research graph. Calculations stay in your modeling tool; the graph preserves the reasoning behind the numbers. The MVP stores these references and relationships; your workflow supplies the integration with the modeling tool.
+The pieces are what make the loop work:
 
-## Quickstart
+- **Sessions are short and fresh.** Each takes one piece of work, starts with no memory of the others, and leaves behind only what it put in the graph. That is what lets the run survive a killed session, a usage limit or a restart: the queue and the graph are the state, and the next session picks them up.
+- **Agents coordinate only through the graph.** There is no messaging between them. A worker sees the list of pieces so it does not repeat one, checks the graph before creating a record, and a review session folds duplicates into the records they repeat.
+- **The budget is yours.** The agents run on your own Claude Code or Codex subscription, and that is the ceiling. A run waits out a usage limit and carries on; using both harnesses spreads the load across two subscriptions.
 
-> **Early MVP.** The CLI, Python API and research skill support storing, connecting and retrieving research today. The API and database format are still evolving.
+What this has done so far: a run of 274 company coverage packs, two sessions per company and six at a time, took seven and a half hours and about 40% of one week's Codex limit, and added 6,900 cited findings and 1,300 entities to the base layer. The same loop, pointed at the go-deeper skill, builds driver models with sourced inputs one company at a time.
 
-Requires **Python 3.12+**, linked against **SQLite 3.51.3+ with FTS5**. Check your Python's SQLite version with `python -c "import sqlite3; print(sqlite3.sqlite_version)"`.
+## Use your own agent
 
-Install from source:
+Three skills teach an agent the graph. `premisedb ui` installs them; for any other harness, copy the folders under `premisedb/skills/` into its skills directory.
 
-```bash
-git clone https://github.com/Implied-Capital/PremiseDB.git
-cd PremiseDB
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[cli]'
-premisedb --db research.sqlite init
-```
+- **premisedb-research**: recall what the graph holds, contribute findings with exact citations, and revise understanding as evidence changes.
+- **premisedb-answer**: return an answer document that passes `premisedb check-answer`.
+- **premisedb-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
 
-### Use your agent
-
-From the checkout, copy the bundled skill into your harness's personal skills directory. Choose [Codex](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) or [Claude Code](https://code.claude.com/docs/en/skills#where-skills-live):
-
-```bash
-# Codex
-mkdir -p ~/.agents/skills
-cp -R premisedb/skills/premisedb-research ~/.agents/skills/
-
-# Claude Code
-mkdir -p ~/.claude/skills
-cp -R premisedb/skills/premisedb-research ~/.claude/skills/
-```
-
-A second skill, `premisedb/skills/premisedb-answer`, teaches an agent to return a structured answer (a headline, a paragraph, sources and charts whose figures are checked against the graph with `check-answer`). You need not copy it: `premisedb ui` installs both skills for the chosen harness and serves a local page where you ask questions and your own Claude Code answers them in the workspace, with its own login and settings plus permission to run `premisedb` and read and write files there; `--harness codex` uses Codex instead. Each question carries an effort you choose beside the Ask button: 1 minute (answer from what the graph holds), 5 minutes (the default), 20 minutes, or 1, 3 or 8 hours. From an hour up it is a research run: the agent plans pieces of work, fresh sessions do them, as many at a time as the agents you choose (three unless you change it), and add what they learn to your layer, and a report answers the brief; while it goes you can pause it, finish it early, or add a note to steer it. From 20 minutes up the agent may also search and read the web, and ingest pages with `premisedb ingest --url`. To let it fetch SEC filings, give your contact once: `premisedb ui --contact "Your Name you@example.com"`; it is kept beside the database and sent only to SEC.gov, which requires one.
-
-A third skill, `premisedb/skills/premisedb-go-deeper`, takes a company past its standard coverage: the agent writes or extends a driver model for it, turns the model's unsourced inputs and the answerable open Questions into a research list, and works that list from filings, releases and transcripts until the inputs are sourced and the model checks.
-
-To use the answer UI without the steps above: install the command once (`pipx install "/path/to/PremiseDB[cli]"`, with a Python that meets the requirements below), then run `premisedb ui --base /path/to/base-2026.10.01.sqlite`. The first run creates `~/PremiseDB/research.sqlite` with a `fund` layer, attaches the base, installs the skills and opens the page; after that `premisedb ui` alone is enough. Pass `--base` again to update to a newer base file.
-
-Open a new agent session in your research workspace and ask:
-
-> Use the premisedb-research skill and research.sqlite to investigate this company's exposure to customer project delays. Build on existing findings, inspect the evidence, and save the important conclusions and open questions.
-
-Make the installed `premisedb` executable available in the agent's shell, or give it the absolute path to this checkout's `.venv/bin/premisedb`. Set `PREMISEDB_DB` to the workspace database's absolute path so every session uses the same graph. For document search and model-written document context, configure `OPENROUTER_API_KEY` in that environment once. The agent asks a research question and receives relevant excerpts with citations; PremiseDB handles the retrieval pipeline. The [CLI guide](docs/cli.md) documents commands and setup. The skill guides the research; the agent uses its existing tools to find new sources.
-
-### Try the Python API
-
-This example also runs locally without an API key. It uses fictional research to show the two sides of the workflow.
-
-**1. Save what an investigation learned.**
+Point a session at the folder with `PREMISEDB_DB=/path/to/research.sqlite` and ask it to use the skill. The [CLI guide](docs/cli.md) covers every command, and the [Python API](docs/python-api.md) is there for agents and tools you write yourself:
 
 ```python
-from premisedb import RecordStore
+from premisedb import RecordStore, recall
 
 with RecordStore("research.sqlite") as db:
-    source = db.ingest_source(
-        description="PowerFrame delivery terms (fictional)",
-        document_text="Customers may reschedule deliveries with 90 days' notice.",
-        author_id="agent-a",
-    )
-    finding = db.create(
-        "Finding", text="PowerFrame's backlog may shift into later quarters.",
-        attributes={"basis": "inference"}, author_id="agent-a",
-    )
-    question = db.create(
-        "Question", text="Could grid delays cause customers to defer orders?",
-        author_id="agent-a",
-    )
-    db.create_link(finding.id, source.id, "supported_by", author_id="agent-a")
-    db.create_link(finding.id, question.id, "raises", author_id="agent-a")
+    for found in recall(db, "customer concentration").records:
+        print(found.record.kind, found.record.text[:80])
 ```
 
-**2. Start a fresh session and follow the research.**
+Document search and the model-written document summaries use OpenRouter; set `OPENROUTER_API_KEY` in the agent's environment to turn them on.
 
-Run this in another Python process, from the same directory. It needs only the database:
+## How the graph is organised
 
-```python
-from premisedb import RecordStore
+Six record types, connected by named links:
 
-with RecordStore("research.sqlite") as db:
-    finding = db.search_records("PowerFrame backlog", kind="Finding", limit=1)[0]
-    print(finding.text)
-    for link in db.connections(finding.id).links:
-        print(f"{link.relation}: {db.read(link.to_id).text}")
-```
+| Record | Holds |
+| --- | --- |
+| **Entity** | A company, facility, product or market. |
+| **Source** | A filing, transcript, release or page, with its text captured so quotes can be checked. |
+| **Finding** | A statement to build on or challenge, labelled disclosed, inference or assumption, citing its source. |
+| **Question** | Something unresolved and worth investigating. |
+| **Model** | A driver model of a business. |
+| **Variable** | A model input or output, with its value, units, periods and the evidence it rests on. |
 
-Output:
+Links such as `about`, `supported_by`, `depends_on`, `contradicts` and `raises` carry the reasoning: a Variable depends on a Finding, which is supported by a Source and raises a Question. Models are checked with `premisedb check-model`, which recomputes every output's formula from the stored inputs, and evaluated with overrides for the levers on the answer page.
 
-```text
-PowerFrame's backlog may shift into later quarters.
-supported_by: PowerFrame delivery terms (fictional)
-raises: Could grid delays cause customers to defer orders?
-```
+The graph is layered. A **base layer** is a published, read-only graph that any research folder can attach and later update; your own layer holds what your agents add on top, including corrections to base records. Knowledge belongs to the folder, not to any one conversation or harness: a fresh session, on either harness, picks up exactly where the last one left off.
 
-**The grid question contains neither “PowerFrame” nor “backlog.”** The connection makes it discoverable. The next agent can investigate it, add evidence and update the finding, without access to the original conversation.
+## Status
 
-See the [Python API guide](docs/python-api.md) for updates, incoming connections, relation filters and document retrieval.
+PremiseDB is early software. The database format changes without migrations; recreate a prototype database when it does.
 
-## Six record types. Flexible connections.
+What exists today:
 
-| Record | Purpose | Example |
-| --- | --- | --- |
-| **Entity** | Something the research is about. | A company, facility, product or commodity. |
-| **Source** | Material used as evidence. | A filing, transcript or research note. |
-| **Finding** | A statement or conclusion to build on or challenge. | Delivery flexibility may defer revenue. |
-| **Question** | An unresolved issue worth investigating. | Which customers can postpone orders? |
-| **Model** | A reference to a financial model. | An Excel forecast or Python valuation. |
-| **Variable** | An identifiable model input, intermediate value or output. | FY27 revenue or a utilization assumption. |
+- The CLI, Python API and three skills, used daily by Claude Code and Codex.
+- The answer page with checked answers, levers, research runs and the notes, pause and finish controls.
+- A base layer covering the 1,000 largest US filers by public float, with the full text of each company's latest annual report and, for 474 of them, a coverage pack of its business, segments, key figures, relationships, risks and open questions. Driver models exist for a handful of companies.
 
-Every record has an ID, text, flexible JSON attributes, a last editor and an updated timestamp. Connect any records with named relationships such as `supported_by`, `depends_on`, `contradicts` or `raises`. Links can carry an explanation of why the connection matters.
-
-Findings can support or challenge other findings. Questions can connect several investigations. Model variables can point to the research supporting an assumption; calculations stay in your modeling tool.
-
-Your agent supplies the meaning: label disclosed facts, inferences and scenario assumptions in metadata, and connect them to their basis. PremiseDB keeps current records and links, with updates replacing their contents. Captured source text stays fixed so evidence locators retain their meaning.
-
-## Bring your own agents
-
-The workflow is **Recall → Contribute → Revise**:
-
-1. **Recall** relevant findings, follow their connections and inspect the evidence.
-2. **Contribute** new findings, sources and questions, linked to the existing graph.
-3. **Revise** current understanding when evidence changes. Keep competing interpretations explicit as separate findings when useful.
-
-Use the CLI and research skill with Codex or Claude Code, or call the Python API from your own agent tools. The agent decides what to investigate and what to record. PremiseDB provides the persistent graph and retrieval primitives.
-
-The goal is the same whether you guide one agent or coordinate many: knowledge accumulates in a shared research workspace. Today, stores use separate SQLite connections on a local filesystem; large agent fleets and distributed deployments have not been validated.
-
-## Where we are going
-
-The working foundation lets agents store evidence, connect their findings and build on earlier research. The next layers are:
-
-- **Connected research retrieval:** assemble useful prior findings, evidence and open questions around a query.
-- **Research workflows:** improve the CLI and skill through real company coverage and thesis reviews.
-- **Document preparation:** make it easier to bring filings, transcripts and other source material into the research workspace.
-
-The [design specification](docs/database-spec.md) describes the broader direction; the [Python API guide](docs/python-api.md) documents what is implemented. Early database formats may change and currently have no migrations.
+What is being worked on: coverage packs for the rest of the top 1,000, driver models with sourced inputs for covered companies through the go-deeper skill, and quarterly updates as filings land. The [design specification](docs/database-spec.md) records the reasoning behind the schema.
 
 ## Contributing
 
-Try PremiseDB on one company or one research question. Show us where an agent reused earlier work, where it missed a useful connection, or what you had to build around the API. [Open an issue](https://github.com/Implied-Capital/PremiseDB/issues) with a small, shareable example.
-
-We welcome retrieval evaluations, agent integrations and focused improvements to the core. Read [AGENTS.md](AGENTS.md) for the development conventions. Run the tests from the checkout:
+Issues and pull requests are welcome. [AGENTS.md](AGENTS.md) sets out the conventions: one reviewable change per branch, tests for contracts and failure modes, and honest documentation of what is implemented. Run the tests from a checkout:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-If you want to follow the project, **star the repo**. If you build something with it, we'd love to hear about it.
-
 ## License and foundations
 
-[MIT](LICENSE). PremiseDB builds on retrieval ideas and adapted code from [dsRAG](https://github.com/D-Star-AI/dsRAG), with storage and indexing ideas informed by [minDB](https://github.com/D-Star-AI/minDB). See [NOTICE](NOTICE) for attribution and the [technical review](docs/dsrag-mindb-review.md) for the design background.
+[MIT](LICENSE). The document-retrieval pipeline adapts ideas and code from [dsRAG](https://github.com/D-Star-AI/dsRAG), with storage ideas from [minDB](https://github.com/D-Star-AI/minDB); see [NOTICE](NOTICE) and the [technical review](docs/dsrag-mindb-review.md).
