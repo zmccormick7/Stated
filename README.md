@@ -17,13 +17,15 @@ pipx install "./PremiseDB[cli]"
 premisedb ui
 ```
 
-The first run creates a research folder at `~/PremiseDB`, installs the bundled skills for your agent, and opens the page in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `premisedb ui --base base-2026.10.01.sqlite`.
+The first run creates a research folder at `~/PremiseDB`, installs the bundled skills for your agent, and opens the app in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `premisedb ui --base base-2026.10.01.sqlite`.
 
 To work on PremiseDB itself, clone the repository and install it in editable mode (`python -m pip install -e '.[cli]'` inside a virtual environment); `premisedb` then runs from your checkout.
 
 ## Ask a question
 
-The page is a thread of questions and checked answers. Pick an effort beside the Ask button:
+`premisedb ui` runs a small local web app on your machine, next to your research folder: a Python server and a plain web page, with nothing hosted elsewhere. The page holds threads of questions and their answers, like a chat, in a sidebar on the left. The answers come from your own Claude Code or Codex, which the app runs in your research folder each time you ask.
+
+Type a question and pick an effort beside the Ask button:
 
 | Effort | What the agent does |
 | --- | --- |
