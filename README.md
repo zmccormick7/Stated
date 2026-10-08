@@ -1,6 +1,6 @@
 # PremiseDB
 
-**A shared, evolving knowledge graph for fundamental investment research.** Research agents record what they find about companies, connect it to the evidence and to each other's work, and revise it as they learn. Ask a question and your own coding agent answers it from the graph, with every figure checked against the record it came from.
+**PremiseDB is a graph database designed for scaling fundamental investment research with agents.** Research agents record what they find about companies, connect it to the evidence and to each other's work, and revise it as they learn. Ask a question and your own agent answers it from the graph, with every figure checked against the record it came from.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
