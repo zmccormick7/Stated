@@ -34,7 +34,8 @@ class CLITests(unittest.TestCase):
     @staticmethod
     def edits(record):
         """The edit details a preview ends with."""
-        return {"author_id": record["author_id"], "updated_at": record["updated_at"], "layer": record["layer"]}
+        return {"author_id": record["author_id"], "updated_at": record["updated_at"], "as_of": record["as_of"],
+                "layer": record["layer"]}
 
     def test_recall_and_revision_across_processes(self):
         text = "PowerFrame's backlog may slip.\n€5 and $HOME stay literal."
@@ -318,6 +319,24 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("init"), {"database": str(self.path.resolve())})
         self.path = Path(":memory:")
         self.assertIn("persistent", self.call("init", status=1)["error"])
+
+    def test_reads_at_a_cutoff_from_the_option_or_the_environment(self):
+        text = self.directory / "release.txt"
+        text.write_text("The bank was closed on March 10.", encoding="utf-8")
+        source = self.call("ingest", str(text), "--input", "-", payload={
+            "description": "Release", "author_id": "agent-a", "attributes": {"published": "2023-03-10"}})
+        self.assertEqual(self.call("--as-of", "2023-03-10", "get", source["id"]), source)
+        self.assertEqual(self.call("--as-of", "2023-02-24", "get", source["id"], status=1),
+                         {"error": f"Not found: {source['id']} is not visible as of 2023-02-24"})
+        self.assertEqual(self.call("--as-of", "2023-02-24", "list", "--kind", "Source"), {"records": [], "has_more": False})
+        self.assertEqual(self.call("--as-of", "24/02/2023", "list", status=1),
+                         {"error": "as_of must be a date, like 2023-02-24, or None"})
+        self.env["PREMISEDB_AS_OF"] = "2023-02-24"
+        finding = self.create("Finding", "Written at the cutoff.")
+        self.assertEqual(finding["as_of"], "2023-02-24")
+        self.assertEqual(self.call("search", "Release"), {"records": []})
+        self.env["PREMISEDB_AS_OF"] = ""  # Empty means no cutoff, as an unset variable does.
+        self.assertEqual(self.call("search", "Release", "--full"), {"records": [source]})
 
     def test_environment_selects_the_default_database(self):
         shared = self.directory / "shared.sqlite"

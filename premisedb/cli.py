@@ -32,6 +32,9 @@ def _parser():
     parser = argparse.ArgumentParser(prog="premisedb", description=__doc__)
     parser.add_argument("--db", default=os.environ.get("PREMISEDB_DB"),
                         help="Database file (default: $PREMISEDB_DB, else research.sqlite; ui also looks in ~/PremiseDB)")
+    parser.add_argument("--as-of", default=os.environ.get("PREMISEDB_AS_OF") or None, metavar="DATE",
+                        help="Read as a reader on this date could have: only sources published by then, and records "
+                             "whose evidence or stamp is by then; writes are stamped with it (default: $PREMISEDB_AS_OF).")
     commands = parser.add_subparsers(dest="command", required=True)
 
     def command(name, method, description, *arguments, payload=None):
@@ -217,6 +220,7 @@ def _preview(record, *, edits=True):
         if record.created_by != record.author_id:
             preview["created_by"] = record.created_by
         preview["updated_at"] = record.updated_at
+        preview["as_of"] = record.as_of
         preview["layer"] = record.layer
     return preview
 
@@ -307,7 +311,7 @@ def _recall(db, options):
 
 def main(argv=None):
     options = vars(_parser().parse_args(argv))
-    given = options.pop("db")
+    given, as_of = options.pop("db"), options.pop("as_of")
     if options["method"] == "ui":
         from .ui.server import serve
         try:
@@ -351,7 +355,7 @@ def main(argv=None):
             options["quote"] = sys.stdin.read().removesuffix("\n")
         if options.keys() & payload.keys():
             raise ValueError("JSON input must not repeat arguments supplied by the command")
-        with RecordStore(path, layer=options.pop("layer", "workspace")) as db:
+        with RecordStore(path, layer=options.pop("layer", "workspace"), as_of=as_of) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
             for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id", "keep_id", "duplicate_id"):
                 if name in options:

@@ -85,8 +85,8 @@ class LayerTests(unittest.TestCase):
             self.db._db.execute("UPDATE records SET layer_key = (SELECT layer_key FROM layers WHERE name = 'other')")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "writable layer"):
             self.db._db.execute(
-                """INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, layer_key)
-                   SELECT 'x', kind, text, attributes, author_id, created_by, updated_at,
+                """INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, as_of, layer_key)
+                   SELECT 'x', kind, text, attributes, author_id, created_by, updated_at, as_of,
                           (SELECT layer_key FROM layers WHERE name = 'other') FROM records""")
         with self.assertRaisesRegex(sqlite3.IntegrityError, "layers.writable"):
             self.db._db.execute("UPDATE layers SET writable = 1")
@@ -282,8 +282,8 @@ class AttachTests(unittest.TestCase):
         # A different text under the same Source ID can never replace the fixed copy.
         other = RecordStore(self.directory / "other.sqlite", layer="base")
         self.addCleanup(other.close)
-        other._db.execute("INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, layer_key)"
-                          " VALUES (?, 'Source', 'Terms', '{}', 'p', 'p', 'now', 1)", (self.terms.id,))
+        other._db.execute("INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, as_of, layer_key)"
+                          " VALUES (?, 'Source', 'Terms', '{}', 'p', 'p', 'now', '2026-01-01', 1)", (self.terms.id,))
         other._db.execute("INSERT INTO source_content (source_key, text_utf8, text_sha256) VALUES (1, ?, ?)",
                           (b"Different.", sha256(b"Different.").hexdigest()))
         v3 = self.directory / "base-3.sqlite"

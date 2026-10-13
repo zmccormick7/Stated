@@ -23,6 +23,8 @@ CREATE TABLE records (
     author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),  -- Last editor.
     created_by TEXT NOT NULL CHECK (length(trim(created_by)) > 0),  -- Set once on insert.
     updated_at TEXT NOT NULL,
+    -- The date the contents are as of: the cutoff the writer worked at, or the date of the write.
+    as_of TEXT NOT NULL CHECK (as_of GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
     layer_key INTEGER NOT NULL REFERENCES layers (layer_key)
 );
 CREATE INDEX records_layer ON records (layer_key, record_key);
@@ -37,6 +39,7 @@ CREATE TABLE links (
     author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),  -- Last editor.
     created_by TEXT NOT NULL CHECK (length(trim(created_by)) > 0),  -- Set once on insert.
     updated_at TEXT NOT NULL,
+    as_of TEXT NOT NULL CHECK (as_of GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
     layer_key INTEGER NOT NULL REFERENCES layers (layer_key)
 );
 
@@ -45,6 +48,38 @@ CREATE INDEX links_out_all ON links (from_key, link_key);
 CREATE INDEX links_in ON links (to_key, relation, link_key);
 CREATE INDEX links_in_all ON links (to_key, link_key);
 CREATE INDEX links_layer ON links (layer_key, link_key);
+
+-- When a read at a cutoff date first sees each record. A Source is seen from its publication date
+-- (attributes.published, a date; a Source without one is never seen). A disclosed Finding is seen from
+-- the latest publication date of the Sources it cites, since its figure is checked against them
+-- whenever it was written; when it cites none, or one without a date, from its stamp. Every other
+-- record is seen from its stamp. Entities are reference data and always seen. The views filter
+-- evidence by date; they do not reconstruct earlier contents, which are not kept.
+CREATE VIEW record_visibility AS
+    SELECT r.record_key,
+           CASE r.kind
+               WHEN 'Entity' THEN ''
+               WHEN 'Source' THEN CASE WHEN json_extract(r.attributes, '$.published')
+                                            GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'
+                                       THEN substr(json_extract(r.attributes, '$.published'), 1, 10) END
+               WHEN 'Finding' THEN coalesce(
+                   CASE WHEN json_extract(r.attributes, '$.basis') = 'disclosed' THEN
+                       (SELECT CASE WHEN count(*) > 0 AND count(*) = count(d.published) THEN max(d.published) END
+                        FROM (SELECT CASE WHEN json_extract(s.attributes, '$.published')
+                                               GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'
+                                          THEN substr(json_extract(s.attributes, '$.published'), 1, 10) END AS published
+                              FROM links l JOIN records s ON s.record_key = l.to_key
+                              WHERE l.from_key = r.record_key AND l.relation = 'supported_by'
+                                AND s.kind = 'Source') d)
+                   END, r.as_of)
+               ELSE r.as_of
+           END AS visible_from
+    FROM records r;
+-- A link is seen once its stamp and both its ends are.
+CREATE VIEW link_visibility AS
+    SELECT l.link_key, max(l.as_of, f.visible_from, t.visible_from) AS visible_from
+    FROM links l JOIN record_visibility f ON f.record_key = l.from_key
+    JOIN record_visibility t ON t.record_key = l.to_key;
 
 -- Read-only layers change only when a new version of them is attached, never through edits.
 CREATE TRIGGER records_read_only_insert BEFORE INSERT ON records
