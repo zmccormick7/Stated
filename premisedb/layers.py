@@ -46,7 +46,7 @@ class _Snapshot:
         digest = sha256()
         for table in (self.records, self.links, self.passages, self.contexts):
             for row in table:  # Link rows end with layer keys, which are local to a database.
-                digest.update(json.dumps(list(row)[:8], ensure_ascii=False).encode("utf-8") + b"\n")
+                digest.update(json.dumps(list(row)[:9], ensure_ascii=False).encode("utf-8") + b"\n")
         for row in self.contents:  # Text is identified by its hash whether or not the file carries it.
             digest.update(json.dumps([row["id"], row["text_sha256"], bool(row["withheld"])]).encode("utf-8") + b"\n")
         return digest.hexdigest()
@@ -57,11 +57,11 @@ def _snapshot(db: sqlite3.Connection, key: int) -> _Snapshot:
     db.execute("BEGIN")
     try:
         records = db.execute(
-            """SELECT id, kind, text, attributes, author_id, created_by, updated_at FROM records
+            """SELECT id, kind, text, attributes, author_id, created_by, updated_at, as_of FROM records
                WHERE layer_key = ? ORDER BY record_key""", (key,)).fetchall()
         links = db.execute(
             """SELECT l.id, f.id AS from_id, t.id AS to_id, l.relation, l.explanation, l.author_id,
-                      l.created_by, l.updated_at, f.layer_key AS from_layer, t.layer_key AS to_layer
+                      l.created_by, l.updated_at, l.as_of, f.layer_key AS from_layer, t.layer_key AS to_layer
                FROM links l JOIN records f ON f.record_key = l.from_key JOIN records t ON t.record_key = l.to_key
                WHERE l.layer_key = ? ORDER BY l.link_key""", (key,)).fetchall()
         contents = db.execute(
@@ -120,8 +120,8 @@ def _write_rows(db: sqlite3.Connection, key: int, snapshot: _Snapshot) -> None:
     """Insert a snapshot into an empty layer whose key is `key`, verbatim."""
     key_of = "(SELECT record_key FROM records WHERE id = ?)"
     db.executemany(
-        f"""INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, layer_key)
-            VALUES (?, ?, ?, ?, ?, ?, ?, {key})""", (tuple(row) for row in snapshot.records))
+        f"""INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, as_of, layer_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, {key})""", (tuple(row) for row in snapshot.records))
     db.executemany(f"INSERT INTO source_content (source_key, text_utf8, text_sha256) VALUES ({key_of}, ?, ?)",
                    ((row["id"], row["text_utf8"], row["text_sha256"]) for row in snapshot.contents
                     if not row["withheld"]))
@@ -137,8 +137,8 @@ def _write_rows(db: sqlite3.Connection, key: int, snapshot: _Snapshot) -> None:
             VALUES ({key_of}, ?, ?, ?, ?, ?)""", (tuple(row) for row in snapshot.contexts))
     db.executemany(
         f"""INSERT INTO links (id, from_key, to_key, relation, explanation, author_id, created_by,
-            updated_at, layer_key) VALUES (?, {key_of}, {key_of}, ?, ?, ?, ?, ?, {key})""",
-        (tuple(row)[:8] for row in snapshot.links))
+            updated_at, as_of, layer_key) VALUES (?, {key_of}, {key_of}, ?, ?, ?, ?, ?, ?, {key})""",
+        (tuple(row)[:9] for row in snapshot.links))
 
 
 def attach_layer(store, path: str | Path) -> LayerAttachment:
@@ -213,34 +213,35 @@ def _apply(db: sqlite3.Connection, key: int, own_key: int, snapshot: _Snapshot):
     """Bring an attached layer to a new version in place, keeping record keys."""
     key_of = "(SELECT record_key FROM records WHERE id = ?)"
     current = {row["id"]: row for row in db.execute(
-        "SELECT id, kind, text, attributes, author_id, created_by, updated_at FROM records WHERE layer_key = ?",
+        "SELECT id, kind, text, attributes, author_id, created_by, updated_at, as_of FROM records WHERE layer_key = ?",
         (key,))}
     incoming = {row["id"]: row for row in snapshot.records}
     changed = [row["id"] for row in snapshot.records
                if row["id"] in current and tuple(current[row["id"]]) != tuple(row)]
     db.executemany(
-        """UPDATE records SET kind = ?, text = ?, attributes = ?, author_id = ?, created_by = ?, updated_at = ?
-           WHERE id = ?""", ((row["kind"], row["text"], row["attributes"], row["author_id"], row["created_by"],
-                             row["updated_at"], row["id"]) for row in snapshot.records if row["id"] in changed))
+        """UPDATE records SET kind = ?, text = ?, attributes = ?, author_id = ?, created_by = ?, updated_at = ?,
+           as_of = ? WHERE id = ?""",
+        ((row["kind"], row["text"], row["attributes"], row["author_id"], row["created_by"], row["updated_at"],
+          row["as_of"], row["id"]) for row in snapshot.records if row["id"] in changed))
     db.executemany(
-        f"""INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, layer_key)
-            VALUES (?, ?, ?, ?, ?, ?, ?, {key})""", (tuple(row) for row in snapshot.records
-                                                    if row["id"] not in current))
+        f"""INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, as_of, layer_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, {key})""", (tuple(row) for row in snapshot.records
+                                                       if row["id"] not in current))
     # Links: replace by ID; endpoints resolve against the whole workspace.
     old_links = {row["id"]: row for row in db.execute(
         """SELECT l.id, f.id AS from_id, t.id AS to_id, l.relation, l.explanation, l.author_id, l.created_by,
-                  l.updated_at FROM links l JOIN records f ON f.record_key = l.from_key
+                  l.updated_at, l.as_of FROM links l JOIN records f ON f.record_key = l.from_key
            JOIN records t ON t.record_key = l.to_key WHERE l.layer_key = ?""", (key,))}
-    new_links = {row["id"]: tuple(row)[:8] for row in snapshot.links}
+    new_links = {row["id"]: tuple(row)[:9] for row in snapshot.links}
     db.executemany("DELETE FROM links WHERE id = ?", ((i,) for i in old_links if i not in new_links))
     links_updated = [i for i, row in new_links.items() if i in old_links and tuple(old_links[i]) != row]
     db.executemany(
         f"""UPDATE links SET from_key = {key_of}, to_key = {key_of}, relation = ?, explanation = ?, author_id = ?,
-            created_by = ?, updated_at = ? WHERE id = ?""",
+            created_by = ?, updated_at = ?, as_of = ? WHERE id = ?""",
         ((*new_links[i][1:], i) for i in links_updated))
     db.executemany(
         f"""INSERT INTO links (id, from_key, to_key, relation, explanation, author_id, created_by,
-            updated_at, layer_key) VALUES (?, {key_of}, {key_of}, ?, ?, ?, ?, ?, {key})""",
+            updated_at, as_of, layer_key) VALUES (?, {key_of}, {key_of}, ?, ?, ?, ?, ?, ?, {key})""",
         (row for i, row in new_links.items() if i not in old_links))
     # Records dropped upstream go unless something in the workspace still points at them.
     dropped = [i for i in current if i not in incoming]

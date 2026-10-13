@@ -15,7 +15,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 13
+_SCHEMA_VERSION = 14
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,7 @@ class Record:
     author_id: str  # Last editor.
     created_by: str  # The record's creator; updates never change it.
     updated_at: str
+    as_of: str  # The date the contents are as of: the cutoff the writer worked at, or the date of the write.
     layer: str  # The layer that owns the record; only the workspace's own layer accepts edits.
 
 
@@ -40,6 +41,7 @@ class Link:
     author_id: str  # Last editor.
     created_by: str
     updated_at: str
+    as_of: str
     layer: str
 
 
@@ -182,19 +184,27 @@ def _fill_refs(text: object, ids: dict[str, str], where: str) -> object:
     return _REF.sub(replace, text)
 
 
+def _date(value: str):
+    """The date a YYYY-MM-DD string names, or None."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
 def _check_kind(kind: str | None) -> None:
     if kind is not None and kind not in KINDS:
         raise ValueError("kind must be a record kind or None")
 
 
 _RECORD_SELECT = """
-    SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at, y.name AS layer
+    SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at, r.as_of, y.name AS layer
     FROM records r JOIN layers y ON y.layer_key = r.layer_key
 """
 
 _LINK_SELECT = """
     SELECT l.id, f.id AS from_id, t.id AS to_id, l.relation,
-           l.explanation, l.author_id, l.created_by, l.updated_at, y.name AS layer
+           l.explanation, l.author_id, l.created_by, l.updated_at, l.as_of, y.name AS layer
     FROM links l JOIN records f ON f.record_key = l.from_key
     JOIN records t ON t.record_key = l.to_key JOIN layers y ON y.layer_key = l.layer_key
 """
@@ -204,10 +214,17 @@ _WRITABLE_LAYER = "(SELECT layer_key FROM layers WHERE writable = 1)"
 
 
 class RecordStore:
-    def __init__(self, path: str | Path, *, layer: str = "workspace"):
-        """Open a store, creating it with `layer` as the name of its own writable layer if new."""
+    def __init__(self, path: str | Path, *, layer: str = "workspace", as_of: str | None = None):
+        """Open a store, creating it with `layer` as the name of its own writable layer if new.
+
+        With `as_of`, a date, every read sees only what a reader on that date could have seen (the
+        record_visibility view in schema.sql says what that is), and every write is stamped with it.
+        """
         if not isinstance(layer, str) or not layer.strip():
             raise ValueError("layer must be a nonblank string")
+        if as_of is not None and (not isinstance(as_of, str) or len(as_of) != 10 or _date(as_of) is None):
+            raise ValueError("as_of must be a date, like 2023-02-24, or None")
+        self.as_of = as_of
         if sqlite3.sqlite_version_info < (3, 51, 3):
             raise RuntimeError("SQLite 3.51.3+ is required for the WAL-reset fix")
         self._db = sqlite3.connect(path, isolation_level=None, timeout=5.0)
@@ -289,14 +306,15 @@ class RecordStore:
         if model.kind != "Model":
             raise ValueError(f"{model_id} is a {model.kind}, not a Model")
         rows = self._db.execute(
-            """SELECT v.id, v.attributes,
+            f"""SELECT v.id, v.attributes,
                       (SELECT json_group_array(json_extract(d.attributes, '$.key')) FROM links dl
                        JOIN records d ON d.record_key = dl.to_key
                        WHERE dl.from_key = v.record_key AND dl.relation = 'depends_on'
                          AND d.record_key IN (SELECT from_key FROM links WHERE to_key = m.record_key
                                               AND relation = 'in_model')) AS depends_on
                FROM links l JOIN records v ON v.record_key = l.from_key JOIN records m ON m.record_key = l.to_key
-               WHERE m.id = ? AND l.relation = 'in_model' AND v.kind = 'Variable' ORDER BY v.record_key""",
+               WHERE m.id = ? AND l.relation = 'in_model' AND v.kind = 'Variable'
+                 AND {self._seen('l', link=True)} ORDER BY v.record_key""",
             (model.id,)).fetchall()
         return model.id, [json.loads(row["attributes"]) | {"id": row["id"], "depends_on": [
             key for key in json.loads(row["depends_on"]) if key is not None]} for row in rows]
@@ -306,11 +324,31 @@ class RecordStore:
         from .layers import attach_layer
         return attach_layer(self, path)
 
+    def _seen(self, alias: str, link: bool = False) -> str:
+        """A condition keeping the records (or links) `alias` names that a read at the cutoff sees."""
+        if self.as_of is None:
+            return "1"
+        view, key = ("link_visibility", "link_key") if link else ("record_visibility", "record_key")
+        return (f"EXISTS (SELECT 1 FROM {view} v WHERE v.{key} = {alias}.{key} "
+                f"AND v.visible_from <= '{self.as_of}')")
+
+    def _stamp(self) -> str:
+        return self.as_of or datetime.now(UTC).date().isoformat()
+
+    def _missing(self, record_id: str, link: bool = False) -> KeyError:
+        """KeyError for an ID or prefix a read found nothing for, saying so when the cutoff is the reason."""
+        table = "links" if link else "records"
+        if self.as_of is not None and isinstance(record_id, str) and len(record_id) >= 8 and self._db.execute(
+                f"SELECT 1 FROM {table} WHERE id >= ? AND id < ?",
+                (record_id, record_id[:-1] + chr(ord(record_id[-1]) + 1))).fetchone():
+            return KeyError(f"{record_id} is not visible as of {self.as_of}")
+        return KeyError(record_id)
+
     def read(self, record_id: str) -> Record:
         """Read current contents; a missing record raises KeyError."""
-        row = self._db.execute(_RECORD_SELECT + " WHERE r.id = ?", (record_id,)).fetchone()
+        row = self._db.execute(_RECORD_SELECT + f" WHERE r.id = ? AND {self._seen('r')}", (record_id,)).fetchone()
         if row is None:
-            raise KeyError(record_id)
+            raise self._missing(record_id)
         return self._decode_record(row)
 
     def resolve_id(self, value: str, *, link: bool = False) -> str:
@@ -318,15 +356,16 @@ class RecordStore:
         table = "links" if link else "records"
         if not isinstance(value, str) or not value:
             raise ValueError("an ID must be a nonempty string")
-        if self._db.execute(f"SELECT 1 FROM {table} WHERE id = ?", (value,)).fetchone():
+        seen = self._seen("x", link)
+        if self._db.execute(f"SELECT 1 FROM {table} x WHERE x.id = ? AND {seen}", (value,)).fetchone():
             return value
         if len(value) < 8:
-            raise KeyError(value)
+            raise self._missing(value, link)
         # IDs sharing the prefix sort between it and the prefix with its last character incremented.
-        rows = self._db.execute(f"SELECT id FROM {table} WHERE id >= ? AND id < ? ORDER BY id LIMIT 2",
+        rows = self._db.execute(f"SELECT id FROM {table} x WHERE x.id >= ? AND x.id < ? AND {seen} ORDER BY id LIMIT 2",
                                 (value, value[:-1] + chr(ord(value[-1]) + 1))).fetchall()
         if not rows:
-            raise KeyError(value)
+            raise self._missing(value, link)
         if len(rows) > 1:
             raise ValueError(f"ID prefix {value} matches more than one {'link' if link else 'record'}; "
                              "use more characters")
@@ -341,8 +380,8 @@ class RecordStore:
         if not expression:
             return ()
         rows = self._db.execute(
-            _RECORD_SELECT + """JOIN records_fts ON records_fts.rowid = r.record_key
-               WHERE records_fts MATCH ? AND (? IS NULL OR r.kind = ?)
+            _RECORD_SELECT + f"""JOIN records_fts ON records_fts.rowid = r.record_key
+               WHERE records_fts MATCH ? AND (? IS NULL OR r.kind = ?) AND {self._seen('r')}
                ORDER BY bm25(records_fts), r.record_key LIMIT ?""",
             (expression, kind, kind, limit),
         ).fetchall()
@@ -364,12 +403,12 @@ class RecordStore:
         if not expression or source_keys == "[]":
             return ()
         rows = self._db.execute(
-            """SELECT r.id AS source_id, p.start_byte, p.end_byte,
+            f"""SELECT r.id AS source_id, p.start_byte, p.end_byte,
                       c.title, c.summary, c.author_id, c.updated_at, c.provenance
                FROM passages_fts JOIN passages p ON p.passage_key = passages_fts.rowid
                JOIN records r ON r.record_key = p.source_key
                LEFT JOIN document_context c ON c.source_key = p.source_key
-               WHERE passages_fts MATCH ?
+               WHERE passages_fts MATCH ? AND {self._seen('r')}
                  AND (? IS NULL OR p.source_key IN (SELECT value FROM json_each(?)))
                ORDER BY bm25(passages_fts, 0.5, 1.0), p.source_key, p.ordinal LIMIT ?""",
             (expression, source_keys, source_keys, limit),
@@ -585,13 +624,12 @@ class RecordStore:
         encoded = self._encode(attributes)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            result = self._db.execute(
-                """UPDATE records SET text = ?, attributes = ?, author_id = ?, updated_at = ?
+            self.read(record_id)  # A missing or unseen record is reported before anything is written.
+            self._db.execute(
+                """UPDATE records SET text = ?, attributes = ?, author_id = ?, updated_at = ?, as_of = ?
                    WHERE id = ?""",
-                (text, encoded, author_id, datetime.now(UTC).isoformat(), record_id),
+                (text, encoded, author_id, datetime.now(UTC).isoformat(), self._stamp(), record_id),
             )
-            if result.rowcount == 0:
-                raise KeyError(record_id)
             self._link_sources(record_id, source_ids, author_id)
             record = self.read(record_id)
         return record
@@ -622,10 +660,10 @@ class RecordStore:
             current = self.read(record_id)
             merged = {key: value for key, value in current.attributes.items() if key not in remove}
             self._db.execute(
-                """UPDATE records SET text = ?, attributes = ?, author_id = ?, updated_at = ?
+                """UPDATE records SET text = ?, attributes = ?, author_id = ?, updated_at = ?, as_of = ?
                    WHERE id = ?""",
                 (current.text if text is None else text, self._encode({**merged, **changes}),
-                 author_id, datetime.now(UTC).isoformat(), record_id),
+                 author_id, datetime.now(UTC).isoformat(), self._stamp(), record_id),
             )
             self._link_sources(record_id, source_ids, author_id)
             record = self.read(record_id)
@@ -674,9 +712,9 @@ class RecordStore:
         return Merge(keep.id, duplicate.id, moved, dropped)
 
     def read_link(self, link_id: str) -> Link:
-        row = self._db.execute(_LINK_SELECT + " WHERE l.id = ?", (link_id,)).fetchone()
+        row = self._db.execute(_LINK_SELECT + f" WHERE l.id = ? AND {self._seen('l', link=True)}", (link_id,)).fetchone()
         if row is None:
-            raise KeyError(link_id)
+            raise self._missing(link_id, link=True)
         return Link(**dict(row))
 
     def create_link(self, from_id: str, to_id: str, relation: str, *, author_id: str,
@@ -741,8 +779,8 @@ class RecordStore:
             self._refuse_duplicate_link(values, link_id)
             self._db.execute(
                 """UPDATE links SET from_key = ?, to_key = ?, relation = ?, explanation = ?,
-                   author_id = ?, updated_at = ? WHERE id = ?""",
-                (*values, link_id),
+                   author_id = ?, updated_at = ?, as_of = ? WHERE id = ?""",
+                (*values, self._stamp(), link_id),
             )
             link = self.read_link(link_id)
         return link
@@ -764,8 +802,8 @@ class RecordStore:
             self._refuse_duplicate_link(values, link_id)
             self._db.execute(
                 """UPDATE links SET from_key = ?, to_key = ?, relation = ?, explanation = ?,
-                   author_id = ?, updated_at = ? WHERE id = ?""",
-                (*values, link_id),
+                   author_id = ?, updated_at = ?, as_of = ? WHERE id = ?""",
+                (*values, self._stamp(), link_id),
             )
             link = self.read_link(link_id)
         return link
@@ -781,7 +819,8 @@ class RecordStore:
         # Records are never deleted, so every linked record can be read.
         ids = dict.fromkeys(link.from_id if link.to_id == record_id else link.to_id for link in links)
         found = {row["id"]: self._decode_record(row) for row in self._db.execute(
-            _RECORD_SELECT + " WHERE r.id IN (SELECT value FROM json_each(?))", (json.dumps(list(ids)),))}
+            _RECORD_SELECT + f" WHERE r.id IN (SELECT value FROM json_each(?)) AND {self._seen('r')}",
+            (json.dumps(list(ids)),))}
         return Connections(links, has_more, {record: found[record] for record in ids})
 
     def expand(self, seed_ids: Iterable[str], *, depth: int = 1, direction: str = "both",
@@ -849,7 +888,7 @@ class RecordStore:
         key = self._record_key(record_id)
         where = {"out": "l.from_key = ?", "in": "l.to_key = ?", "both": "(l.from_key = ? OR l.to_key = ?)"}
         parameters: list[object] = [key, key] if direction == "both" else [key]
-        sql = _LINK_SELECT + f" WHERE {where[direction]}"
+        sql = _LINK_SELECT + f" WHERE {where[direction]} AND {self._seen('l', link=True)}"
         if relations is not None:
             sql += " AND l.relation IN (SELECT value FROM json_each(?))"
             parameters.append(json.dumps(relations))
@@ -895,7 +934,7 @@ class RecordStore:
         rows = self._db.execute(
             _RECORD_SELECT + f"""WHERE r.record_key > ? AND (? IS NULL OR r.kind = ?)
                  AND (? IS NULL OR r.author_id = ?) AND (? IS NULL OR r.created_by = ?)
-                 AND (? IS NULL OR r.updated_at >= ?)
+                 AND (? IS NULL OR r.updated_at >= ?) AND {self._seen('r')}
                {"".join(" AND " + condition for condition in conditions)}
                ORDER BY r.record_key LIMIT ?""",
             (start, kind, kind, author_id, author_id, created_by, created_by, since, since, *values, limit + 1),
@@ -917,9 +956,10 @@ class RecordStore:
         start = 0 if after is None else self._db.execute(
             "SELECT link_key FROM links WHERE id = ?", (self.resolve_id(after, link=True),)).fetchone()[0]
         rows = self._db.execute(
-            _LINK_SELECT + """ WHERE l.link_key > ? AND (? IS NULL OR l.relation = ?)
+            _LINK_SELECT + f""" WHERE l.link_key > ? AND (? IS NULL OR l.relation = ?)
                 AND (? IS NULL OR l.author_id = ?) AND (? IS NULL OR l.created_by = ?)
-                AND (? IS NULL OR l.updated_at >= ?) ORDER BY l.link_key LIMIT ?""",
+                AND (? IS NULL OR l.updated_at >= ?) AND {self._seen('l', link=True)}
+                ORDER BY l.link_key LIMIT ?""",
             (start, relation, relation, author_id, author_id, created_by, created_by, since, since, limit + 1),
         ).fetchall()
         return LinkPage(tuple(Link(**dict(row)) for row in rows[:limit]), len(rows) > limit)
@@ -937,25 +977,26 @@ class RecordStore:
         if not 0 <= start_byte < end_byte:
             raise ValueError("byte range is outside source text")
         rows = self._db.execute(
-            """SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at,
+            f"""SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at, r.as_of,
                       y.name AS layer, c.start_byte AS cited_start, c.end_byte AS cited_end
                FROM citations c JOIN records r ON r.record_key = c.record_key
                JOIN layers y ON y.layer_key = r.layer_key
-               WHERE c.source_key = ? AND c.start_byte < ? AND c.end_byte > ?
+               WHERE c.source_key = ? AND c.start_byte < ? AND c.end_byte > ? AND {self._seen('r')}
                ORDER BY c.start_byte, c.end_byte, c.record_key, c.ordinal LIMIT ?""",
             (source_key, end_byte, start_byte, limit + 1),
         ).fetchall()
         citations = tuple(Citation(Record(row["id"], row["kind"], row["text"], json.loads(row["attributes"]),
-                                          row["author_id"], row["created_by"], row["updated_at"], row["layer"]),
+                                          row["author_id"], row["created_by"], row["updated_at"], row["as_of"],
+                                          row["layer"]),
                                    source_id, row["cited_start"], row["cited_end"]) for row in rows[:limit])
         return CitationPage(citations, len(rows) > limit)
 
     def relation_usage(self) -> tuple[RelationUsage, ...]:
         """Count current links by relation and the kinds of record they connect."""
         rows = self._db.execute(
-            """SELECT l.relation, f.kind AS from_kind, t.kind AS to_kind, count(*) AS links
+            f"""SELECT l.relation, f.kind AS from_kind, t.kind AS to_kind, count(*) AS links
                FROM links l JOIN records f ON f.record_key = l.from_key
-               JOIN records t ON t.record_key = l.to_key
+               JOIN records t ON t.record_key = l.to_key WHERE {self._seen('l', link=True)}
                GROUP BY l.relation, f.kind, t.kind ORDER BY l.relation, links DESC, f.kind, t.kind""")
         return tuple(RelationUsage(**dict(row)) for row in rows)
 
@@ -1024,9 +1065,9 @@ class RecordStore:
             if self._db.execute("""SELECT 1 FROM links WHERE from_key = ? AND to_key = ?
                                    AND relation = 'supported_by'""", values[:2]).fetchone() is None:
                 self._db.execute(
-                    f"""INSERT INTO links (from_key, to_key, relation, explanation, author_id,
-                        updated_at, id, created_by, layer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
-                    (*values, str(uuid4()), author_id),
+                    f"""INSERT INTO links (from_key, to_key, relation, explanation, author_id, updated_at,
+                        as_of, id, created_by, layer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
+                    (*values, self._stamp(), str(uuid4()), author_id),
                 )
 
     def _insert_link(self, from_id: str, to_id: str, relation: str, explanation: str, author_id: str) -> Link:
@@ -1034,9 +1075,9 @@ class RecordStore:
         values = self._link_values(from_id, to_id, relation, explanation, author_id)
         self._refuse_duplicate_link(values)
         self._db.execute(
-            f"""INSERT INTO links (from_key, to_key, relation, explanation, author_id,
-                updated_at, id, created_by, layer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
-            (*values, link_id, author_id),
+            f"""INSERT INTO links (from_key, to_key, relation, explanation, author_id, updated_at,
+                as_of, id, created_by, layer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
+            (*values, self._stamp(), link_id, author_id),
         )
         return self.read_link(link_id)
 
@@ -1063,31 +1104,31 @@ class RecordStore:
 
     def _record_key(self, record_id: str) -> int:
         """Key for an exact ID or a unique prefix of 8+ characters, so payload IDs can be short."""
-        row = self._db.execute("SELECT record_key FROM records WHERE id = ?", (record_id,)).fetchone()
+        query = f"SELECT record_key FROM records r WHERE r.id = ? AND {self._seen('r')}"
+        row = self._db.execute(query, (record_id,)).fetchone()
         if row is None:
             if not isinstance(record_id, str):
                 raise KeyError(record_id)
-            row = self._db.execute("SELECT record_key FROM records WHERE id = ?",
-                                   (self.resolve_id(record_id),)).fetchone()
+            row = self._db.execute(query, (self.resolve_id(record_id),)).fetchone()
         return row[0]
 
     def _source_key(self, source_id: str) -> int:
-        query = """SELECT s.source_key FROM source_content s
-                   JOIN records r ON r.record_key = s.source_key WHERE r.id = ?"""
+        query = f"""SELECT s.source_key FROM source_content s
+                    JOIN records r ON r.record_key = s.source_key WHERE r.id = ? AND {self._seen('r')}"""
         row = self._db.execute(query, (source_id,)).fetchone()
         if row is None and isinstance(source_id, str) and len(source_id) >= 8:
             row = self._db.execute(query, (self.resolve_id(source_id),)).fetchone()
         if row is None:
-            raise KeyError(source_id)
+            raise self._missing(source_id)
         return row[0]
 
     def _insert_record(self, kind: str, text: str, encoded: str, author_id: str,
                        record_id: str | None = None) -> Record:
         record_id = record_id or str(uuid4())
         self._db.execute(
-            f"""INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, layer_key)
-               VALUES (?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
-            (record_id, kind, text, encoded, author_id, author_id, datetime.now(UTC).isoformat()),
+            f"""INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, as_of, layer_key)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
+            (record_id, kind, text, encoded, author_id, author_id, datetime.now(UTC).isoformat(), self._stamp()),
         )
         return self.read(record_id)
 

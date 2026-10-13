@@ -24,7 +24,7 @@ Read [README.md](README.md) before planning or implementing changes. PremiseDB i
 
 - Preserve evidence, source locators, authorship and scope. Records and links store only current contents and a database-assigned UTC `updated_at` timestamp. Domain dates belong in source metadata; unknown values stay unknown.
 - Keep disclosed facts, interpretations, scenario assumptions and open questions distinguishable. Inferences need a traceable basis; do not invent evidence or imply expert review that did not happen.
-- Do not add history tables, revision counters, endpoint pins, audit trails or historical reads. Keep disagreements as separate current Findings when useful.
+- Do not add history tables, revision counters, endpoint pins, audit trails or historical reads. A point-in-time read is a filter on evidence dates and write stamps over current rows, never a reconstruction of earlier contents. Keep disagreements as separate current Findings when useful.
 - Keep stable identities. Updates replace current contents atomically; the last committed update wins. There is no stale-edit detection or automatic historical reconstruction.
 - Let agents follow relationships, supporting evidence and unresolved questions. Useful knowledge must not require a numerical model or deterministic scenario calculation.
 
