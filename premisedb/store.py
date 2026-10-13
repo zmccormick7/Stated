@@ -125,6 +125,31 @@ class Merge:
 
 
 @dataclass(frozen=True)
+class FilledVariable:
+    key: str
+    stored: object  # The value before the fill.
+    value: object  # The formula's result, now stored.
+
+
+@dataclass(frozen=True)
+class ModelFill:
+    model_id: str
+    written: tuple[FilledVariable, ...]  # Outputs whose stored value was not exactly the formula's result.
+
+
+@dataclass(frozen=True)
+class StateRow:
+    """One Model written under a schema: the state of one Entity as of the Model's stamp."""
+    entity_id: str | None  # The Entity the Model is `about`; None when it is about none.
+    entity: str | None
+    schema: str
+    cutoff: str  # The Model's `as_of` stamp.
+    model_id: str
+    values: dict[str, object]  # Variable key → stored value.
+    periods: dict[str, list]  # Labels of the keys whose value is a row.
+
+
+@dataclass(frozen=True)
 class Passage:
     source_id: str
     ordinal: int
@@ -299,6 +324,48 @@ class RecordStore:
         from .formulas import evaluate_model
         model_id, variables = self._model_variables(model_id)
         return evaluate_model(variables, model_id, overrides)
+
+    def fill_model(self, model_id: str, *, author_id: str) -> ModelFill:
+        """Store each output's formula value where the stored value is not exactly that: results flow through
+        dependent formulas as in evaluate_model, and each differing output is patched in turn."""
+        from .formulas import evaluate_model, exact
+        model_id, variables = self._model_variables(model_id)
+        by_key = {v["key"]: v for v in variables}
+        written = []
+        for item in evaluate_model(variables, model_id).variables:
+            if by_key[item.key].get("formula") is None or exact(item.stored, item.value):
+                continue
+            self.patch(by_key[item.key]["id"], author_id=author_id, attributes={"value": item.value})
+            written.append(FilledVariable(item.key, item.stored, item.value))
+        return ModelFill(model_id, tuple(written))
+
+    def state_rows(self, *, schema: str | None = None, entity_id: str | None = None,
+                   limit: int = 1000) -> tuple[StateRow, ...]:
+        """One row per Model whose attributes name a `schema` (and per Entity it is `about`): the Entity,
+        the Model's stamp as the cutoff, and its Variables' values by key, in Entity, cutoff order."""
+        for name, value in (("schema", schema), ("entity_id", entity_id)):
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"{name} must be a string or None")
+        _check_limit(limit)
+        entity_key = None if entity_id is None else self._record_key(entity_id)
+        rows = self._db.execute(
+            f"""SELECT m.id AS model_id, m.as_of, json_extract(m.attributes, '$.schema') AS schema,
+                       e.id AS entity_id, e.text AS entity
+                FROM records m LEFT JOIN links a ON a.from_key = m.record_key AND a.relation = 'about'
+                  AND {self._seen('a', link=True)}
+                LEFT JOIN records e ON e.record_key = a.to_key AND e.kind = 'Entity'
+                WHERE m.kind = 'Model' AND json_type(m.attributes, '$.schema') = 'text'
+                  AND (? IS NULL OR json_extract(m.attributes, '$.schema') = ?)
+                  AND (? IS NULL OR e.record_key = ?) AND {self._seen('m')}
+                ORDER BY e.text, m.as_of, m.record_key LIMIT ?""",
+            (schema, schema, entity_key, entity_key, limit)).fetchall()
+        result = []
+        for row in rows:
+            _, variables = self._model_variables(row["model_id"])
+            result.append(StateRow(row["entity_id"], row["entity"], row["schema"], row["as_of"], row["model_id"],
+                                   {v["key"]: v.get("value") for v in variables},
+                                   {v["key"]: v["periods"] for v in variables if isinstance(v.get("periods"), list)}))
+        return tuple(result)
 
     def _model_variables(self, model_id):
         """A Model's ID and its Variables' attributes, each with its `id` and in-model `depends_on` keys."""

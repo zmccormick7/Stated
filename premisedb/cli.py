@@ -114,6 +114,14 @@ def _parser():
                        "model_id")
     scenario.add_argument("--set", dest="overrides", action="append", type=_where_item, metavar="KEY=VALUE",
                           help="Hold a Variable at VALUE, a number or a JSON list for a row; repeatable.")
+    command("fill-model", "fill_model",
+            "Store each output Variable's exact formula value where the stored value differs; nothing else changes.",
+            "model_id", payload="author_id")
+    state = command("state", "state_rows",
+                    "Export one row per Model written under a schema: its Entity, its cutoff and its Variables' values.")
+    state.add_argument("--schema", help="Only Models whose attributes.schema is this name.")
+    state.add_argument("--entity", dest="entity_id", help="Only Models about this Entity.")
+    state.add_argument("--limit", type=int, default=1000)
     command("check-answer", "check_answer",
             "Check an answer document against the graph: its sources, quotes and every charted figure.",
             payload="an answer document: title, body, optional sources and blocks")
@@ -247,6 +255,7 @@ def _compact(db, method, result, options):
 
 # Every result is a JSON object; collections sit under a named key so parsers can rely on one shape.
 LIST_KEYS = {"search_records": "records", "search_documents": "excerpts", "locate_source_text": "matches",
+             "state_rows": "rows",
              "relation_usage": "relations", "layers": "layers"}
 
 
@@ -363,8 +372,9 @@ def main(argv=None):
             raise ValueError("JSON input must not repeat arguments supplied by the command")
         with RecordStore(path, layer=options.pop("layer", "workspace"), as_of=as_of) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
-            for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id", "keep_id", "duplicate_id"):
-                if name in options:
+            for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id", "keep_id", "duplicate_id",
+                         "entity_id"):
+                if options.get(name) is not None:
                     options[name] = db.resolve_id(options[name], link=name == "link_id")
             if "seed_ids" in options:
                 options["seed_ids"] = [db.resolve_id(seed) for seed in options["seed_ids"]]
