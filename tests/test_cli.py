@@ -344,6 +344,25 @@ class CLITests(unittest.TestCase):
         self.env["PREMISEDB_AS_OF"] = ""  # Empty means no cutoff, as an unset variable does.
         self.assertEqual(self.call("search", "Release", "--full"), {"records": [source]})
 
+    def test_fill_model_and_state_export(self):
+        bank = self.create("Entity", "A bank")
+        model = self.call("create", "Model", "--input", "-", payload={
+            "text": "State", "author_id": "agent-a", "attributes": {"schema": "bank-state-v1"}})
+        self.call("link", model["id"], bank["id"], "about", "--input", "-", payload={"author_id": "agent-a"})
+        keys = {}
+        for key, attributes in (("a", {"role": "input", "value": 2}),
+                                ("b", {"role": "output", "value": 0.67, "formula": "a / 3"})):
+            keys[key] = self.call("create", "Variable", "--input", "-", payload={
+                "text": key, "author_id": "agent-a", "attributes": {"key": key, **attributes}})
+            self.call("link", keys[key]["id"], model["id"], "in_model", "--input", "-", payload={"author_id": "agent-a"})
+        self.call("link", keys["b"]["id"], keys["a"]["id"], "depends_on", "--input", "-", payload={"author_id": "agent-a"})
+        filled = self.call("fill-model", model["id"][:8], "--input", "-", payload={"author_id": "agent-a"})
+        self.assertEqual(filled, {"model_id": model["id"], "written": [{"key": "b", "stored": 0.67, "value": 2 / 3}]})
+        rows = self.call("state", "--schema", "bank-state-v1", "--entity", bank["id"][:8])["rows"]
+        self.assertEqual([(r["entity"], r["cutoff"], r["values"]) for r in rows],
+                         [("A bank", model["as_of"], {"a": 2, "b": 2 / 3})])
+        self.assertEqual(self.call("state", "--schema", "none")["rows"], [])
+
     def test_environment_selects_the_default_database(self):
         shared = self.directory / "shared.sqlite"
         run = lambda *arguments, path=str(shared): subprocess.run(
