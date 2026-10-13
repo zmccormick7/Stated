@@ -27,7 +27,8 @@ class VariableCheck:
     key: str
     stored: object  # The Variable's current value.
     computed: object  # None when the formula could not be evaluated.
-    matches: bool
+    matches: bool  # Within the tolerance.
+    exact: bool  # Equal to the formula's result; false when the stored value is rounded.
     problems: tuple[str, ...]  # Why it could not be evaluated or does not match.
 
 
@@ -110,7 +111,9 @@ def evaluate(formula: str, values: dict[str, object], *, periods: dict[str, list
     periods = periods or {}
     if target is not None and (not isinstance(target, list) or len(set(target)) != len(target)):
         raise ValueError("the output's periods must be a list of distinct labels")
-    rows = {key: _row(key, value, periods.get(key)) for key, value in values.items()}
+    # Only the Variables the formula names are read, so a null or malformed value elsewhere in the model
+    # does not stop this formula.
+    rows = {key: _row(key, value, periods.get(key)) for key, value in values.items() if key in names}
     if self_key not in names:
         return _plain(_node(tree.body, rows, target), target)
     # A recurrence: every reference to the output itself must sit inside prev(), and the result is a row.
@@ -213,6 +216,9 @@ def _node(node, rows, target):
 
 
 def _check_value(key, value):
+    """A number, a list of numbers and nulls, or null itself: an unknown value, which yields null."""
+    if value is None:
+        return None
     if isinstance(value, bool) or not isinstance(value, (int, float, list)) or (
             isinstance(value, list) and not all(v is None or (isinstance(v, (int, float)) and not isinstance(v, bool))
                                                 for v in value)):
@@ -264,6 +270,16 @@ def matches(stored, computed, *, tolerance: float) -> bool:
     return abs(stored - computed) <= tolerance * max(1.0, abs(stored))
 
 
+def exact(stored, computed) -> bool:
+    """True when the stored value equals the formula's result, number for number."""
+    if isinstance(stored, list) or isinstance(computed, list):
+        return (isinstance(stored, list) and isinstance(computed, list) and len(stored) == len(computed)
+                and all(exact(s, c) for s, c in zip(stored, computed)))
+    if stored is None or computed is None:
+        return stored is None and computed is None
+    return not isinstance(stored, bool) and isinstance(stored, (int, float)) and stored == computed
+
+
 def check_model(variables: list[dict[str, object]], model_id: str, *, tolerance: float = 1e-4) -> ModelCheck:
     """Evaluate every output formula over the model's stored values and compare with the stored result.
 
@@ -289,14 +305,14 @@ def check_model(variables: list[dict[str, object]], model_id: str, *, tolerance:
             problems = ([f"names Variables not in the model: {', '.join(unknown)}"] if unknown else []) + (
                 [f"names Variables without a depends_on link: {', '.join(undeclared)}"] if undeclared else [])
             if problems:
-                checked.append(VariableCheck(key, stored, None, False, tuple(problems)))
+                checked.append(VariableCheck(key, stored, None, False, False, tuple(problems)))
                 continue
             computed = evaluate(variable["formula"], values, periods=periods, target=periods.get(key), self_key=key)
         except (ValueError, ZeroDivisionError, TypeError) as error:
-            checked.append(VariableCheck(key, stored, None, False, (str(error),)))
+            checked.append(VariableCheck(key, stored, None, False, False, (str(error),)))
             continue
         ok = matches(stored, computed, tolerance=tolerance)
-        checked.append(VariableCheck(key, stored, computed, ok,
+        checked.append(VariableCheck(key, stored, computed, ok, exact(stored, computed),
                                      () if ok else ("stored value differs from the formula's result",)))
     return ModelCheck(model_id, sum(v.get("role") == "input" for v in by_key.values()), len(outputs),
                       tuple(checked), tuple(v["key"] for v in outputs if v.get("formula") is None))

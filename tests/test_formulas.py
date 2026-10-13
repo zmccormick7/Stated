@@ -149,6 +149,23 @@ class ModelCheckTests(_ModelCase):
         self.assertEqual([check.key for check in result.checked],
                          ["revenue", "price_path", "selfish", "wrong", "undeclared", "unknown", "broken"])
 
+    def test_a_null_value_yields_null_and_stops_nothing_else(self):
+        self.variable("a", "input", 2)
+        self.variable("b", "input", None)  # Undisclosed: an unknown value, not zero.
+        self.variable("c", "output", 4, "a * 2", ["a"])
+        self.variable("d", "output", None, "b * 2", ["b"])
+        self.variable("brow", "input", [None, 2], periods=["2026", "2027"])
+        self.variable("e", "output", [None, 4], "brow * 2", ["brow"], periods=["2026", "2027"])
+        self.variable("rounded", "output", 0.6667, "a / 3", ["a"])
+        by_key = {check.key: check for check in self.db.check_model(self.model.id).checked}
+        self.assertEqual((by_key["c"].matches, by_key["c"].exact, by_key["c"].computed), (True, True, 4))
+        self.assertEqual((by_key["d"].matches, by_key["d"].exact, by_key["d"].computed), (True, True, None))
+        self.assertEqual((by_key["e"].computed, by_key["e"].exact), ([None, 4], True))
+        self.assertEqual((by_key["rounded"].matches, by_key["rounded"].exact, by_key["rounded"].problems),
+                         (True, False, ()))
+        held = self.db.evaluate_model(self.model.id, {"a": 3})
+        self.assertEqual({v.key: v.value for v in held.variables}["c"], 6)
+
     def test_dependencies_on_other_models_do_not_count_as_declarations(self):
         other = self.db.create("Model", text="Other", author_id="a")
         self.variable("capex", "input", 100, model=other)
