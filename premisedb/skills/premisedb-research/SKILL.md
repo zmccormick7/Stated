@@ -103,7 +103,7 @@ Use these names so other agents can follow and filter your links. Link from the 
 | `depends_on` | Finding or Variable → Finding or Variable | The conclusion or value rests on the target: evidence for a model input, an input of a model output, another model's output used as an input, or the model outputs an inference is drawn from. |
 | `contradicts` | Finding → Finding or Variable | The two conflict, or the evidence is incompatible with the Variable's value. Keep both current until the conflict is resolved. |
 | `corroborates` | Finding → Finding | Separate evidence for the same claim or figure, such as a second source reporting it. |
-| `updates` | Finding → Finding | Newer figures for the same measure, such as a later quarter or revised guidance. The older Finding stays true of its own date. |
+| `updates` | Finding → Finding, or Variable → Variable | Newer figures for the same measure, such as a later quarter or revised guidance; or the same model input or output as of a later date. The older record stays true of its own date. |
 | `supersedes` | Finding → Finding | The target was wrong or is no longer the current understanding and should not be built on. Set the target's `status` to `superseded`. |
 | `qualifies` | Finding → Finding or Variable | Adds a condition, scope limit or caveat without contradicting the target. |
 | `raises` | Any record → Question | Answering the Question could change this record. |
