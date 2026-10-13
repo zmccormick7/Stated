@@ -39,10 +39,74 @@ class PointInTimeTests(unittest.TestCase):
                                 attributes={"basis": "inference"})
         link = cutoff.create_link(finding.id, self.bank.id, "about", author_id="agent")
         self.assertEqual((finding.as_of, link.as_of), ("2023-02-24", "2023-02-24"))
-        # An edit from another date restamps: the contents are only known to be as of the last write.
-        self.assertEqual(self.live.patch(finding.id, author_id="agent", attributes={"topic": "deposits"}).as_of,
-                         self.today)
-        self.assertEqual(self.live.patch_link(link.id, author_id="agent", explanation="Subject.").as_of, self.today)
+        # An edit at the same cutoff keeps the stamp; a live edit of a live record restamps it to the day.
+        self.assertEqual(cutoff.patch(finding.id, author_id="agent", attributes={"topic": "deposits"}).as_of,
+                         "2023-02-24")
+        self.assertEqual(cutoff.patch_link(link.id, author_id="agent", explanation="Subject.").as_of, "2023-02-24")
+        self.assertEqual(self.live.patch(self.annual.id, author_id="agent", text="Annual report").as_of, self.today)
+
+    def test_rows_are_edited_only_at_the_cutoff_they_were_written_at(self):
+        then = self.at("2023-02-24")
+        finding = then.create("Finding", text="Then.", author_id="agent", attributes={"basis": "inference"})
+        link = then.create_link(finding.id, self.bank.id, "about", author_id="agent")
+        company = then.create("Entity", text="A counterparty", author_id="agent")
+        for store, when in ((self.live, "without a cutoff"), (self.at("2023-03-01"), "as of 2023-03-01")):
+            with self.subTest(when=when):
+                with self.assertRaisesRegex(ValueError, f"written as of 2023-02-24 and cannot be edited {when}"):
+                    store.patch(finding.id, author_id="agent", attributes={"status": "superseded"})
+                with self.assertRaisesRegex(ValueError, "cannot be edited"):
+                    store.update(finding.id, text="Rewritten", author_id="agent")
+                with self.assertRaisesRegex(ValueError, "cannot be edited"):
+                    store.patch_link(link.id, author_id="agent", explanation="Changed")
+                with self.assertRaisesRegex(ValueError, "cannot be edited"):
+                    store.update_link(link.id, from_id=finding.id, to_id=self.bank.id, relation="about", author_id="agent")
+        # The other way round, and merging, are refused the same way; Entities are exempt.
+        live = self.live.create("Finding", text="Live.", author_id="agent", attributes={"basis": "disclosed"},
+                                citations=[{"source_id": self.annual.id, "quote": "Deposits"}])  # Seen by its evidence.
+        with self.assertRaisesRegex(ValueError, "written without a cutoff and cannot be edited as of 2023-03-01"):
+            self.at("2023-03-01").patch(live.id, author_id="agent", text="Changed")
+        with self.assertRaisesRegex(ValueError, "cannot be edited"):
+            self.live.merge(live.id, finding.id, author_id="agent")
+        self.assertEqual(self.live.patch(company.id, author_id="agent", attributes={"aliases": ["ACME"]}).as_of, self.today)
+        self.assertEqual(self.live.read(finding.id).text, "Then.")
+
+    def test_sources_at_a_cutoff_need_a_publication_date_by_then(self):
+        then = self.at("2023-02-24")
+        for attributes in (None, {"published": "2023-03-10"}, {"published": "March 2023"}, {"published": 2023}):
+            with self.subTest(attributes=attributes):
+                with self.assertRaisesRegex(ValueError, "needs attributes.published, a date on or before the cutoff"):
+                    then.ingest_source(description="Late", document_text="Late.", author_id="agent", attributes=attributes)
+                with self.assertRaisesRegex(ValueError, "needs attributes.published"):
+                    then.create("Source", text="Late", author_id="agent", attributes=attributes)
+        source = then.ingest_source(description="In time", document_text="In time.", author_id="agent",
+                                    attributes={"published": "2023-02-24T09:00:00"})
+        self.assertEqual(then.read(source.id).as_of, "2023-02-24")
+        with self.assertRaisesRegex(ValueError, "needs attributes.published"):
+            then.patch(source.id, author_id="agent", attributes={"published": "2023-02-25"})
+        self.assertEqual(self.live.list_records(kind="Source").records[-1].id, source.id)
+
+    def test_document_summaries_are_hidden_at_a_cutoff(self):
+        self.live.set_document_context(self.annual.id, title="2022 annual report", summary="Filed weeks before the end.",
+                                       author_id="model")
+        self.assertIsNotNone(self.live.read_document_context(self.annual.id))
+        then = self.at("2023-02-24")
+        self.assertIsNone(then.read_document_context(self.annual.id))
+        self.assertEqual([s.document_context for s in then.search_documents("deposits")], [None])
+
+    def test_a_record_is_retired_at_a_later_cutoff_by_a_supersedes_link(self):
+        from premisedb import recall
+        then = self.at("2023-02-24")
+        first = then.create("Finding", text="Deposits were stable.", author_id="agent", attributes={"basis": "inference"})
+        then.create_link(first.id, self.bank.id, "about", author_id="agent")
+        later = self.at("2023-03-01")
+        corrected = later.create("Finding", text="Deposits were not stable.", author_id="agent",
+                                 attributes={"basis": "inference"})
+        later.create_link(corrected.id, first.id, "supersedes", author_id="agent", explanation="Newer reading.")
+        later.create_link(corrected.id, self.bank.id, "about", author_id="agent")
+        self.assertEqual({r.record.id for r in recall(then, "deposits stable").records}, {first.id, self.bank.id})
+        result = recall(later, "deposits stable")
+        self.assertEqual({r.record.id for r in result.records}, {corrected.id, self.bank.id})
+        self.assertEqual(result.coverage["retired"], 1)
 
     def test_sources_are_seen_from_their_publication_date(self):
         with self.assertRaisesRegex(KeyError, "not visible as of 2023-02-23"):
