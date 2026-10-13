@@ -59,7 +59,7 @@ Four skills teach an agent the graph. `premisedb ui` installs them; for any othe
 - **premisedb-research**: recall what the graph holds, contribute findings with exact citations, and revise understanding as evidence changes.
 - **premisedb-answer**: return an answer document that passes `premisedb check-answer`.
 - **premisedb-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
-- **premisedb-state**: describe a company's state as of a cutoff date under a fixed schema, as a Model whose inputs are quoted from the filings a reader on that date could see and whose outputs are formulas, building on the state an earlier cutoff left.
+- **premisedb-state**: compute one feature of a company as of a cutoff date, from instructions the caller supplies, as a value quoted from the filings a reader on that date could see or computed by a formula from such values.
 
 Point a session at the folder with `PREMISEDB_DB=/path/to/research.sqlite` and ask it to use the skill. The [CLI guide](docs/cli.md) covers every command, and the [Python API](docs/python-api.md) is there for agents and tools you write yourself:
 

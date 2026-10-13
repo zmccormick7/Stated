@@ -5,9 +5,9 @@ import unittest
 from premisedb import RecordStore
 
 
-class StateTests(unittest.TestCase):
-    """One Model per company and schema; Variables accumulate as versions; outputs are derived; the export
-    gives change points."""
+class FeatureTests(unittest.TestCase):
+    """A feature value is a Variable about an Entity; formulas resolve through depends_on; values accumulate as
+    versions; the export gives change points per Entity."""
 
     def setUp(self):
         directory = TemporaryDirectory()
@@ -23,117 +23,100 @@ class StateTests(unittest.TestCase):
         self.addCleanup(store.close)
         return store
 
-    def first_state(self, store, entity, deposits, uninsured, schema="bank-state-v1"):
-        """The whole model, as a first session writes it: inputs with values, outputs null."""
-        model = store.create("Model", text="State", author_id="agent", attributes={"schema": schema})
-        store.create_link(model.id, entity.id, "about", author_id="agent")
-        variables = {}
-        for key, attributes in (
-                ("total_deposits", {"role": "input", "value": deposits, "basis": "disclosed", "units": "USD millions"}),
-                ("uninsured_deposits", {"role": "input", "value": uninsured, "basis": "disclosed"}),
-                ("uninsured_share", {"role": "output", "value": None, "basis": "derived",
-                                     "formula": "uninsured_deposits / total_deposits"}),
-                ("deposits_by_quarter", {"role": "input", "value": [1, 2], "periods": ["2022-06-30", "2022-09-30"]}),
-                ("deposit_change", {"role": "output", "value": None, "periods": ["2022-06-30", "2022-09-30"],
-                                    "formula": "deposits_by_quarter / prev(deposits_by_quarter) - 1"})):
-            variables[key] = store.create("Variable", text=key, author_id="agent", attributes={"key": key, **attributes})
-            store.create_link(variables[key].id, model.id, "in_model", author_id="agent")
-        for key in ("uninsured_deposits", "total_deposits"):
-            store.create_link(variables["uninsured_share"].id, variables[key].id, "depends_on", author_id="agent")
-        store.create_link(variables["deposit_change"].id, variables["deposits_by_quarter"].id, "depends_on", author_id="agent")
-        return model, variables
+    def feature(self, store, entity, key, value, *, formula=None, inputs=(), periods=None, updates=None):
+        attributes = {"key": key, "value": value, "basis": "derived" if formula else "disclosed"}
+        if formula:
+            attributes["formula"] = formula
+        if periods:
+            attributes["periods"] = periods
+        variable = store.create("Variable", text=key, author_id="agent", attributes=attributes)
+        store.create_link(variable.id, entity.id, "about", author_id="agent")
+        for target in inputs:
+            store.create_link(variable.id, target.id, "depends_on", author_id="agent")
+        if updates is not None:
+            store.create_link(variable.id, updates.id, "updates", author_id="agent")
+        return variable
 
-    def new_version(self, store, model, previous, value):
-        """What a later session writes for one changed field: a new Variable updating the current version."""
-        version = store.create("Variable", text=previous.text, author_id="agent",
-                               attributes=previous.attributes | {"value": value})
-        store.create_link(version.id, model.id, "in_model", author_id="agent")
-        store.create_link(version.id, previous.id, "updates", author_id="agent")
-        return version
+    def first_state(self, store, entity, deposits, uninsured):
+        """What a first session writes: disclosed inputs and derived features with null values."""
+        total = self.feature(store, entity, "total_deposits", deposits)
+        uninsured_ = self.feature(store, entity, "uninsured_deposits", uninsured)
+        share = self.feature(store, entity, "uninsured_share", None, formula="uninsured_deposits / total_deposits",
+                             inputs=(total, uninsured_))
+        row = self.feature(store, entity, "deposits_by_quarter", [1, 2], periods=["2022-06-30", "2022-09-30"])
+        change = self.feature(store, entity, "deposit_change", None, formula="deposits_by_quarter / prev(deposits_by_quarter) - 1",
+                              inputs=(row,), periods=["2022-06-30", "2022-09-30"])
+        return {"total_deposits": total, "uninsured_deposits": uninsured_, "uninsured_share": share,
+                "deposits_by_quarter": row, "deposit_change": change}
 
-    def test_the_model_reads_the_latest_version_of_each_key_the_store_sees(self):
+    def test_a_feature_is_checked_against_what_it_depends_on(self):
         then = self.at("2022-11-07")
-        model, variables = self.first_state(then, self.bank, 176819, None)
-        then.fill_model(model.id, author_id="agent")
-        later = self.at("2023-02-24")
-        self.new_version(later, model, variables["total_deposits"], 173109)
-        self.new_version(later, model, variables["uninsured_deposits"], 165400)
-        stored = lambda store, key: {v["key"]: v for v in store._model_variables(model.id)[1]}[key]
-        self.assertEqual((stored(later, "total_deposits")["value"], stored(later, "total_deposits")["stamp"]),
-                         (173109, "2023-02-24"))
-        self.assertEqual((stored(then, "total_deposits")["value"], stored(then, "total_deposits")["stamp"]),
-                         (176819, "2022-11-07"))
-        self.assertEqual(stored(self.live, "uninsured_deposits")["value"], 165400)
-        # The output's stored value is the 2022-11-07 one until it is filled again.
-        check = {c.key: c for c in later.check_model(model.id).checked}
-        self.assertEqual((check["uninsured_share"].stored, check["uninsured_share"].matches), (None, False))
+        f = self.first_state(then, self.bank, 176819, 150000)
+        check = then.check_model(f["uninsured_share"].id)
+        self.assertEqual([(c.key, c.stored, c.computed, c.matches, c.problems) for c in check.checked],
+                         [("uninsured_share", None, 150000 / 176819, False, ("stored value differs from the formula's result",))])
+        then.fill_model(f["uninsured_share"].id, author_id="agent")
+        self.assertTrue(then.check_model(f["uninsured_share"].id).checked[0].exact)
+        self.assertEqual(then.check_model(f["uninsured_share"].id).checked[0].stored, 150000 / 176819)
+        # A feature whose dependency links are missing is reported, not guessed.
+        loose = then.create("Variable", text="loose", author_id="agent", attributes={"key": "loose", "formula": "total_deposits * 2", "value": 1})
+        then.create_link(loose.id, self.bank.id, "about", author_id="agent")
+        self.assertEqual(then.check_model(loose.id).checked[0].problems, ("names Variables not in the model: total_deposits",))
+        with self.assertRaisesRegex(ValueError, "not a Model, Entity or Variable"):
+            then.check_model(then.create("Question", text="Which bank?", author_id="agent").id)
 
-    def test_fill_model_patches_what_it_may_edit_and_versions_the_rest(self):
+    def test_fill_model_on_an_entity_derives_every_feature_from_the_latest_inputs(self):
         then = self.at("2022-11-07")
-        model, variables = self.first_state(then, self.bank, 176819, None)
-        filled = then.fill_model(model.id, author_id="agent")
-        # The share is null from a null input, which already matches its stored null; the row is filled in place.
-        self.assertEqual([(w.key, w.stored, w.value, w.id) for w in filled.written],
-                         [("deposit_change", None, [None, 1.0], variables["deposit_change"].id)])
-        self.assertEqual(then.fill_model(model.id, author_id="agent").written, ())
+        f = self.first_state(then, self.bank, 176819, 150000)
+        filled = then.fill_model(self.bank.id, author_id="agent")
+        self.assertEqual([(w.key, w.stored, w.id) for w in filled.written],
+                         [("uninsured_share", None, f["uninsured_share"].id), ("deposit_change", None, f["deposit_change"].id)])
+        self.assertEqual(then.read(f["uninsured_share"].id).attributes["value"], 150000 / 176819)  # Filled in place.
+        self.assertEqual(then.fill_model(self.bank.id, author_id="agent").written, ())
+        # A later date brings new inputs; the derived feature gets a new version resting on them.
         later = self.at("2023-02-24")
-        self.new_version(later, model, variables["total_deposits"], 173109)
-        self.new_version(later, model, variables["uninsured_deposits"], 165400)
-        filled = later.fill_model(model.id[:8], author_id="agent")
-        self.assertEqual([(w.key, w.stored, w.value) for w in filled.written], [("uninsured_share", None, 165400 / 173109)])
+        total = self.feature(later, self.bank, "total_deposits", 173109, updates=f["total_deposits"])
+        uninsured = self.feature(later, self.bank, "uninsured_deposits", 165400, updates=f["uninsured_deposits"])
+        filled = later.fill_model(self.bank.id, author_id="agent")
+        self.assertEqual([(w.key, w.stored, w.value) for w in filled.written], [("uninsured_share", 150000 / 176819, 165400 / 173109)])
         version = later.read(filled.written[0].id)
-        self.assertNotEqual(version.id, variables["uninsured_share"].id)
-        self.assertEqual((version.as_of, version.attributes["key"], version.attributes["formula"], version.attributes["value"]),
-                         ("2023-02-24", "uninsured_share", "uninsured_deposits / total_deposits", 165400 / 173109))
-        links = {(l.relation, l.to_id) for l in later.connections(version.id, direction="out").links}
-        current = {v["key"]: v["id"] for v in later._model_variables(model.id)[1]}
-        self.assertEqual(links, {("in_model", model.id), ("updates", variables["uninsured_share"].id),
-                                 ("depends_on", current["total_deposits"]), ("depends_on", current["uninsured_deposits"])})
-        self.assertTrue(all(c.exact for c in later.check_model(model.id).checked))
-        # The earlier date still reads the earlier state, untouched.
-        self.assertEqual({v["key"]: v["value"] for v in then._model_variables(model.id)[1]}["uninsured_share"], None)
-        self.assertEqual(then.fill_model(model.id, author_id="agent").written, ())
+        self.assertNotEqual(version.id, f["uninsured_share"].id)
+        self.assertEqual((version.as_of, version.attributes["key"], version.attributes["value"]), ("2023-02-24", "uninsured_share", 165400 / 173109))
+        self.assertEqual({(l.relation, l.to_id) for l in later.connections(version.id, direction="out").links},
+                         {("about", self.bank.id), ("updates", f["uninsured_share"].id), ("depends_on", total.id), ("depends_on", uninsured.id)})
+        self.assertTrue(all(c.exact for c in later.check_model(self.bank.id).checked))
+        # The earlier date reads the earlier state, untouched.
+        self.assertEqual(then.read(f["uninsured_share"].id).attributes["value"], 150000 / 176819)
+        self.assertEqual(then.fill_model(self.bank.id, author_id="agent").written, ())
+        self.assertEqual({v.key: v.value for v in later.evaluate_model(self.bank.id, {"total_deposits": 200000}).variables}["uninsured_share"], 165400 / 200000)
 
-    def test_fill_model_writes_nothing_when_a_formula_fails(self):
-        model, variables = self.first_state(self.live, self.bank, 10, 5)
-        self.live.patch(variables["uninsured_share"].id, author_id="agent", attributes={"formula": "uninsured_deposits +"})
-        with self.assertRaisesRegex(ValueError, "uninsured_share"):
-            self.live.fill_model(model.id, author_id="agent")
-        self.assertIsNone(self.live.read(variables["uninsured_share"].id).attributes["value"])
-
-    def test_state_rows_give_change_points_over_a_range(self):
+    def test_state_rows_give_change_points_per_entity(self):
         then = self.at("2022-11-07")
-        model, variables = self.first_state(then, self.bank, 176819, None)
-        then.fill_model(model.id, author_id="agent")
+        f = self.first_state(then, self.bank, 176819, None)
+        then.fill_model(self.bank.id, author_id="agent")
         later = self.at("2023-02-24")
-        self.new_version(later, model, variables["total_deposits"], 173109)
-        self.new_version(later, model, variables["uninsured_deposits"], 165400)
-        later.fill_model(model.id, author_id="agent")
-        other, _ = self.first_state(self.at("2023-01-15"), self.other, 100, 50)
-        self.first_state(self.live, self.bank, 1, 1, schema="other-schema")
-        self.live.create("Model", text="Not a state", author_id="agent")
-        rows = self.live.state_rows(schema="bank-state-v1", start="2022-01-01", end="2023-12-31")
+        self.feature(later, self.bank, "total_deposits", 173109, updates=f["total_deposits"])
+        self.feature(later, self.bank, "uninsured_deposits", 165400, updates=f["uninsured_deposits"])
+        later.fill_model(self.bank.id, author_id="agent")
+        self.first_state(self.at("2023-01-15"), self.other, 100, 50)
+        self.live.create("Variable", text="Not a feature", author_id="agent", attributes={"key": "x", "value": 1})
+        rows = self.live.state_rows(start="2022-01-01", end="2023-12-31")
         self.assertEqual([(r.entity, r.date) for r in rows],
                          [("Another Bank", "2023-01-15"), ("Silicon Valley Bank", "2022-11-07"), ("Silicon Valley Bank", "2023-02-24")])
         first, second = rows[1], rows[2]
-        self.assertEqual((first.values["total_deposits"], first.values["uninsured_share"]), (176819, None))
+        self.assertEqual((first.entity_id, first.values["total_deposits"], first.values["uninsured_share"]), (self.bank.id, 176819, None))
         self.assertEqual((second.values["total_deposits"], second.values["uninsured_share"]), (173109, 165400 / 173109))
         self.assertEqual(second.stamps, {"total_deposits": "2023-02-24", "uninsured_deposits": "2023-02-24",
                                          "uninsured_share": "2023-02-24", "deposits_by_quarter": "2022-11-07",
                                          "deposit_change": "2022-11-07"})
         self.assertEqual(second.periods["deposit_change"], ["2022-06-30", "2022-09-30"])
-        # A single date gives the state entering it; today gives the current state.
-        self.assertEqual([(r.date, r.values["total_deposits"]) for r in self.live.state_rows(entity_id=self.bank.id[:8], schema="bank-state-v1", start="2023-01-01", end="2023-01-01")],
-                         [("2023-01-01", 176819)])
-        self.assertEqual([r.date for r in self.live.state_rows(entity_id=self.bank.id, schema="bank-state-v1", start="2023-01-01")],
-                         ["2023-01-01", "2023-02-24"])  # From a date to today.
-        self.assertEqual([r.values["total_deposits"] for r in self.live.state_rows(entity_id=self.bank.id, schema="bank-state-v1")], [173109])
-        self.assertEqual(self.live.state_rows(schema="bank-state-v1", start="2022-01-01", end="2022-06-30"), ())
-        self.assertEqual({r.schema for r in self.live.state_rows()}, {"bank-state-v1", "other-schema"})
-        # A reader at the first cutoff cannot look past it, and sees only the first state.
-        self.assertEqual([r.date for r in then.state_rows(schema="bank-state-v1", start="2022-01-01")], ["2022-11-07"])
+        self.assertEqual([(r.date, r.values) for r in self.live.state_rows(entity_id=self.bank.id[:8], features=["uninsured_share"], start="2023-01-01")],
+                         [("2023-01-01", {"uninsured_share": None}), ("2023-02-24", {"uninsured_share": 165400 / 173109})])
+        self.assertEqual([r.values["total_deposits"] for r in self.live.state_rows(entity_id=self.bank.id)], [173109])
+        self.assertEqual(self.live.state_rows(start="2022-01-01", end="2022-06-30"), ())
+        self.assertEqual([r.date for r in then.state_rows(entity_id=self.bank.id, start="2022-01-01")], ["2022-11-07"])
         with self.assertRaisesRegex(ValueError, "after the cutoff"):
             then.state_rows(end="2023-02-24")
-        for bad in ({"schema": 3}, {"start": "2023-13-01"}, {"start": "2023-02-24", "end": "2023-02-23"}):
+        for bad in ({"features": "x"}, {"features": []}, {"start": "2023-13-01"}, {"start": "2023-02-24", "end": "2023-02-23"}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 self.live.state_rows(**bad)
