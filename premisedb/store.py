@@ -129,6 +129,7 @@ class FilledVariable:
     key: str
     stored: object  # The value before the fill.
     value: object  # The formula's result, now stored.
+    id: str  # The Variable holding it: the output itself, or a new version of it when the output could not be edited.
 
 
 @dataclass(frozen=True)
@@ -139,14 +140,15 @@ class ModelFill:
 
 @dataclass(frozen=True)
 class StateRow:
-    """One Model written under a schema: the state of one Entity as of the Model's stamp."""
+    """The state of one Entity under a schema on one date: the latest Variable per key stamped by then."""
     entity_id: str | None  # The Entity the Model is `about`; None when it is about none.
     entity: str | None
     schema: str
-    cutoff: str  # The Model's `as_of` stamp.
+    date: str
     model_id: str
-    values: dict[str, object]  # Variable key → stored value.
+    values: dict[str, object]  # Variable key → value as of the date.
     periods: dict[str, list]  # Labels of the keys whose value is a row.
+    stamps: dict[str, str]  # Variable key → the as_of of the version in use: when that key last changed.
 
 
 @dataclass(frozen=True)
@@ -327,26 +329,58 @@ class RecordStore:
 
     def fill_model(self, model_id: str, *, author_id: str) -> ModelFill:
         """Store each output's formula value where the stored value is not exactly that: results flow through
-        dependent formulas as in evaluate_model, and each differing output is patched in turn."""
-        from .formulas import evaluate_model, exact
+        dependent formulas as in evaluate_model. An output this store may edit is patched; one written at
+        another cutoff gets a new version, a Variable with the same attributes and the new value, linked
+        `in_model`, `updates` the old version and `depends_on` the current version of each Variable the formula
+        names, so the old value stays true of its own date."""
+        from .formulas import evaluate_model, exact, parse
         model_id, variables = self._model_variables(model_id)
         by_key = {v["key"]: v for v in variables}
         written = []
         for item in evaluate_model(variables, model_id).variables:
-            if by_key[item.key].get("formula") is None or exact(item.stored, item.value):
+            variable = by_key[item.key]
+            if variable.get("formula") is None or exact(item.stored, item.value):
                 continue
-            self.patch(by_key[item.key]["id"], author_id=author_id, attributes={"value": item.value})
-            written.append(FilledVariable(item.key, item.stored, item.value))
+            current = self.read(variable["id"])
+            try:
+                self._check_editable(current)
+                record = self.patch(current.id, author_id=author_id, attributes={"value": item.value})
+            except ValueError:
+                names = sorted(parse(variable["formula"])[1] - {item.key})
+                record = self.contribute(author_id=author_id, records=[{
+                    "ref": "v", "kind": "Variable", "text": current.text,
+                    "attributes": {k: v for k, v in current.attributes.items() if k != "citations"} | {"value": item.value}}],
+                    links=[{"from_id": "v", "to_id": model_id, "relation": "in_model"},
+                           {"from_id": "v", "to_id": current.id, "relation": "updates",
+                            "explanation": "The same output as of a later date, recomputed from its formula."}]
+                          + [{"from_id": "v", "to_id": by_key[n]["id"], "relation": "depends_on"}
+                             for n in names if n in by_key]).records["v"]
+            by_key[item.key] = variable | {"id": record.id}
+            written.append(FilledVariable(item.key, item.stored, item.value, record.id))
         return ModelFill(model_id, tuple(written))
 
-    def state_rows(self, *, schema: str | None = None, entity_id: str | None = None,
-                   limit: int = 1000) -> tuple[StateRow, ...]:
-        """One row per Model whose attributes name a `schema` (and per Entity it is `about`): the Entity,
-        the Model's stamp as the cutoff, and its Variables' values by key, in Entity, cutoff order."""
+    def state_rows(self, *, schema: str | None = None, entity_id: str | None = None, start: str | None = None,
+                   end: str | None = None, limit: int = 1000) -> tuple[StateRow, ...]:
+        """The states written under a schema over a date range, as change points: for each Model whose
+        attributes name a `schema` (and each Entity it is `about`), a row at `start` holding the latest
+        version of each Variable key stamped by then, and a row at every later date up to `end` on which
+        some key changed. Between rows the state is unchanged, so a daily series is a forward fill. `end`
+        defaults to the store's cutoff, or today, and `start` to `end`, so with neither there is one row per
+        Model: its current state."""
         for name, value in (("schema", schema), ("entity_id", entity_id)):
             if value is not None and not isinstance(value, str):
                 raise ValueError(f"{name} must be a string or None")
         _check_limit(limit)
+        today = self.as_of or datetime.now(UTC).date().isoformat()
+        end = end or today
+        start = start or end
+        for name, value in (("start", start), ("end", end)):
+            if not isinstance(value, str) or len(value) != 10 or _date(value) is None:
+                raise ValueError(f"{name} must be a date, like 2023-02-24")
+        if start > end:
+            raise ValueError("start must not be after end")
+        if self.as_of is not None and end > self.as_of:
+            raise ValueError(f"end is after the cutoff {self.as_of}")
         entity_key = None if entity_id is None else self._record_key(entity_id)
         rows = self._db.execute(
             f"""SELECT m.id AS model_id, m.as_of, json_extract(m.attributes, '$.schema') AS schema,
@@ -356,34 +390,59 @@ class RecordStore:
                 LEFT JOIN records e ON e.record_key = a.to_key AND e.kind = 'Entity'
                 WHERE m.kind = 'Model' AND json_type(m.attributes, '$.schema') = 'text'
                   AND (? IS NULL OR json_extract(m.attributes, '$.schema') = ?)
-                  AND (? IS NULL OR e.record_key = ?) AND {self._seen('m')}
-                ORDER BY e.text, m.as_of, m.record_key LIMIT ?""",
-            (schema, schema, entity_key, entity_key, limit)).fetchall()
+                  AND (? IS NULL OR e.record_key = ?) AND {self._seen('m')} AND m.as_of <= ?
+                ORDER BY e.text, m.as_of, m.record_key""",
+            (schema, schema, entity_key, entity_key, end)).fetchall()
         result = []
         for row in rows:
-            _, variables = self._model_variables(row["model_id"])
-            result.append(StateRow(row["entity_id"], row["entity"], row["schema"], row["as_of"], row["model_id"],
-                                   {v["key"]: v.get("value") for v in variables},
-                                   {v["key"]: v["periods"] for v in variables if isinstance(v.get("periods"), list)}))
+            # Every version of every Variable of the Model stamped by the end, oldest first.
+            versions = self._db.execute(
+                f"""SELECT v.attributes, v.as_of FROM links l JOIN records v ON v.record_key = l.from_key
+                    WHERE l.to_key = (SELECT record_key FROM records WHERE id = ?) AND l.relation = 'in_model'
+                      AND v.kind = 'Variable' AND v.as_of <= ? AND l.as_of <= ? AND {self._seen('l', link=True)}
+                    ORDER BY v.as_of, v.record_key""", (row["model_id"], end, end)).fetchall()
+            dates = sorted({start} | {v["as_of"] for v in versions if start < v["as_of"] <= end})
+            for date in dates:
+                state = {}
+                for version in versions:  # Later versions overwrite earlier ones, so the latest per key stands.
+                    if version["as_of"] <= date:
+                        attributes = json.loads(version["attributes"])
+                        if isinstance(attributes.get("key"), str):
+                            state[attributes["key"]] = (attributes, version["as_of"])
+                if not state:
+                    continue  # Nothing was written by this date.
+                if len(result) == limit:
+                    return tuple(result)
+                result.append(StateRow(
+                    row["entity_id"], row["entity"], row["schema"], date, row["model_id"],
+                    {key: attributes.get("value") for key, (attributes, _) in state.items()},
+                    {key: attributes["periods"] for key, (attributes, _) in state.items()
+                     if isinstance(attributes.get("periods"), list)},
+                    {key: stamp for key, (_, stamp) in state.items()}))
         return tuple(result)
 
     def _model_variables(self, model_id):
-        """A Model's ID and its Variables' attributes, each with its `id` and in-model `depends_on` keys."""
+        """A Model's ID and its Variables' attributes, the latest version of each key the store sees (a
+        Variable written as of a later date is a new version of the key, the old one staying true of its
+        date), each with its `id`, its `stamp` and its in-model `depends_on` keys."""
         model = self.read(self.resolve_id(model_id))
         if model.kind != "Model":
             raise ValueError(f"{model_id} is a {model.kind}, not a Model")
         rows = self._db.execute(
-            f"""SELECT v.id, v.attributes,
-                      (SELECT json_group_array(json_extract(d.attributes, '$.key')) FROM links dl
-                       JOIN records d ON d.record_key = dl.to_key
-                       WHERE dl.from_key = v.record_key AND dl.relation = 'depends_on'
-                         AND d.record_key IN (SELECT from_key FROM links WHERE to_key = m.record_key
-                                              AND relation = 'in_model')) AS depends_on
-               FROM links l JOIN records v ON v.record_key = l.from_key JOIN records m ON m.record_key = l.to_key
-               WHERE m.id = ? AND l.relation = 'in_model' AND v.kind = 'Variable'
-                 AND {self._seen('l', link=True)} ORDER BY v.record_key""",
+            f"""WITH members AS (
+                    SELECT v.record_key, v.id, v.attributes, v.as_of,
+                           row_number() OVER (PARTITION BY coalesce(json_extract(v.attributes, '$.key'), v.id)
+                                              ORDER BY v.as_of DESC, v.record_key DESC) AS recency
+                    FROM links l JOIN records v ON v.record_key = l.from_key JOIN records m ON m.record_key = l.to_key
+                    WHERE m.id = ? AND l.relation = 'in_model' AND v.kind = 'Variable' AND {self._seen('l', link=True)})
+                SELECT v.id, v.attributes, v.as_of,
+                       (SELECT json_group_array(json_extract(d.attributes, '$.key')) FROM links dl
+                        JOIN records d ON d.record_key = dl.to_key
+                        WHERE dl.from_key = v.record_key AND dl.relation = 'depends_on'
+                          AND d.record_key IN (SELECT record_key FROM members)) AS depends_on
+                FROM members v WHERE v.recency = 1 ORDER BY v.record_key""",
             (model.id,)).fetchall()
-        return model.id, [json.loads(row["attributes"]) | {"id": row["id"], "depends_on": [
+        return model.id, [json.loads(row["attributes"]) | {"id": row["id"], "stamp": row["as_of"], "depends_on": [
             key for key in json.loads(row["depends_on"]) if key is not None]} for row in rows]
 
     def attach_layer(self, path: str | Path) -> "LayerAttachment":

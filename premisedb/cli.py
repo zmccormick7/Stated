@@ -118,9 +118,13 @@ def _parser():
             "Store each output Variable's exact formula value where the stored value differs; nothing else changes.",
             "model_id", payload="author_id")
     state = command("state", "state_rows",
-                    "Export one row per Model written under a schema: its Entity, its cutoff and its Variables' values.")
+                    "Export the states written under a schema as change points: one row per Model and date on "
+                    "which a Variable changed, holding the latest version of every key by then.")
     state.add_argument("--schema", help="Only Models whose attributes.schema is this name.")
     state.add_argument("--entity", dest="entity_id", help="Only Models about this Entity.")
+    state.add_argument("--date", metavar="DATE", help="The state on one date (default: the cutoff, or today).")
+    state.add_argument("--from", dest="start", metavar="DATE", help="A row at this date, then one at each change up to --to.")
+    state.add_argument("--to", dest="end", metavar="DATE", help="Default: the cutoff, or today.")
     state.add_argument("--limit", type=int, default=1000)
     command("check-answer", "check_answer",
             "Check an answer document against the graph: its sources, quotes and every charted figure.",
@@ -366,6 +370,11 @@ def main(argv=None):
                 if not isinstance(payload.get("attributes") or {}, dict):
                     raise ValueError("attributes must be a JSON object")
                 payload["attributes"] = {"url": page.url, "retrieved_at": page.retrieved_at} | (payload.get("attributes") or {})
+        if "date" in options:
+            if (date := options.pop("date")) is not None:
+                if options.get("start") or options.get("end"):
+                    raise ValueError("give --date or --from/--to, not both")
+                options["start"] = options["end"] = date
         if options.get("quote") == "-":  # Drop the final newline a heredoc adds.
             options["quote"] = sys.stdin.read().removesuffix("\n")
         if options.keys() & payload.keys():

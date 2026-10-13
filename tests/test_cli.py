@@ -357,11 +357,15 @@ class CLITests(unittest.TestCase):
             self.call("link", keys[key]["id"], model["id"], "in_model", "--input", "-", payload={"author_id": "agent-a"})
         self.call("link", keys["b"]["id"], keys["a"]["id"], "depends_on", "--input", "-", payload={"author_id": "agent-a"})
         filled = self.call("fill-model", model["id"][:8], "--input", "-", payload={"author_id": "agent-a"})
-        self.assertEqual(filled, {"model_id": model["id"], "written": [{"key": "b", "stored": 0.67, "value": 2 / 3}]})
+        self.assertEqual(filled, {"model_id": model["id"],
+                                  "written": [{"key": "b", "stored": 0.67, "value": 2 / 3, "id": keys["b"]["id"]}]})
         rows = self.call("state", "--schema", "bank-state-v1", "--entity", bank["id"][:8])["rows"]
-        self.assertEqual([(r["entity"], r["cutoff"], r["values"]) for r in rows],
-                         [("A bank", model["as_of"], {"a": 2, "b": 2 / 3})])
+        self.assertEqual([(r["entity"], r["date"], r["values"], r["stamps"]) for r in rows],
+                         [("A bank", model["as_of"], {"a": 2, "b": 2 / 3}, {"a": model["as_of"], "b": model["as_of"]})])
         self.assertEqual(self.call("state", "--schema", "none")["rows"], [])
+        self.assertEqual(self.call("state", "--from", "2020-01-01", "--to", "2020-12-31")["rows"], [])
+        self.assertEqual(self.call("state", "--date", "2020-01-01", "--to", "2020-12-31", status=1),
+                         {"error": "give --date or --from/--to, not both"})
 
     def test_environment_selects_the_default_database(self):
         shared = self.directory / "shared.sqlite"
