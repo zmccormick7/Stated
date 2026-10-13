@@ -120,9 +120,9 @@ class CLITests(unittest.TestCase):
         self.assertEqual(preview, {"id": variable["id"], "kind": "Variable", "text": text[:199] + "…",
                                    "basis": "assumption", "key": "growth", "value": [0.1, 0.2], **self.edits(variable)})
         self.assertEqual(self.call("list", "--kind", "Variable", "--full")["records"], [variable])
-        edited = self.call("patch", variable["id"], "--input", "-", payload={"author_id": "agent-b", "attributes": {"value": 1}})
+        edited = self.call("patch", variable["id"], "--input", "-", payload={"author_id": "agent-b", "attributes": {"basis": "inference"}})
         self.assertEqual(self.call("list", "--kind", "Variable")["records"][0], {
-            **preview, "value": 1, "author_id": "agent-b", "created_by": "agent-a", "updated_at": edited["updated_at"],
+            **preview, "basis": "inference", "author_id": "agent-b", "created_by": "agent-a", "updated_at": edited["updated_at"],
             "layer": "workspace"})
 
     def test_recall_returns_records_evidence_and_issues(self):
@@ -351,14 +351,14 @@ class CLITests(unittest.TestCase):
         self.call("link", model["id"], bank["id"], "about", "--input", "-", payload={"author_id": "agent-a"})
         keys = {}
         for key, attributes in (("a", {"role": "input", "value": 2}),
-                                ("b", {"role": "output", "value": 0.67, "formula": "a / 3"})):
+                                ("b", {"role": "output", "value": None, "formula": "a / 3"})):
             keys[key] = self.call("create", "Variable", "--input", "-", payload={
                 "text": key, "author_id": "agent-a", "attributes": {"key": key, **attributes}})
             self.call("link", keys[key]["id"], model["id"], "in_model", "--input", "-", payload={"author_id": "agent-a"})
         self.call("link", keys["b"]["id"], keys["a"]["id"], "depends_on", "--input", "-", payload={"author_id": "agent-a"})
         filled = self.call("fill-model", model["id"][:8], "--input", "-", payload={"author_id": "agent-a"})
         self.assertEqual(filled, {"model_id": model["id"],
-                                  "written": [{"key": "b", "stored": 0.67, "value": 2 / 3, "id": keys["b"]["id"]}]})
+                                  "written": [{"key": "b", "stored": None, "value": 2 / 3, "id": keys["b"]["id"]}]})
         rows = self.call("state", "--schema", "bank-state-v1", "--entity", bank["id"][:8])["rows"]
         self.assertEqual([(r["entity"], r["date"], r["values"], r["stamps"]) for r in rows],
                          [("A bank", model["as_of"], {"a": 2, "b": 2 / 3}, {"a": model["as_of"], "b": model["as_of"]})])

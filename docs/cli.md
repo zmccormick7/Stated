@@ -37,7 +37,7 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 | `create KIND --input FILE` | Create one of the six record types. |
 | `get ID` | Read current record contents. |
 | `update ID --input FILE` | Replace text and attributes, retaining identity and kind. |
-| `patch ID --input FILE` | Change text or some top-level attributes, keeping the rest. |
+| `patch ID --input FILE` | Change text or some top-level attributes, keeping the rest. A change to a Variable's `value` writes a new version instead (see the Python API guide) and returns it. |
 | `search QUERY [--kind KIND] [--limit N] [--full]` | Search record text. Previews by default; `--full` returns complete records. |
 | `contribute --input FILE` | Create several records and links in one transaction. |
 | `link FROM TO RELATION --input FILE` | Connect two existing records. |

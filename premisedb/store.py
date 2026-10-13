@@ -329,10 +329,10 @@ class RecordStore:
 
     def fill_model(self, model_id: str, *, author_id: str) -> ModelFill:
         """Store each output's formula value where the stored value is not exactly that: results flow through
-        dependent formulas as in evaluate_model. An output this store may edit is patched; one written at
-        another cutoff gets a new version, a Variable with the same attributes and the new value, linked
-        `in_model`, `updates` the old version and `depends_on` the current version of each Variable the formula
-        names, so the old value stays true of its own date."""
+        dependent formulas as in evaluate_model. An output with no value yet that this store may edit is
+        filled in place; any other gets a new version, a Variable with the same attributes and the new value,
+        linked `in_model`, `updates` the old version and `depends_on` the current version of each Variable the
+        formula names, so the old value stays true of its own date."""
         from .formulas import evaluate_model, exact, parse
         model_id, variables = self._model_variables(model_id)
         by_key = {v["key"]: v for v in variables}
@@ -343,6 +343,8 @@ class RecordStore:
                 continue
             current = self.read(variable["id"])
             try:
+                if item.stored is not None:
+                    raise ValueError("a changed value is a new version")  # Resting on the current inputs.
                 self._check_editable(current)
                 record = self.patch(current.id, author_id=author_id, attributes={"value": item.value})
             except ValueError:
@@ -772,9 +774,13 @@ class RecordStore:
         _refuse_refs(text)
         attributes, source_ids = self._cite(attributes, citations)
         encoded = self._encode(attributes)
+        current = self.read(record_id)  # A missing or unseen record is reported before anything is written.
+        if self._value_changed(current, attributes or {}):
+            return self._write_version(current, text=text, attributes=attributes or {}, source_ids=source_ids,
+                                       author_id=author_id)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            current = self.read(record_id)  # A missing or unseen record is reported before anything is written.
+            current = self.read(record_id)
             self._check_editable(current)
             if current.kind == "Source":
                 self._check_published(attributes)
@@ -786,6 +792,38 @@ class RecordStore:
             self._link_sources(record_id, source_ids, author_id)
             record = self.read(record_id)
         return record
+
+    @staticmethod
+    def _value_changed(current: Record, attributes: dict[str, object]) -> bool:
+        """A Variable's value changes when it had one and the new attributes give a different one. Setting a
+        value where there was none is not a change."""
+        return (current.kind == "Variable" and current.attributes.get("value") is not None
+                and attributes.get("value") != current.attributes.get("value"))
+
+    def _write_version(self, current: Record, *, text: str, attributes: dict[str, object],
+                       source_ids: tuple[str, ...], author_id: str) -> Record:
+        """A new version of a Variable: a record with the new contents, stamped with the day, linked `updates`
+        the current one and carrying its outgoing links (its place in the model, what it rests on), so the
+        old value stays true of its own date and a past decision can be reviewed."""
+        encoded = self._encode(attributes)
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            version = self._insert_record("Variable", text, encoded, author_id)
+            self._link_sources(version.id, source_ids, author_id)
+            self._insert_link(version.id, current.id, "updates", "The same quantity as of a later date.", author_id)
+            for link in self._links_of(current.id, "out", None, 1000)[0]:
+                if link.relation in ("updates", "supersedes"):
+                    continue  # The old version's own history.
+                values = self._link_values(version.id, link.to_id, link.relation, link.explanation, author_id)
+                try:
+                    self._refuse_duplicate_link(values)
+                except ValueError:
+                    continue  # Already added, as a citation's supported_by link is.
+                self._db.execute(
+                    f"""INSERT INTO links (from_key, to_key, relation, explanation, author_id, updated_at,
+                        as_of, id, created_by, layer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
+                    (*values, self._stamp(), str(uuid4()), author_id))
+        return version
 
     def patch(self, record_id: str, *, author_id: str, text: str | None = None,
               attributes: dict[str, object] | None = None, remove: Iterable[str] = (),
@@ -808,6 +846,11 @@ class RecordStore:
         changes, source_ids = self._cite(attributes or {}, citations)
         if set(changes) & set(remove):
             raise ValueError("an attribute cannot be both set and removed")
+        current = self.read(record_id)
+        merged = {key: value for key, value in current.attributes.items() if key not in remove} | changes
+        if self._value_changed(current, merged):
+            return self._write_version(current, text=current.text if text is None else text, attributes=merged,
+                                       source_ids=source_ids, author_id=author_id)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             current = self.read(record_id)

@@ -31,7 +31,7 @@ Depth has a definition here. A company is understood when the graph holds a driv
 ## 4. Work the list
 
 - Sources, in order: the filing text already in the graph (`search-documents` and `source-text`), then the latest quarterly reports and earnings releases on EDGAR, then earnings-call transcripts and investor presentations, all through `ingest --url`, which reads HTML and PDF. Chunk what you ingest.
-- An answer is a disclosed Finding with an exact citation, linked `answered_by` from the Question and `about` the company. Then `patch` the Variable with the sourced value, change its `basis` to `disclosed`, link it `depends_on` the Finding, and set the Question's `status` to `answered`. A partial answer uses `partly_answered_by` and `partly_answered`.
+- An answer is a disclosed Finding with an exact citation, linked `answered_by` from the Question and `about` the company. Then `patch` the Variable with the sourced value and `basis: disclosed`; when it already had a value, `patch` returns a new version of it, so link the Variable `patch` returned `depends_on` the Finding, and set the Question's `status` to `answered`. A partial answer uses `partly_answered_by` and `partly_answered`.
 - Evidence that conflicts with a stored value gets a Finding linked `contradicts` the Variable, not a silent edit. Evidence that narrows it gets `qualifies`.
 - After each round of changes, `check-model` again. Outputs change when inputs do; stored output values must follow.
 
