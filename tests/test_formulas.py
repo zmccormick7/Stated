@@ -231,8 +231,10 @@ class ModelEvaluationTests(_ModelCase):
                                    ([("price", 600)], "must map")):
             with self.subTest(overrides=overrides), self.assertRaisesRegex(ValueError, message):
                 self.db.evaluate_model(self.model.id, overrides)
-        with self.assertRaisesRegex(ValueError, "not a Model"):
-            self.db.evaluate_model(self.variables["gw"].id)
+        with self.assertRaisesRegex(ValueError, "not a Model, Entity or Variable"):
+            self.db.evaluate_model(self.db.create("Question", text="q", author_id="a").id)
+        # A Variable on its own evaluates to its stored value, with whatever it depends on.
+        self.assertEqual([(v.key, v.value) for v in self.db.evaluate_model(self.variables["gw"].id).variables], [("gw", [20, 20, 24])])
         self.variable("a", "output", 1, "b + 1")
         self.variable("b", "output", 1, "a + 1")
         with self.assertRaisesRegex(ValueError, "cycle: a, b"):

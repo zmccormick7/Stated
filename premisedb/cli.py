@@ -106,7 +106,8 @@ def _parser():
     rec.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     command("relations", "relation_usage", "Count links by relation and the record kinds they connect.")
     check = command("check-model", "check_model",
-                    "Evaluate each output Variable's formula from the model's stored values and compare.", "model_id")
+                    "Evaluate each formula from stored values and compare: a Model's outputs, an Entity's features, "
+                    "or one feature Variable against what it depends on.", "model_id")
     check.add_argument("--tolerance", type=float, default=1e-4,
                        help="Relative difference allowed between a stored value and its formula (default 1e-4).")
     scenario = command("evaluate-model", "evaluate_model",
@@ -115,13 +116,13 @@ def _parser():
     scenario.add_argument("--set", dest="overrides", action="append", type=_where_item, metavar="KEY=VALUE",
                           help="Hold a Variable at VALUE, a number or a JSON list for a row; repeatable.")
     command("fill-model", "fill_model",
-            "Store each output Variable's exact formula value where the stored value differs; nothing else changes.",
-            "model_id", payload="author_id")
+            "Store each formula's exact value where the stored value differs, for a Model, an Entity's features "
+            "or one feature Variable; a changed value becomes a new version.", "model_id", payload="author_id")
     state = command("state", "state_rows",
-                    "Export the states written under a schema as change points: one row per Model and date on "
-                    "which a Variable changed, holding the latest version of every key by then.")
-    state.add_argument("--schema", help="Only Models whose attributes.schema is this name.")
-    state.add_argument("--entity", dest="entity_id", help="Only Models about this Entity.")
+                    "Export feature values (Variables about an Entity) as change points: one row per Entity and "
+                    "date on which a feature changed, holding the latest version of every feature by then.")
+    state.add_argument("--entity", dest="entity_id", help="Only this Entity.")
+    state.add_argument("--feature", dest="features", action="append", metavar="KEY", help="Only this feature; repeatable.")
     state.add_argument("--date", metavar="DATE", help="The state on one date (default: the cutoff, or today).")
     state.add_argument("--from", dest="start", metavar="DATE", help="A row at this date, then one at each change up to --to.")
     state.add_argument("--to", dest="end", metavar="DATE", help="Default: the cutoff, or today.")

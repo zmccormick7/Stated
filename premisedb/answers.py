@@ -206,7 +206,7 @@ def _chart_block(db, block, where, sources, used, problems):
 def _lever_block(db, block, where, sources, used, problems):
     """A lever: one input Variable to drag and one output to watch, evaluated live through the model."""
     try:
-        model_id, variables = db._model_variables(block["model"])
+        model_id, variables = db._variables_of(block["model"], latest=True)
     except (KeyError, ValueError, TypeError):
         problems.append(f"{where}: no Model {block['model']!r}")
         return None

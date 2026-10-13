@@ -98,7 +98,7 @@ Use these names so other agents can follow and filter your links. Link from the 
 
 | Relation | From → to | Meaning |
 | --- | --- | --- |
-| `about` | Finding, Question or Model → Entity | The record concerns this company, product, facility or market. |
+| `about` | Finding, Question, Model or Variable → Entity | The record concerns this company, product, facility or market. A Variable `about` an Entity is a feature value: one measured quantity of that Entity as of its date. |
 | `supported_by` | Finding or other record → Source | Cited evidence. Citations add this link automatically. |
 | `depends_on` | Finding or Variable → Finding or Variable | The conclusion or value rests on the target: evidence for a model input, an input of a model output, another model's output used as an input, or the model outputs an inference is drawn from. |
 | `contradicts` | Finding → Finding or Variable | The two conflict, or the evidence is incompatible with the Variable's value. Keep both current until the conflict is resolved. |

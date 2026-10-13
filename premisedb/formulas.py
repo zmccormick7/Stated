@@ -292,7 +292,8 @@ def check_model(variables: list[dict[str, object]], model_id: str, *, tolerance:
     by_key = _by_key(variables)
     values = {key: v.get("value") for key, v in by_key.items()}
     periods = {key: v["periods"] for key, v in by_key.items() if isinstance(v.get("periods"), list)}
-    outputs = [v for v in by_key.values() if v.get("role") == "output"]
+    # Every Variable with a formula is checked, whatever its role; an output without one is reported.
+    outputs = [v for v in by_key.values() if v.get("role") == "output" or v.get("formula") is not None]
     checked = []
     for variable in outputs:
         if variable.get("formula") is None:

@@ -346,23 +346,20 @@ class CLITests(unittest.TestCase):
 
     def test_fill_model_and_state_export(self):
         bank = self.create("Entity", "A bank")
-        model = self.call("create", "Model", "--input", "-", payload={
-            "text": "State", "author_id": "agent-a", "attributes": {"schema": "bank-state-v1"}})
-        self.call("link", model["id"], bank["id"], "about", "--input", "-", payload={"author_id": "agent-a"})
         keys = {}
-        for key, attributes in (("a", {"role": "input", "value": 2}),
-                                ("b", {"role": "output", "value": None, "formula": "a / 3"})):
+        for key, attributes in (("a", {"value": 2}), ("b", {"value": None, "formula": "a / 3"})):
             keys[key] = self.call("create", "Variable", "--input", "-", payload={
                 "text": key, "author_id": "agent-a", "attributes": {"key": key, **attributes}})
-            self.call("link", keys[key]["id"], model["id"], "in_model", "--input", "-", payload={"author_id": "agent-a"})
+            self.call("link", keys[key]["id"], bank["id"], "about", "--input", "-", payload={"author_id": "agent-a"})
         self.call("link", keys["b"]["id"], keys["a"]["id"], "depends_on", "--input", "-", payload={"author_id": "agent-a"})
-        filled = self.call("fill-model", model["id"][:8], "--input", "-", payload={"author_id": "agent-a"})
-        self.assertEqual(filled, {"model_id": model["id"],
+        filled = self.call("fill-model", keys["b"]["id"][:8], "--input", "-", payload={"author_id": "agent-a"})
+        self.assertEqual(filled, {"model_id": keys["b"]["id"],
                                   "written": [{"key": "b", "stored": None, "value": 2 / 3, "id": keys["b"]["id"]}]})
-        rows = self.call("state", "--schema", "bank-state-v1", "--entity", bank["id"][:8])["rows"]
+        self.assertEqual([c["exact"] for c in self.call("check-model", bank["id"])["checked"]], [True])
+        rows = self.call("state", "--entity", bank["id"][:8], "--feature", "b")["rows"]
         self.assertEqual([(r["entity"], r["date"], r["values"], r["stamps"]) for r in rows],
-                         [("A bank", model["as_of"], {"a": 2, "b": 2 / 3}, {"a": model["as_of"], "b": model["as_of"]})])
-        self.assertEqual(self.call("state", "--schema", "none")["rows"], [])
+                         [("A bank", keys["b"]["as_of"], {"b": 2 / 3}, {"b": keys["b"]["as_of"]})])
+        self.assertEqual(self.call("state", "--feature", "none")["rows"], [])
         self.assertEqual(self.call("state", "--from", "2020-01-01", "--to", "2020-12-31")["rows"], [])
         self.assertEqual(self.call("state", "--date", "2020-01-01", "--to", "2020-12-31", status=1),
                          {"error": "give --date or --from/--to, not both"})
