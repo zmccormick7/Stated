@@ -285,7 +285,7 @@ class CLITests(unittest.TestCase):
         self.assertEqual((result["model_id"], result["inputs"], result["outputs"], result["without_formula"]),
                          (model["id"], 2, 1, []))
         self.assertEqual(result["checked"], [{"key": "revenue", "stored": [11400, 13680], "computed": [11400, 13680],
-                                              "matches": True, "problems": []}])
+                                              "matches": True, "exact": True, "problems": []}])
         self.assertIn("not a Model", self.call("check-model", self.create("Finding", "x")["id"], status=1)["error"])
         scenario = self.call("evaluate-model", model["id"][:8], "--set", "price=600", "--set", "gw=[10, 24]")
         self.assertEqual(scenario["overrides"], {"price": 600, "gw": [10, 24]})
