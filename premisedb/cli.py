@@ -312,6 +312,7 @@ def _recall(db, options):
 def main(argv=None):
     options = vars(_parser().parse_args(argv))
     given, as_of = options.pop("db"), options.pop("as_of")
+    fixed = os.environ.get("PREMISEDB_AS_OF") or None
     if options["method"] == "ui":
         from .ui.server import serve
         try:
@@ -330,6 +331,8 @@ def main(argv=None):
     try:
         if str(path) == ":memory:":
             raise ValueError("The CLI requires a persistent database file")
+        if fixed and as_of != fixed:  # A session's cutoff is set by whoever started it, not chosen per command.
+            raise ValueError(f"the cutoff is fixed at {fixed} by PREMISEDB_AS_OF")
         if method is not None and not path.is_file():
             raise ValueError(f"Database does not exist: {path}. Use init to create it.")
         payload = {}
@@ -342,6 +345,9 @@ def main(argv=None):
             filename, url = options.pop("source_file"), options.pop("url")
             if (filename is None) == (url is None):
                 raise ValueError("give ingest a text file or --url, not both")
+            if url is not None and as_of:
+                raise ValueError("ingest --url is off at a cutoff: a fetched page carries today's date; "
+                                 "ingest a file with its publication date in attributes.published")
             if url is None:
                 data = Path(filename).read_bytes()  # A PDF is read for its text; anything else is the text itself.
                 options["document_text"] = pdf_text(data) if data.startswith(b"%PDF-") else data.decode("utf-8")

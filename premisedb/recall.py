@@ -91,8 +91,13 @@ def recall(db: RecordStore, query: str, *, seeds: Iterable[str] = (), max_record
 
     ranked = sorted(best.values(), key=lambda r: (-r.score, len(r.path), r.record.id))
     # Retired records still carry paths to what replaced or depended on them, but are not research to build on.
-    retired = sum(r.record.attributes.get("status") in RETIRED_STATUSES for r in ranked)
-    ranked = [r for r in ranked if r.record.attributes.get("status") not in RETIRED_STATUSES]
+    # A record is retired by its status, or by a `supersedes` link pointing at it, which is how a record
+    # written at another cutoff is retired, since its status cannot be edited from elsewhere.
+    def is_retired(record: Record) -> bool:
+        return (record.attributes.get("status") in RETIRED_STATUSES
+                or bool(db.connections(record.id, direction="in", relation="supersedes", limit=1).links))
+    retired = sum(is_retired(r.record) for r in ranked)
+    ranked = [r for r in ranked if not is_retired(r.record)]
     selected, rest = ranked[:max_records], ranked[max_records:]
     chosen = {r.record.id for r in selected}
 

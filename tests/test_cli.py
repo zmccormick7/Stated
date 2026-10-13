@@ -335,6 +335,12 @@ class CLITests(unittest.TestCase):
         finding = self.create("Finding", "Written at the cutoff.")
         self.assertEqual(finding["as_of"], "2023-02-24")
         self.assertEqual(self.call("search", "Release"), {"records": []})
+        self.assertEqual(self.call("--as-of", "2023-03-10", "search", "Release", status=1),
+                         {"error": "the cutoff is fixed at 2023-02-24 by PREMISEDB_AS_OF"})
+        self.assertEqual(self.call("ingest", "--url", "https://example.com/page", "--input", "-", status=1,
+                                   payload={"description": "Page", "author_id": "agent-a"}),
+                         {"error": "ingest --url is off at a cutoff: a fetched page carries today's date; "
+                                   "ingest a file with its publication date in attributes.published"})
         self.env["PREMISEDB_AS_OF"] = ""  # Empty means no cutoff, as an unset variable does.
         self.assertEqual(self.call("search", "Release", "--full"), {"records": [source]})
 

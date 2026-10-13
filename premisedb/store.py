@@ -335,6 +335,27 @@ class RecordStore:
     def _stamp(self) -> str:
         return self.as_of or datetime.now(UTC).date().isoformat()
 
+    def _check_editable(self, item: "Record | Link") -> None:
+        """A row written at a cutoff is edited only at that cutoff, and one written without a cutoff only
+        without one, so what a reader at a date sees is not rewritten from another date. Entities are
+        reference data, always seen, and exempt."""
+        if getattr(item, "kind", None) == "Entity":
+            return
+        written_at = item.as_of if item.as_of != item.updated_at[:10] else None
+        if written_at != self.as_of:
+            describe = lambda cutoff: f"as of {cutoff}" if cutoff else "without a cutoff"
+            raise ValueError(f"{item.id} was written {describe(written_at)} and cannot be edited "
+                             f"{describe(self.as_of)}; add your own record and link it (updates or supersedes)")
+
+    def _check_published(self, attributes: dict[str, object] | None) -> None:
+        """At a cutoff, a Source must carry a publication date on or before it, or it would never be seen."""
+        if self.as_of is None:
+            return
+        published = (attributes or {}).get("published")
+        if not isinstance(published, str) or _date(published[:10]) is None or published[:10] > self.as_of:
+            raise ValueError(f"a Source written as of {self.as_of} needs attributes.published, a date on or before "
+                             f"the cutoff; it has {published!r}")
+
     def _missing(self, record_id: str, link: bool = False) -> KeyError:
         """KeyError for an ID or prefix a read found nothing for, saying so when the cutoff is the reason."""
         table = "links" if link else "records"
@@ -496,6 +517,8 @@ class RecordStore:
         """Create a record; citations are resolved and linked supported_by in the same transaction."""
         _refuse_refs(text)
         attributes, source_ids = self._cite(attributes, citations)
+        if kind == "Source":
+            self._check_published(attributes)
         encoded = self._encode(attributes)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
@@ -511,6 +534,7 @@ class RecordStore:
         """
         if not isinstance(document_text, str) or not document_text:
             raise ValueError("document_text must be a nonempty string")
+        self._check_published(attributes)
         encoded = self._encode(attributes)
         content = document_text.encode("utf-8")
         digest = sha256(content).hexdigest()
@@ -624,7 +648,10 @@ class RecordStore:
         encoded = self._encode(attributes)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            self.read(record_id)  # A missing or unseen record is reported before anything is written.
+            current = self.read(record_id)  # A missing or unseen record is reported before anything is written.
+            self._check_editable(current)
+            if current.kind == "Source":
+                self._check_published(attributes)
             self._db.execute(
                 """UPDATE records SET text = ?, attributes = ?, author_id = ?, updated_at = ?, as_of = ?
                    WHERE id = ?""",
@@ -658,7 +685,10 @@ class RecordStore:
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             current = self.read(record_id)
+            self._check_editable(current)
             merged = {key: value for key, value in current.attributes.items() if key not in remove}
+            if current.kind == "Source":
+                self._check_published({**merged, **changes})
             self._db.execute(
                 """UPDATE records SET text = ?, attributes = ?, author_id = ?, updated_at = ?, as_of = ?
                    WHERE id = ?""",
@@ -774,7 +804,7 @@ class RecordStore:
         _refuse_refs(explanation)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            self.read_link(link_id)  # A missing link is reported before its new contents are checked.
+            self._check_editable(self.read_link(link_id))  # A missing link is reported before its contents are checked.
             values = self._link_values(from_id, to_id, relation, explanation, author_id)
             self._refuse_duplicate_link(values, link_id)
             self._db.execute(
@@ -795,6 +825,7 @@ class RecordStore:
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
             current = self.read_link(link_id)
+            self._check_editable(current)
             values = self._link_values(current.from_id if from_id is None else from_id,
                                        current.to_id if to_id is None else to_id,
                                        current.relation if relation is None else relation,
@@ -1137,9 +1168,9 @@ class RecordStore:
         return (self._record_key(from_id), self._record_key(to_id), relation,
                 explanation, author_id, datetime.now(UTC).isoformat())
 
-    @staticmethod
-    def _decode_document_context(source_id: str, row: sqlite3.Row | None) -> DocumentContext | None:
-        if row is None or row["title"] is None:
+    def _decode_document_context(self, source_id: str, row: sqlite3.Row | None) -> DocumentContext | None:
+        # A summary is written on the day it is generated, whatever the document's date, so a cutoff hides it.
+        if row is None or row["title"] is None or self.as_of is not None:
             return None
         return DocumentContext(source_id, row["title"], row["summary"], row["author_id"],
                                row["updated_at"], json.loads(row["provenance"]))
