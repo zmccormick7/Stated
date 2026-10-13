@@ -54,11 +54,12 @@ What this has done so far: a run of 274 company coverage packs, two sessions per
 
 ## Use your own agent
 
-Three skills teach an agent the graph. `premisedb ui` installs them; for any other harness, copy the folders under `premisedb/skills/` into its skills directory.
+Four skills teach an agent the graph. `premisedb ui` installs them; for any other harness, copy the folders under `premisedb/skills/` into its skills directory.
 
 - **premisedb-research**: recall what the graph holds, contribute findings with exact citations, and revise understanding as evidence changes.
 - **premisedb-answer**: return an answer document that passes `premisedb check-answer`.
 - **premisedb-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
+- **premisedb-state**: describe a company's state as of a cutoff date under a fixed schema, as a Model whose inputs are quoted from the filings a reader on that date could see and whose outputs are formulas, building on the state an earlier cutoff left.
 
 Point a session at the folder with `PREMISEDB_DB=/path/to/research.sqlite` and ask it to use the skill. The [CLI guide](docs/cli.md) covers every command, and the [Python API](docs/python-api.md) is there for agents and tools you write yourself:
 
@@ -97,11 +98,11 @@ PremiseDB is early software. The database format changes without migrations; rec
 
 What exists today:
 
-- The CLI, Python API and three skills, used daily by Claude Code and Codex.
+- The CLI, Python API and four skills. Three are used daily by Claude Code and Codex; the state skill has been tried on six banks at one cutoff and on one bank at two, in a workspace holding only their pre-cutoff filings.
 - The answer page with checked answers, levers, research runs and the notes, pause and finish controls.
 - A base layer covering the 1,000 largest US filers by public float, with the full text of each company's latest annual report and, for 474 of them, a coverage pack of its business, segments, key figures, relationships, risks and open questions. Driver models exist for a handful of companies.
 
-What is being worked on: coverage packs for the rest of the top 1,000, driver models with sourced inputs for covered companies through the go-deeper skill, and quarterly updates as filings land. The [design specification](docs/database-spec.md) records the reasoning behind the schema.
+What is being worked on: coverage packs for the rest of the top 1,000, driver models with sourced inputs for covered companies through the go-deeper skill, quarterly updates as filings land, and runs that describe many companies at many past dates for point-in-time features. The [design specification](docs/database-spec.md) records the reasoning behind the schema.
 
 ## Contributing
 
