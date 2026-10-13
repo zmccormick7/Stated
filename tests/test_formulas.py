@@ -184,10 +184,11 @@ class ModelCheckTests(_ModelCase):
             with self.subTest(tolerance=tolerance), self.assertRaises(ValueError):
                 self.db.check_model(self.model.id, tolerance=tolerance)
         self.variable("a", "input", 1)
-        self.db.create("Variable", text="dup", author_id="a", attributes={"key": "a", "role": "input"})
-        self.db.create_link(self.db.search_records("dup")[0].id, self.model.id, "in_model", author_id="a")
-        with self.assertRaisesRegex(ValueError, "share the key"):
-            self.db.check_model(self.model.id)
+        self.variable("double", "output", 4, "a * 2", ["a"])
+        # A second Variable with the same key is a later version of it; the model reads the latest.
+        self.db.create_link(self.db.create("Variable", text="a", author_id="a", attributes={"key": "a", "role": "input", "value": 2}).id,
+                            self.model.id, "in_model", author_id="a")
+        self.assertEqual([(c.key, c.computed) for c in self.db.check_model(self.model.id).checked], [("double", 4)])
         self.assertEqual(self.db.check_model(self.db.create("Model", text="Empty", author_id="a").id).checked, ())
 
 
