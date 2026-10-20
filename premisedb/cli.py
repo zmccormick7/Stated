@@ -58,7 +58,7 @@ def _parser():
     export.add_argument("--version", required=True, help="Version label recorded in the file, such as 2026.09.30.")
     command("attach-layer", "attach_layer",
             "Attach a published layer file read-only, or update an attached layer to the file's version.", "path")
-    command("create", "create", "Create an Entity, Source, Finding, Question, Model or Variable.",
+    command("create", "create", "Create an Entity, Source, Finding, Question, Model, Variable or Feature.",
             "kind", payload=record)
     command("get", "read", "Read a current record.", "record_id")
     command("update", "update", "Replace a record's text and attributes in full.",
@@ -217,7 +217,7 @@ def _search_documents(db, options):
     return [{**asdict(excerpt.segment), "token_count": excerpt.token_count} for excerpt in result.excerpts]
 
 
-PREVIEW_ATTRIBUTES = ("basis", "status", "key", "value")
+PREVIEW_ATTRIBUTES = ("basis", "status", "key", "type", "value")
 
 
 def _preview(record, *, edits=True):

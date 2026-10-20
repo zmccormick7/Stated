@@ -16,7 +16,7 @@ CREATE TABLE records (
     record_key INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
     kind TEXT NOT NULL CHECK (kind IN
-        ('Entity', 'Source', 'Finding', 'Question', 'Model', 'Variable')),
+        ('Entity', 'Source', 'Finding', 'Question', 'Model', 'Variable', 'Feature')),
     text TEXT NOT NULL,
     attributes TEXT NOT NULL CHECK (json_valid(attributes)
         AND json_type(attributes) = 'object'),
@@ -53,12 +53,14 @@ CREATE INDEX links_layer ON links (layer_key, link_key);
 -- (attributes.published, a date; a Source without one is never seen). A disclosed Finding is seen from
 -- the latest publication date of the Sources it cites, since its figure is checked against them
 -- whenever it was written; when it cites none, or one without a date, from its stamp. Every other
--- record is seen from its stamp. Entities are reference data and always seen. The views filter
--- evidence by date; they do not reconstruct earlier contents, which are not kept.
+-- record is seen from its stamp. Entities are reference data and always seen, and so are Features: a
+-- definition is the procedure a session at any cutoff follows, and its stamp still records when it was
+-- written. The views filter evidence by date; they do not reconstruct earlier contents, which are not kept.
 CREATE VIEW record_visibility AS
     SELECT r.record_key,
            CASE r.kind
                WHEN 'Entity' THEN ''
+               WHEN 'Feature' THEN ''
                WHEN 'Source' THEN CASE WHEN json_extract(r.attributes, '$.published')
                                             GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'
                                        THEN substr(json_extract(r.attributes, '$.published'), 1, 10) END

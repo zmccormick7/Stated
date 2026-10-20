@@ -12,7 +12,7 @@ Agents conduct investigations through their existing harnesses. PremiseDB owns t
 
 The standard document-retrieval profile uses contextualized embeddings, lexical retrieval, semantic reranking and RSE. Provider choice is configuration. A text query can be embedded and reranked by PremiseDB without requiring the caller to perform those steps. Lexical-only retrieval is an explicit alternative profile, not a restriction on the standard pipeline; exact reads and graph operations do not need to invoke a model.
 
-The six research record types are **Entity, Source, Finding, Question, Model and Variable**. Relationships are addressable graph infrastructure. Document chunks, database transactions and index generations are storage infrastructure. There is no financial **Run** record in v0.
+The seven research record types are **Entity, Source, Finding, Question, Model, Variable and Feature**. Relationships are addressable graph infrastructure. Document chunks, database transactions and index generations are storage infrastructure. There is no financial **Run** record in v0.
 
 The main product contract is: retrieve relevant understanding, expose useful connections, and update that understanding as research progresses.
 
@@ -103,6 +103,7 @@ author_id, updated_at, status
 | Question | Question text and state such as open/resolved; answering evidence remains linked and inspectable. |
 | Model | Purpose, implementation reference and covered entities. The reference may identify a workbook or code artifact. |
 | Variable | Owning Model, definition, input/intermediate/output role, units, period, optional scenario, current value, external binding and last synchronization time. |
+| Feature | The instructions for producing one feature's value for a subject as of a date (its text), the `key` its values carry, their `type` (number with optional `min`/`max`, count, boolean, or category with `categories`), optional `units`, and a `formula` for a derived feature. Seen at every cutoff; fixed once values rest on it. |
 
 Start with one Variable per model/metric/period/scenario coordinate. Use decimal strings for numeric values, explicit currencies and scales, and `null` for unknown values. An absent value is not zero. A binding such as a workbook named range is an external location, not the Variable's identity. Synchronization replaces the current value and updates its timestamp. The external model engine remains responsible for coherent recalculation.
 
