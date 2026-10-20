@@ -59,7 +59,7 @@ Four skills teach an agent the graph. `premisedb ui` installs them; for any othe
 - **premisedb-research**: recall what the graph holds, contribute findings with exact citations, and revise understanding as evidence changes.
 - **premisedb-answer**: return an answer document that passes `premisedb check-answer`.
 - **premisedb-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
-- **premisedb-state**: compute one feature of a company as of a cutoff date, from instructions the caller supplies, as a value quoted from the filings a reader on that date could see or computed by a formula from such values.
+- **premisedb-state**: produce one feature's value for a subject as of a cutoff date, following the Feature's instructions over everything a reader on that date could see, or computed by its formula from other features.
 
 Point a session at the folder with `PREMISEDB_DB=/path/to/research.sqlite` and ask it to use the skill. The [CLI guide](docs/cli.md) covers every command, and the [Python API](docs/python-api.md) is there for agents and tools you write yourself:
 
@@ -84,7 +84,8 @@ Six record types, connected by named links:
 | **Finding** | A statement to build on or challenge, labelled disclosed, inference or assumption, citing its source. |
 | **Question** | Something unresolved and worth investigating. |
 | **Model** | A driver model of a business. |
-| **Variable** | A model input or output, with its value, units, periods and the evidence it rests on. |
+| **Variable** | A model input or output, or a feature value, with its value, units, periods and the evidence it rests on. |
+| **Feature** | The instructions an agent follows to produce one feature's value for a subject as of a date, with the value's type: a number, a count, yes or no, or one of fixed categories. |
 
 Links such as `about`, `supported_by`, `depends_on`, `contradicts` and `raises` carry the reasoning: a Variable depends on a Finding, which is supported by a Source and raises a Question. Models are checked with `premisedb check-model`, which recomputes every output's formula from the stored inputs, and evaluated with overrides for the levers on the answer page.
 

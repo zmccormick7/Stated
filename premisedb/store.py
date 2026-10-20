@@ -15,7 +15,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 14
+_SCHEMA_VERSION = 15
 
 
 @dataclass(frozen=True)
@@ -180,7 +180,7 @@ class SourceSegment:
     document_context: DocumentContext | None = None
 
 
-KINDS = ("Entity", "Source", "Finding", "Question", "Model", "Variable")
+KINDS = ("Entity", "Source", "Finding", "Question", "Model", "Variable", "Feature")
 # A new record named by its contribute ref inside text or an explanation, replaced by the record's ID.
 _REF = re.compile(r"\{ref:([^{}]+)\}")
 # Characters that extracted text often swaps for one another, used only to suggest a corrected quote.
@@ -215,6 +215,66 @@ def _date(value: str):
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+FEATURE_TYPES = ("number", "count", "boolean", "category")
+_DEFINING = ("key", "type", "units", "min", "max", "categories", "formula")  # Fixed once a value rests on them.
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _check_definition(attributes: dict[str, object]) -> None:
+    """A Feature names the key its values carry and their type: a number, optionally within `min` and `max`;
+    a count; yes or no; or one of a fixed list of `categories`. A derived Feature also carries its `formula`."""
+    kind, categories = attributes.get("type"), attributes.get("categories")
+    if not isinstance(attributes.get("key"), str) or not attributes["key"].strip():
+        raise ValueError("a Feature needs attributes.key, the name its values carry")
+    if kind not in FEATURE_TYPES:
+        raise ValueError(f"a Feature needs attributes.type, one of {', '.join(FEATURE_TYPES)}")
+    if (kind == "category") != (categories is not None):
+        raise ValueError("a Feature has attributes.categories exactly when its type is category")
+    if categories is not None and (not isinstance(categories, list) or not categories or len(set(map(str, categories)))
+                                   != len(categories) or any(not isinstance(c, str) or not c.strip() for c in categories)):
+        raise ValueError("attributes.categories must be a list of distinct, nonblank strings")
+    for bound in ("min", "max"):
+        if attributes.get(bound) is not None and (kind not in ("number", "count") or not _is_number(attributes[bound])):
+            raise ValueError(f"attributes.{bound} must be a number, on a Feature of type number or count")
+    if _is_number(attributes.get("min")) and _is_number(attributes.get("max")) and attributes["min"] > attributes["max"]:
+        raise ValueError("attributes.min must not be above attributes.max")
+    if attributes.get("formula") is not None and not isinstance(attributes["formula"], str):
+        raise ValueError("attributes.formula must be a string")
+
+
+def _check_value(attributes: dict[str, object], feature: "Record") -> None:
+    """A value of a Feature carries its key and its formula, and is null, a value of its type, or a list of
+    such values over periods."""
+    definition = feature.attributes
+    if attributes.get("key") != definition["key"]:
+        raise ValueError(f"a value of Feature {feature.id} carries key {definition['key']!r}, not {attributes.get('key')!r}")
+    if attributes.get("formula") != definition.get("formula"):
+        raise ValueError(f"a value of Feature {feature.id} carries its formula, {definition.get('formula')!r}")
+    kind, low, high = definition["type"], definition.get("min"), definition.get("max")
+
+    def fits(value: object) -> bool:
+        if value is None:
+            return True
+        if kind == "boolean":
+            return isinstance(value, bool)
+        if kind == "category":
+            return isinstance(value, str) and value in definition["categories"]
+        return (_is_number(value) and (kind == "number" or (value == int(value) and value >= 0))
+                and (low is None or value >= low) and (high is None or value <= high))
+
+    value = attributes.get("value")
+    if not all(fits(v) for v in (value if isinstance(value, list) else [value])):
+        expected = {"boolean": "true or false", "count": "a whole number, 0 or more", "number": "a number",
+                    "category": f"one of {', '.join(map(repr, definition.get('categories') or ()))}"}[kind]
+        bounds = " ".join(part for part in (f"from {low}" if low is not None else "",
+                                            f"to {high}" if high is not None else "") if part)
+        raise ValueError(f"{value!r} is not a value of Feature {definition['key']}: it takes {expected}"
+                         f"{' ' + bounds if bounds else ''}, or null")
 
 
 def _check_kind(kind: str | None) -> None:
@@ -831,6 +891,7 @@ class RecordStore:
             self._db.execute("BEGIN IMMEDIATE")
             current = self.read(record_id)
             self._check_editable(current)
+            self._check_contents(current, text, attributes or {})
             if current.kind == "Source":
                 self._check_published(attributes)
             self._db.execute(
@@ -857,6 +918,7 @@ class RecordStore:
         encoded = self._encode(attributes)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
+            self._check_contents(current, text, attributes)
             version = self._insert_record("Variable", text, encoded, author_id)
             self._link_sources(version.id, source_ids, author_id)
             self._insert_link(version.id, current.id, "updates", "The same quantity as of a later date.", author_id)
@@ -905,6 +967,7 @@ class RecordStore:
             current = self.read(record_id)
             self._check_editable(current)
             merged = {key: value for key, value in current.attributes.items() if key not in remove}
+            self._check_contents(current, current.text if text is None else text, {**merged, **changes})
             if current.kind == "Source":
                 self._check_published({**merged, **changes})
             self._db.execute(
@@ -1022,7 +1085,9 @@ class RecordStore:
         _refuse_refs(explanation)
         with self._db:
             self._db.execute("BEGIN IMMEDIATE")
-            self._check_editable(self.read_link(link_id))  # A missing link is reported before its contents are checked.
+            current = self.read_link(link_id)  # A missing link is reported before its contents are checked.
+            self._check_editable(current)
+            self._check_link_change(current, relation, from_id, to_id)
             values = self._link_values(from_id, to_id, relation, explanation, author_id)
             self._refuse_duplicate_link(values, link_id)
             self._db.execute(
@@ -1044,6 +1109,9 @@ class RecordStore:
             self._db.execute("BEGIN IMMEDIATE")
             current = self.read_link(link_id)
             self._check_editable(current)
+            self._check_link_change(current, current.relation if relation is None else relation,
+                                    current.from_id if from_id is None else from_id,
+                                    current.to_id if to_id is None else to_id)
             values = self._link_values(current.from_id if from_id is None else from_id,
                                        current.to_id if to_id is None else to_id,
                                        current.relation if relation is None else relation,
@@ -1323,12 +1391,49 @@ class RecordStore:
         link_id = str(uuid4())
         values = self._link_values(from_id, to_id, relation, explanation, author_id)
         self._refuse_duplicate_link(values)
+        if relation == "defined_by":
+            self._check_defined_by(from_id, to_id)
         self._db.execute(
             f"""INSERT INTO links (from_key, to_key, relation, explanation, author_id, updated_at,
                 as_of, id, created_by, layer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, {_WRITABLE_LAYER})""",
             (*values, self._stamp(), link_id, author_id),
         )
         return self.read_link(link_id)
+
+    def _feature_of(self, record_id: str) -> Record | None:
+        """The Feature a Variable is a value of, if any."""
+        row = self._db.execute("""SELECT f.id FROM links l JOIN records f ON f.record_key = l.to_key
+                                  WHERE l.from_key = ? AND l.relation = 'defined_by'""",
+                               (self._record_key(record_id),)).fetchone()
+        return None if row is None else self.read(row[0])
+
+    def _check_defined_by(self, from_id: str, to_id: str) -> None:
+        value, feature = self.read(self.resolve_id(from_id)), self.read(self.resolve_id(to_id))
+        if value.kind != "Variable" or feature.kind != "Feature":
+            raise ValueError("defined_by links a Variable to the Feature it is a value of")
+        if (existing := self._feature_of(value.id)) is not None:
+            raise ValueError(f"{value.id} is already a value of Feature {existing.id}")
+        _check_value(value.attributes, feature)
+
+    def _check_contents(self, current: Record, text: str, attributes: dict[str, object]) -> None:
+        """New contents for a value of a Feature stay within it, and a Feature that values rest on keeps its
+        instructions and definition, so each value stays tied to the instructions it was made under."""
+        if current.kind == "Variable" and (feature := self._feature_of(current.id)) is not None:
+            _check_value(attributes, feature)
+        if current.kind != "Feature":
+            return
+        _check_definition(attributes)
+        if (text != current.text or any(attributes.get(k) != current.attributes.get(k) for k in _DEFINING)) and \
+                self._db.execute("SELECT 1 FROM links WHERE to_key = ? AND relation = 'defined_by'",
+                                 (self._record_key(current.id),)).fetchone():
+            raise ValueError(f"values rest on Feature {current.id}, so its instructions and definition are fixed; "
+                             "write the new ones as a new Feature linked updates this one")
+
+    def _check_link_change(self, current: Link, relation: str, from_id: str, to_id: str) -> None:
+        """Which Feature a value belongs to is fixed: a defined_by link changes only its explanation."""
+        if "defined_by" in (current.relation, relation) and (relation, self.resolve_id(from_id), self.resolve_id(to_id)) \
+                != (current.relation, current.from_id, current.to_id):
+            raise ValueError("a defined_by link changes only its explanation; write a new value of the other Feature")
 
     def _refuse_duplicate_link(self, values: tuple, link_id: str | None = None) -> None:
         """One link per endpoints and relation; a second would only repeat or split its explanation."""
@@ -1373,6 +1478,8 @@ class RecordStore:
 
     def _insert_record(self, kind: str, text: str, encoded: str, author_id: str,
                        record_id: str | None = None) -> Record:
+        if kind == "Feature":
+            _check_definition(json.loads(encoded))
         record_id = record_id or str(uuid4())
         self._db.execute(
             f"""INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, as_of, layer_key)
