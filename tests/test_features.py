@@ -41,7 +41,9 @@ class FeatureDefinitionTests(unittest.TestCase):
                 ({"key": "x", "type": "category", "categories": ["a", "a"]}, "distinct"),
                 ({"key": "x", "type": "boolean", "min": 0}, "type number or count"),
                 ({"key": "x", "type": "number", "min": 2, "max": 1}, "not be above"),
-                ({"key": "x", "type": "number", "formula": 3}, "formula must be a string")):
+                ({"key": "x", "type": "number", "formula": 3}, "formula must be a nonblank string"),
+                ({"key": "x", "type": "number", "formula": "a * 2 +"}, "formula: formula syntax"),
+                ({"key": "x", "type": "number", "formula": "log(a)"}, "formula calls must be")):
             with self.subTest(attributes=attributes), self.assertRaisesRegex(ValueError, message):
                 self.db.create("Feature", text="Instructions.", author_id="researcher", attributes=attributes)
         with self.assertRaisesRegex(ValueError, "needs attributes.type"):

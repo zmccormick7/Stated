@@ -243,8 +243,12 @@ def _check_definition(attributes: dict[str, object]) -> None:
             raise ValueError(f"attributes.{bound} must be a number, on a Feature of type number or count")
     if _is_number(attributes.get("min")) and _is_number(attributes.get("max")) and attributes["min"] > attributes["max"]:
         raise ValueError("attributes.min must not be above attributes.max")
-    if attributes.get("formula") is not None and not isinstance(attributes["formula"], str):
-        raise ValueError("attributes.formula must be a string")
+    if attributes.get("formula") is not None:
+        from .formulas import parse
+        try:
+            parse(attributes["formula"])
+        except ValueError as error:
+            raise ValueError(f"attributes.formula: {error}") from None
 
 
 def _check_value(attributes: dict[str, object], feature: "Record") -> None:
