@@ -97,7 +97,8 @@ class ClaudeCode:
         return (Path.home() / ".claude" / "skills",)
 
     def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None, web: bool = False,
-            timeout: float | None = None, on_progress=lambda text: None) -> Reply:
+            timeout: float | None = None, on_progress=lambda text: None, writable=()) -> Reply:
+        # `writable` is for sandboxed harnesses; Claude Code's own CLI tool writes the database itself.
         # The least the product needs: its own CLI, files in the workspace, and the web when the turn's
         # effort calls for outside sources. Everything else follows the user's own settings, so a tool
         # they have not allowed is refused as usual.
@@ -154,11 +155,13 @@ class Codex:
         return (Path.home() / ".agents" / "skills",)
 
     def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None, web: bool = False,
-            timeout: float | None = None, on_progress=lambda text: None) -> Reply:
-        # workspace-write: the least that lets SQLite open the workspace database; the rest is the user's config.
+            timeout: float | None = None, on_progress=lambda text: None, writable=()) -> Reply:
+        # workspace-write: the least that lets SQLite open the workspace database (in `cwd`, or in a folder
+        # given in `writable`); the rest is the user's config.
         options = ["--json", "--skip-git-repo-check", "-s", "workspace-write"] + (["-m", self.model] if self.model else []) + (
             ["-c", f'model_reasoning_effort="{self.reasoning_effort}"'] if self.reasoning_effort else []) + (
-            ["-c", 'web_search="live"', "-c", "sandbox_workspace_write.network_access=true"] if web else [])
+            ["-c", 'web_search="live"', "-c", "sandbox_workspace_write.network_access=true"] if web else []) + [
+            part for folder in writable for part in ("--add-dir", str(folder))]
         with tempfile.TemporaryDirectory() as directory:
             last = Path(directory) / "last.txt"
             command = [self.executable, "exec", *options, "-o", str(last)] + (

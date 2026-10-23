@@ -86,7 +86,7 @@ Leakage cannot be proven zero. The case is structural, backed by audits:
 1. **Collect documents as filed.** Ingest each filing, transcript or release as a Source with `published` set to the date it became public, and ideally `document_type`. A Source without a publication date is never seen at any cutoff.
 2. **Create the subjects.** One Entity per subject, including those that later failed, merged or were delisted.
 3. **Define the features**, without a cutoff, before any values. Each definition's `written_at` records when its instructions were fixed.
-4. **Schedule and run sessions at cutoffs.** Give each feature a schedule, and for each (subject, date) that `pending` lists, open a fresh agent session with `PREMISEDB_AS_OF` set to the date, web access off, and the premisedb-state skill. Sessions for the same feature and subject run in date order, since each starts from the previous value; different subjects can run in parallel. Then run `fill-model` for derived features.
+4. **Schedule and run sessions at cutoffs.** Give each feature a schedule; `premisedb run-features FEATURE --subjects-file FILE --workers N` then works through what `pending` lists, opening a fresh agent session for each (subject, date) with `PREMISEDB_AS_OF` set to the date, the web off, and the premisedb-state skill. Sessions for the same feature and subject run in date order, since each starts from the previous value; different subjects run in parallel. A run that stops is resumed by running it again. Then run `fill-model` for derived features.
 5. **Export** with `premisedb state` and forward-fill to the frequency your model needs.
 
 For example, a feature defined once:
@@ -118,8 +118,8 @@ JSON
 
 These parts of the workflow are designed but not yet in PremiseDB; until they are, they are scripts you write around it:
 
-- A runner that works through that list, opening sessions at each cutoff.
-- Reports for repeat-run agreement and for values before and after an agent model's training cutoff.
+- Derived features computed by the runner as their inputs change; for now, run `fill-model`.
+- Measuring residual lookahead: how a feature, and the agents producing it, behave before and after the agent model's training cutoff.
 - A daily feature table; `state` exports change points.
 
 Training the predictive model is outside PremiseDB: the feature table is where it starts.
