@@ -26,7 +26,7 @@ Find a few entry points, then walk the graph from them. Much of what matters is 
 
 Entry points show how search or seeds found them. Records reached by walking show `via`, a short ID of their entry point, and the `path` of relations from it. `evidence` shows one quote per record, and `coverage` counts what was left out, including `retired` records (status `superseded` or `retracted`) that were walked through but not returned. Use `get` or `--full` for more. Add `--seed ID` (repeatable) for records you already know are relevant; seeds rank first. Record search matches any query word, so key terms give better entry points than a long question. Read the evidence and issues before concluding. Use the steps below to go further: search other terms, `expand` from frontier records, or check cited passages.
 
-`search`, `list` and `expand` show previews: each record's ID, kind, the start of its text, its `basis`, `status`, `key`, `type` and `value` where present, how many sources it cites, its last editor (`author_id`, plus `created_by` when someone else created it), `updated_at` and `layer`. That is usually enough to tell a disclosed fact from an inference, or an open Question from an answered one, without fetching the record.
+`search`, `list` and `expand` show previews: each record's ID, kind, the start of its text, its `basis`, `status`, `key` and `value` where present, how many sources it cites, its last editor (`author_id`, plus `created_by` when someone else created it), `updated_at` and `layer`. That is usually enough to tell a disclosed fact from an inference, or an open Question from an answered one, without fetching the record.
 
 **1. Find entry points.**
 - `search` record text with company names, aliases and business concepts. Record search matches whole words in record text, not attributes: `TSM` does not find `TSMC`. One empty result does not establish that something is absent. Try several names before creating an Entity, and reuse existing Entity identities when they refer to the same thing.
@@ -98,7 +98,7 @@ Use these names so other agents can follow and filter your links. Link from the 
 
 | Relation | From → to | Meaning |
 | --- | --- | --- |
-| `about` | Finding, Question, Model or Variable → Entity | The record concerns this company, product, facility or market. A Variable `about` an Entity and `defined_by` a Feature is a feature value: that Feature's reading of the Entity as of its date. |
+| `about` | Finding, Question, Model or Variable → Entity | The record concerns this company, product, facility or market. A Variable `about` an Entity whose `feature` attribute names a feature definition is a feature value: that feature's reading of the Entity as of its date. |
 | `supported_by` | Finding or other record → Source | Cited evidence. Citations add this link automatically. |
 | `depends_on` | Finding or Variable → Finding or Variable | The conclusion or value rests on the target: evidence for a model input, an input of a model output, another model's output used as an input, or the model outputs an inference is drawn from. |
 | `contradicts` | Finding → Finding or Variable | The two conflict, or the evidence is incompatible with the Variable's value. Keep both current until the conflict is resolved. |
@@ -110,7 +110,6 @@ Use these names so other agents can follow and filter your links. Link from the 
 | `answered_by` | Question → Finding | The Finding resolves the Question. |
 | `partly_answered_by` | Question → Finding | The Finding answers part of the Question, which stays open. |
 | `in_model` | Variable → Model | The Variable is an input or output of that model. |
-| `defined_by` | Variable → Feature | The Variable is a value of that Feature, made under its instructions; it carries the Feature's `key` and a value of its `type`. One per Variable. |
 | `shares_driver` | Variable → Variable in another model | Both move with the same underlying factor, though neither is computed from the other. Name the factor in the explanation. |
 
 Use `depends_on` only for real dependence; for evidence that bears on a record without determining it, use `corroborates` when it confirms the target, `qualifies` when it adds a condition or caveat, or a Question. `premisedb relations` shows which relations the workspace uses, between which record kinds, and how often. When none of these fits, first reuse a name already in use for the same meaning. Otherwise choose a clear new name and describe it in the workspace's instructions so others use it consistently.
