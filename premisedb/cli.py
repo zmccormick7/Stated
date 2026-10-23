@@ -162,6 +162,15 @@ def _parser():
     runner.add_argument("--harness", default="claude-code", choices=["claude-code", "codex"])
     runner.add_argument("--model", help="With --harness codex: the model to pass to codex exec.")
     runner.add_argument("--effort", dest="reasoning_effort", help="With --harness codex: the model_reasoning_effort.")
+    deriving = command("derive-features", "derive_features",
+                       "Compute each subject's derived features at every date an input changed, in date order; "
+                       "run-features does this after each subject's sessions.")
+    deriving.add_argument("--subject", dest="subject_ids", action="append", default=[], metavar="ENTITY_ID")
+    deriving.add_argument("--subjects-file", metavar="FILE", help="A file of Entity IDs, one per line.")
+    deriving.add_argument("--from", dest="start", metavar="DATE")
+    deriving.add_argument("--to", dest="end", metavar="DATE")
+    deriving.add_argument("--author", dest="author_id", default="derive-features",
+                          help="author_id for the values written (default: derive-features).")
     command("confirm", "confirm_value",
             "Record that a feature's latest value about its subject still holds on this date, instead of "
             "writing it again.", "value_id", payload="author_id")
@@ -232,22 +241,27 @@ def _parser():
 def _run_features(path, options, cutoff):
     """Run a feature's pending sessions, printing each session's result to stderr as it ends and the run's
     summary to stdout."""
-    from .feature_runs import run_features
+    from .feature_runs import derive_features, run_features
     from .ui.harness import ClaudeCode, Codex
     from .ui.server import install_skills
     try:
         if cutoff:
-            raise ValueError("run-features runs without a cutoff; it opens each session at its own date")
+            raise ValueError(f"{options['command']} runs without a cutoff; it works at each date in turn")
         if not path.is_file():
             raise ValueError(f"Database does not exist: {path}. Use init to create it.")
-        if options["harness"] != "codex" and (options["model"] or options["reasoning_effort"]):
-            raise ValueError("--model and --effort apply to the codex harness")
-        harness = (Codex(model=options["model"], reasoning_effort=options["reasoning_effort"])
-                   if options["harness"] == "codex" else ClaudeCode())
         subjects = list(options["subject_ids"])
         if options["subjects_file"]:
             subjects += [line.strip() for line in Path(options["subjects_file"]).read_text(encoding="utf-8").splitlines()
                          if line.strip() and not line.startswith("#")]
+        if options["method"] == "derive_features":
+            made = derive_features(path, subjects, author_id=options["author_id"], start=options["start"],
+                                   end=options["end"])
+            print(json.dumps({"derived": [asdict(item) for item in made]}))
+            return 0
+        if options["harness"] != "codex" and (options["model"] or options["reasoning_effort"]):
+            raise ValueError("--model and --effort apply to the codex harness")
+        harness = (Codex(model=options["model"], reasoning_effort=options["reasoning_effort"])
+                   if options["harness"] == "codex" else ClaudeCode())
         install_skills(harness)
         report = lambda result: print(json.dumps(asdict(result)), file=sys.stderr, flush=True)
         result = run_features(path, options["feature"], subjects, harness=harness, workers=options["workers"],
@@ -260,7 +274,9 @@ def _run_features(path, options, cutoff):
         return 1
     print(json.dumps({"feature_id": result.feature_id, "key": result.key, "remaining": result.remaining,
                       "sessions": len(result.sessions), "done": sum(s.done for s in result.sessions),
-                      "failed": [asdict(s) for s in result.sessions if not s.done]}))
+                      "failed": [asdict(s) for s in result.sessions if not s.done],
+                      "derived": len([d for d in result.derived if d.id]),
+                      "not_derived": [asdict(d) for d in result.derived if d.problem]}))
     return 0
 
 
@@ -412,7 +428,7 @@ def main(argv=None):
             print(json.dumps({"error": str(error)}), file=sys.stderr)
             return 1
     path = Path(given or "research.sqlite")
-    if options["method"] == "run_features":
+    if options["method"] in ("run_features", "derive_features"):
         return _run_features(path, options, fixed or as_of)
     for name in ("where", "overrides"):
         if options.get(name) is not None:
