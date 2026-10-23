@@ -58,7 +58,7 @@ def _parser():
     export.add_argument("--version", required=True, help="Version label recorded in the file, such as 2026.09.30.")
     command("attach-layer", "attach_layer",
             "Attach a published layer file read-only, or update an attached layer to the file's version.", "path")
-    command("create", "create", "Create an Entity, Source, Finding, Question, Model, Variable or Feature.",
+    command("create", "create", "Create an Entity, Source, Finding, Question, Model or Variable.",
             "kind", payload=record)
     command("get", "read", "Read a current record.", "record_id")
     command("update", "update", "Replace a record's text and attributes in full.",
@@ -127,6 +127,17 @@ def _parser():
     state.add_argument("--from", dest="start", metavar="DATE", help="A row at this date, then one at each change up to --to.")
     state.add_argument("--to", dest="end", metavar="DATE", help="Default: the cutoff, or today.")
     state.add_argument("--limit", type=int, default=1000)
+    definition = "author_id, instructions, type (number, count, boolean or category), optional units, min, max, " \
+                 "categories (for a category) and formula (for a derived feature)"
+    command("define-feature", "define_feature",
+            "Define a feature: the instructions an agent follows for one value of a subject as of a date, and the "
+            "value's type. New instructions for a defined key name the current definition in replaces.",
+            payload="key, " + definition + ", replaces")
+    command("update-feature", "update_feature", "Rewrite a feature definition that no value names yet.",
+            "feature_id", payload=definition)
+    command("feature", "read_feature", "Read a feature definition by ID, or the current one for a key.", "feature")
+    features = command("features", "list_features", "List the current feature definitions by key.")
+    features.add_argument("--replaced", action="store_true", help="Include definitions that were replaced.")
     command("check-answer", "check_answer",
             "Check an answer document against the graph: its sources, quotes and every charted figure.",
             payload="an answer document: title, body, optional sources and blocks")
@@ -217,7 +228,7 @@ def _search_documents(db, options):
     return [{**asdict(excerpt.segment), "token_count": excerpt.token_count} for excerpt in result.excerpts]
 
 
-PREVIEW_ATTRIBUTES = ("basis", "status", "key", "type", "value")
+PREVIEW_ATTRIBUTES = ("basis", "status", "key", "value")
 
 
 def _preview(record, *, edits=True):
@@ -260,7 +271,7 @@ def _compact(db, method, result, options):
 
 # Every result is a JSON object; collections sit under a named key so parsers can rely on one shape.
 LIST_KEYS = {"search_records": "records", "search_documents": "excerpts", "locate_source_text": "matches",
-             "state_rows": "rows",
+             "state_rows": "rows", "list_features": "features",
              "relation_usage": "relations", "layers": "layers"}
 
 

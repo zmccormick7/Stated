@@ -16,7 +16,7 @@ CREATE TABLE records (
     record_key INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
     kind TEXT NOT NULL CHECK (kind IN
-        ('Entity', 'Source', 'Finding', 'Question', 'Model', 'Variable', 'Feature')),
+        ('Entity', 'Source', 'Finding', 'Question', 'Model', 'Variable')),
     text TEXT NOT NULL,
     attributes TEXT NOT NULL CHECK (json_valid(attributes)
         AND json_type(attributes) = 'object'),
@@ -28,6 +28,28 @@ CREATE TABLE records (
     layer_key INTEGER NOT NULL REFERENCES layers (layer_key)
 );
 CREATE INDEX records_layer ON records (layer_key, record_key);
+CREATE INDEX records_feature ON records (json_extract(attributes, '$.feature')) WHERE kind = 'Variable';
+
+-- Feature definitions: the instructions an agent follows to produce one feature's value for a subject as of
+-- a date, and the type of that value. They are procedures, not knowledge, so they are not records: every
+-- cutoff reads them alike. A value is a Variable whose attributes.feature is a definition's id. A definition
+-- is rewritten only while no value names it; new instructions for a key then replace it.
+CREATE TABLE features (
+    feature_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    key TEXT NOT NULL CHECK (length(trim(key)) > 0),
+    instructions TEXT NOT NULL CHECK (length(trim(instructions)) > 0),
+    type TEXT NOT NULL CHECK (type IN ('number', 'count', 'boolean', 'category')),
+    units TEXT,
+    minimum NUMERIC,
+    maximum NUMERIC,
+    categories TEXT CHECK (categories IS NULL OR (json_valid(categories) AND json_type(categories) = 'array')),
+    formula TEXT,
+    replaces TEXT UNIQUE REFERENCES features (id),  -- The definition of the same key this one took over from.
+    author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),
+    written_at TEXT NOT NULL  -- UTC time the instructions were last written: dates after it test them honestly.
+);
+CREATE INDEX features_key ON features (key);
 
 CREATE TABLE links (
     link_key INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,14 +75,12 @@ CREATE INDEX links_layer ON links (layer_key, link_key);
 -- (attributes.published, a date; a Source without one is never seen). A disclosed Finding is seen from
 -- the latest publication date of the Sources it cites, since its figure is checked against them
 -- whenever it was written; when it cites none, or one without a date, from its stamp. Every other
--- record is seen from its stamp. Entities are reference data and always seen, and so are Features: a
--- definition is the procedure a session at any cutoff follows, and its stamp still records when it was
--- written. The views filter evidence by date; they do not reconstruct earlier contents, which are not kept.
+-- record is seen from its stamp. Entities are reference data and always seen. The views filter
+-- evidence by date; they do not reconstruct earlier contents, which are not kept.
 CREATE VIEW record_visibility AS
     SELECT r.record_key,
            CASE r.kind
                WHEN 'Entity' THEN ''
-               WHEN 'Feature' THEN ''
                WHEN 'Source' THEN CASE WHEN json_extract(r.attributes, '$.published')
                                             GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'
                                        THEN substr(json_extract(r.attributes, '$.published'), 1, 10) END
