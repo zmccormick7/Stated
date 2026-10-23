@@ -15,7 +15,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 16
+_SCHEMA_VERSION = 17
 
 
 @dataclass(frozen=True)
@@ -523,6 +523,23 @@ class RecordStore:
         from .features import list_definitions
         return list_definitions(self, replaced=replaced)
 
+    def schedule_feature(self, feature: str, *, every: str | None, start: str | None = None) -> "FeatureDefinition":
+        """Set the dates a value of the feature is due for each subject (day, weekday, week, month or quarter
+        from `start`), or clear them with `every` None."""
+        from .features import schedule
+        return schedule(self, feature, every=every, start=start)
+
+    def pending_work(self, feature: str, subject_ids: Iterable[str], *, start: str | None = None,
+                     end: str | None = None, limit: int = 1000) -> "PendingWork":
+        """The scheduled (subject, date) pairs that have neither a value of the feature nor a check."""
+        from .features import pending
+        return pending(self, feature, subject_ids, start=start, end=end, limit=limit)
+
+    def confirm_value(self, value_id: str, *, author_id: str) -> "FeatureCheck":
+        """Record that the latest value of a feature about its subject still holds on this store's date."""
+        from .features import confirm
+        return confirm(self, value_id, author_id=author_id)
+
     def attach_layer(self, path: str | Path) -> "LayerAttachment":
         """Attach a published layer file read-only, or bring an attached layer to the file's version."""
         from .layers import attach_layer
@@ -533,8 +550,8 @@ class RecordStore:
         if self.as_of is None:
             return "1"
         view, key = ("link_visibility", "link_key") if link else ("record_visibility", "record_key")
-        return (f"EXISTS (SELECT 1 FROM {view} v WHERE v.{key} = {alias}.{key} "
-                f"AND v.visible_from <= '{self.as_of}')")
+        return (f"EXISTS (SELECT 1 FROM {view} seen WHERE seen.{key} = {alias}.{key} "
+                f"AND seen.visible_from <= '{self.as_of}')")
 
     def _stamp(self) -> str:
         return self.as_of or datetime.now(UTC).date().isoformat()

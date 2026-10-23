@@ -7,14 +7,21 @@ Variable whose `feature` attribute names the definition it was made under; Premi
 the definition's type and nothing more. A definition can be edited until a value names it; after that, new
 instructions are a new definition that `replaces` it, so each value stays tied to the instructions that
 produced it, and `written_at` records when those instructions were fixed.
+
+A definition may carry a schedule: the dates a value is due for each subject, every day, weekday, week, month
+or quarter from a start date. A date is done for a subject once a value of the definition about it carries
+that date, or once a check confirms that the latest value still held then; `pending` lists the rest.
 """
 
+from calendar import monthrange
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+from typing import Iterable
 import json
 from uuid import uuid4
 
 TYPES = ("number", "count", "boolean", "category")
+EVERY = ("day", "weekday", "week", "month", "quarter")
 
 
 @dataclass(frozen=True)
@@ -33,13 +40,42 @@ class FeatureDefinition:
     author_id: str
     written_at: str  # UTC time the instructions were last written.
     values: int  # Variables that name this definition.
+    every: str | None  # The schedule: day, weekday, week, month or quarter, or None.
+    start: str | None  # The schedule's first date.
+
+
+@dataclass(frozen=True)
+class Task:
+    subject_id: str  # The Entity a value is due about.
+    subject: str
+    date: str
+
+
+@dataclass(frozen=True)
+class PendingWork:
+    feature_id: str
+    key: str
+    start: str
+    end: str
+    total: int  # Scheduled dates still without a value or a check, over all the subjects.
+    tasks: tuple[Task, ...]  # Up to the limit: subject by subject, each in date order.
+
+
+@dataclass(frozen=True)
+class FeatureCheck:
+    value_id: str  # The latest value, found still to hold.
+    feature_id: str
+    subject_id: str
+    as_of: str
+    author_id: str
+    written_at: str
 
 
 _SELECT = """
     SELECT f.id, f.key, f.instructions, f.type, f.units, f.minimum, f.maximum, f.categories, f.formula,
            f.replaces, (SELECT n.id FROM features n WHERE n.replaces = f.id) AS replaced_by, f.author_id, f.written_at,
            (SELECT count(*) FROM records r WHERE r.kind = 'Variable'
-              AND json_extract(r.attributes, '$.feature') = f.id) AS value_count
+              AND json_extract(r.attributes, '$.feature') = f.id) AS value_count, f.every, f.starts
     FROM features f
 """
 
@@ -52,7 +88,7 @@ def _decode(row) -> FeatureDefinition:
     categories = None if row["categories"] is None else tuple(json.loads(row["categories"]))
     return FeatureDefinition(row["id"], row["key"], row["instructions"], row["type"], row["units"], row["minimum"],
                              row["maximum"], categories, row["formula"], row["replaces"], row["replaced_by"],
-                             row["author_id"], row["written_at"], row["value_count"])
+                             row["author_id"], row["written_at"], row["value_count"], row["every"], row["starts"])
 
 
 def _check(key, instructions, type, units, min, max, categories, formula, author_id) -> None:
@@ -175,6 +211,132 @@ def list_definitions(store, *, replaced: bool = False) -> tuple[FeatureDefinitio
     """Current definitions by key, or with `replaced` every definition, each key's in the order written."""
     where = "" if replaced else " WHERE NOT EXISTS (SELECT 1 FROM features n WHERE n.replaces = f.id)"
     return tuple(_decode(row) for row in store._db.execute(_SELECT + where + " ORDER BY f.key, f.feature_key"))
+
+
+def schedule(store, feature: str, *, every: str | None, start: str | None = None) -> FeatureDefinition:
+    """Set the dates a value of the feature is due for each subject, or clear them with `every` None. A
+    schedule is not part of the instructions, so it can change after values exist."""
+    _writable(store)
+    definition = read(store, feature)
+    if every is None and start is not None:
+        raise ValueError("clearing a schedule takes no start")
+    if every is not None:
+        if every not in EVERY:
+            raise ValueError(f"every is one of {', '.join(EVERY)}")
+        _day(start, "start")
+        if definition.formula is not None:
+            raise ValueError("a derived feature has no schedule: fill-model computes it when its inputs change")
+    with store._db:
+        store._db.execute("BEGIN IMMEDIATE")
+        store._db.execute("UPDATE features SET every = ?, starts = ? WHERE id = ?", (every, start, definition.id))
+    return read(store, definition.id)
+
+
+def scheduled_dates(every: str, start: str, first: str, last: str) -> list[str]:
+    """The schedule's dates from `first` to `last`, inclusive. A monthly or quarterly schedule keeps the start's
+    day of the month, or the month's last day when it is shorter."""
+    begin, low, high = date.fromisoformat(start), date.fromisoformat(first), date.fromisoformat(last)
+    dates = []
+    if every in ("day", "weekday", "week"):
+        step = 7 if every == "week" else 1
+        day = begin + timedelta(days=max(0, -(-(low - begin).days // step)) * step)
+        while day <= high:
+            if every != "weekday" or day.weekday() < 5:
+                dates.append(day.isoformat())
+            day += timedelta(days=step)
+        return dates
+    months = 1 if every == "month" else 3
+    for n in range(0, 12 * (high.year - begin.year + 1) + 1, months):
+        year, month = begin.year + (begin.month - 1 + n) // 12, (begin.month - 1 + n) % 12 + 1
+        day = date(year, month, min(begin.day, monthrange(year, month)[1]))
+        if day > high:
+            break
+        if day >= low:
+            dates.append(day.isoformat())
+    return dates
+
+
+def pending(store, feature: str, subject_ids: Iterable[str], *, start: str | None = None, end: str | None = None,
+            limit: int = 1000) -> PendingWork:
+    """The scheduled dates from `start` (default: the schedule's start) to `end` (default: the store's cutoff,
+    or today) on which a subject has neither a value of the feature's definition nor a check."""
+    definition = read(store, feature)
+    if definition.every is None:
+        raise ValueError(f"feature {definition.key} has no schedule; set one with schedule-feature")
+    if isinstance(subject_ids, (str, bytes)) or not isinstance(subject_ids, Iterable):
+        raise ValueError("subject_ids must be a list of Entity IDs")
+    subjects = [store.read(store.resolve_id(s)) for s in dict.fromkeys(subject_ids)]
+    if not subjects or any(s.kind != "Entity" for s in subjects):
+        raise ValueError("subject_ids must name one or more Entities")
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100000:
+        raise ValueError("limit must be an integer from 1 to 100,000")
+    end = _day(end or store.as_of or datetime.now(UTC).date().isoformat(), "end")
+    start = _day(start or definition.start, "start")
+    if store.as_of is not None and end > store.as_of:
+        raise ValueError(f"end is after the cutoff {store.as_of}")
+    dates = scheduled_dates(definition.every, definition.start, start, end)
+    total, tasks = 0, []
+    for subject in subjects:
+        done = {row[0] for row in store._db.execute(
+            f"""SELECT v.as_of FROM records v JOIN links a ON a.from_key = v.record_key
+                WHERE v.kind = 'Variable' AND json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about'
+                  AND a.to_key = ? AND {store._seen('v')} AND {store._seen('a', link=True)}
+                UNION SELECT c.as_of FROM feature_checks c JOIN records v ON v.record_key = c.value_key
+                JOIN links a ON a.from_key = v.record_key
+                WHERE v.kind = 'Variable' AND json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about'
+                  AND a.to_key = ? AND c.as_of <= ?""",
+            (definition.id, store._record_key(subject.id), definition.id, store._record_key(subject.id), end))}
+        missing = [day for day in dates if day not in done]
+        total += len(missing)
+        tasks.extend(Task(subject.id, subject.text, day) for day in missing[:limit - len(tasks)])
+    return PendingWork(definition.id, definition.key, start, end, total, tuple(tasks))
+
+
+def confirm(store, value_id: str, *, author_id: str) -> FeatureCheck:
+    """Record that a feature value, the latest of its definition about its subject, still holds on the store's
+    date: the scheduled date is done without writing the same value again."""
+    if not isinstance(author_id, str) or not author_id.strip():
+        raise ValueError("author_id must be a nonblank string")
+    value = store.read(store.resolve_id(value_id))
+    feature_id = value.attributes.get("feature") if value.kind == "Variable" else None
+    if not isinstance(feature_id, str):
+        raise ValueError(f"{value.id} is not a feature value")
+    subjects = [row[0] for row in store._db.execute(
+        f"""SELECT e.record_key FROM links a JOIN records e ON e.record_key = a.to_key
+            WHERE a.from_key = ? AND a.relation = 'about' AND e.kind = 'Entity' AND {store._seen('a', link=True)}""",
+        (store._record_key(value.id),))]
+    if len(subjects) != 1:
+        raise ValueError(f"{value.id} must be about exactly one Entity to be confirmed for it")
+    day = store._stamp()
+    if value.as_of >= day:
+        raise ValueError(f"{value.id} is dated {value.as_of}, so it already stands for that date")
+    latest = store._db.execute(
+        f"""SELECT v.id FROM records v JOIN links a ON a.from_key = v.record_key
+            WHERE v.kind = 'Variable' AND json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about'
+              AND a.to_key = ? AND {store._seen('v')} ORDER BY v.as_of DESC, v.record_key DESC LIMIT 1""",
+        (feature_id, subjects[0])).fetchone()[0]
+    if latest != value.id:
+        raise ValueError(f"{latest} is the latest value of this feature about its subject; confirm that one")
+    written_at = datetime.now(UTC).isoformat()
+    with store._db:
+        store._db.execute("BEGIN IMMEDIATE")
+        if store._db.execute("SELECT 1 FROM feature_checks WHERE value_key = ? AND as_of = ?",
+                             (store._record_key(value.id), day)).fetchone():
+            raise ValueError(f"{value.id} is already confirmed as of {day}")
+        store._db.execute("INSERT INTO feature_checks (value_key, as_of, author_id, written_at) VALUES (?, ?, ?, ?)",
+                          (store._record_key(value.id), day, author_id, written_at))
+    subject_id = store._db.execute("SELECT id FROM records WHERE record_key = ?", (subjects[0],)).fetchone()[0]
+    return FeatureCheck(value.id, feature_id, subject_id, day, author_id, written_at)
+
+
+def _day(value: object, name: str) -> str:
+    try:
+        if isinstance(value, str) and len(value) == 10:
+            date.fromisoformat(value)
+            return value
+    except ValueError:
+        pass
+    raise ValueError(f"{name} must be a date, like 2023-02-24")
 
 
 def _writable(store) -> None:

@@ -39,6 +39,9 @@ Run `premisedb COMMAND --help` for flags and the expected payload fields. Positi
 | `update-feature ID --input FILE` | Rewrite a definition's instructions and type, with the same fields but `key` and `replaces`, until a value names it. |
 | `feature ID_OR_KEY` | Read a feature definition, or a key's current one, with `values`, the number of Variables that name it. |
 | `features [--replaced]` | List the current feature definitions by key, under `features`; `--replaced` includes replaced ones. |
+| `schedule-feature FEATURE --input FILE` | Set when a value is due for each subject: `every` (`day`, `weekday`, `week`, `month` or `quarter`) and `start`, a date; `every` null clears it. A monthly or quarterly schedule keeps the start's day of the month, or the month's last day. A derived feature has no schedule. |
+| `pending FEATURE (--subject ID ... \| --subjects-file FILE) [--from DATE] [--to DATE] [--limit N]` | List the scheduled dates on which a subject has neither a value of the feature's definition dated that day nor a check: `total`, and `tasks` (subject_id, subject, date) subject by subject in date order, up to the limit. `--from` defaults to the schedule's start and `--to` to the cutoff, or today. A subjects file holds one Entity ID per line. |
+| `confirm VALUE_ID --input FILE` | Record that a feature value, the latest of its definition about its one subject, still holds on the session's date, which marks that date done without writing the value again; the payload gives `author_id`. |
 | `get ID` | Read current record contents. |
 | `update ID --input FILE` | Replace text and attributes, retaining identity and kind. |
 | `patch ID --input FILE` | Change text or some top-level attributes, keeping the rest. A change to a Variable's `value` writes a new version instead (see the Python API guide) and returns it. |

@@ -249,8 +249,9 @@ def _apply(db: sqlite3.Connection, key: int, own_key: int, snapshot: _Snapshot):
     for record_id in dropped:
         record_key = db.execute("SELECT record_key FROM records WHERE id = ?", (record_id,)).fetchone()[0]
         if db.execute("""SELECT 1 FROM links WHERE from_key = ? OR to_key = ?
-                         UNION ALL SELECT 1 FROM citations WHERE source_key = ? LIMIT 1""",
-                      (record_key, record_key, record_key)).fetchone():
+                         UNION ALL SELECT 1 FROM citations WHERE source_key = ?
+                         UNION ALL SELECT 1 FROM feature_checks WHERE value_key = ? LIMIT 1""",
+                      (record_key, record_key, record_key, record_key)).fetchone():
             kept.append(record_id)
             continue
         _drop_text(db, record_key)

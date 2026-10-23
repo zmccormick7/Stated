@@ -33,7 +33,8 @@ CREATE INDEX records_feature ON records (json_extract(attributes, '$.feature')) 
 -- Feature definitions: the instructions an agent follows to produce one feature's value for a subject as of
 -- a date, and the type of that value. They are procedures, not knowledge, so they are not records: every
 -- cutoff reads them alike. A value is a Variable whose attributes.feature is a definition's id. A definition
--- is rewritten only while no value names it; new instructions for a key then replace it.
+-- is rewritten only while no value names it; new instructions for a key then replace it. Its schedule, the
+-- dates a value is due for each subject, can change at any time.
 CREATE TABLE features (
     feature_key INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
@@ -46,10 +47,25 @@ CREATE TABLE features (
     categories TEXT CHECK (categories IS NULL OR (json_valid(categories) AND json_type(categories) = 'array')),
     formula TEXT,
     replaces TEXT UNIQUE REFERENCES features (id),  -- The definition of the same key this one took over from.
+    every TEXT CHECK (every IN ('day', 'weekday', 'week', 'month', 'quarter')),
+    starts TEXT CHECK (starts GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
     author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),
-    written_at TEXT NOT NULL  -- UTC time the instructions were last written: dates after it test them honestly.
+    written_at TEXT NOT NULL,  -- UTC time the instructions were last written: dates after it test them honestly.
+    CHECK ((every IS NULL) = (starts IS NULL) AND (every IS NULL OR formula IS NULL))
 );
 CREATE INDEX features_key ON features (key);
+
+-- A scheduled session that found a feature's latest value about its subject unchanged records that here,
+-- dated like a value, instead of writing the same value again: the date is done, and the value's own date
+-- still says when it last changed. A read at a cutoff sees the checks dated by then.
+CREATE TABLE feature_checks (
+    check_key INTEGER PRIMARY KEY AUTOINCREMENT,
+    value_key INTEGER NOT NULL REFERENCES records (record_key),  -- The Variable found still to hold.
+    as_of TEXT NOT NULL CHECK (as_of GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),
+    written_at TEXT NOT NULL,
+    UNIQUE (value_key, as_of)
+);
 
 CREATE TABLE links (
     link_key INTEGER PRIMARY KEY AUTOINCREMENT,
