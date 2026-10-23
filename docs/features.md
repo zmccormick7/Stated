@@ -24,6 +24,8 @@ This works because in a description task, knowledge of the future can only show 
 | A value | A **Variable** whose `feature` attribute is the definition's ID, linked `about` its subject, carrying the feature's `key` and a `value` of its type, linked `depends_on` the Findings and Sources it was read from. PremiseDB refuses a value outside the type; nothing else about the value is checked. |
 | The date | The session's cutoff. A session opened with `PREMISEDB_AS_OF=2023-02-24` sees only Sources published by then and what earlier sessions wrote at or before then, and stamps everything it writes with that date. |
 | A change | A new Variable linked `updates` the previous value, which keeps its own value and date. |
+| No change | A check, `premisedb confirm VALUE_ID`, recording that the latest value still held on the date, instead of writing it again. |
+| A schedule | The dates a value is due for each subject: every day, weekday, week, month or quarter from a start date (`premisedb schedule-feature`). `premisedb pending FEATURE --subjects-file FILE` lists the scheduled dates on which a subject has neither a value nor a check: the sessions still to run. |
 | A derived feature | A definition with a `formula` over other features' keys. `premisedb fill-model ENTITY_ID` computes every derived value about a subject from the latest version of its inputs. |
 | The feature table | `premisedb state` exports values as change points per subject: a row whenever some feature changed. A daily series is a forward fill of those rows. |
 
@@ -84,7 +86,7 @@ Leakage cannot be proven zero. The case is structural, backed by audits:
 1. **Collect documents as filed.** Ingest each filing, transcript or release as a Source with `published` set to the date it became public, and ideally `document_type`. A Source without a publication date is never seen at any cutoff.
 2. **Create the subjects.** One Entity per subject, including those that later failed, merged or were delisted.
 3. **Define the features**, without a cutoff, before any values. Each definition's `written_at` records when its instructions were fixed.
-4. **Run sessions at cutoffs.** For each feature, subject and date, open a fresh agent session with `PREMISEDB_AS_OF` set to the date, web access off, and the premisedb-state skill. Sessions for the same feature and subject run in date order, since each starts from the previous value; different subjects can run in parallel. Then run `fill-model` for derived features.
+4. **Schedule and run sessions at cutoffs.** Give each feature a schedule, and for each (subject, date) that `pending` lists, open a fresh agent session with `PREMISEDB_AS_OF` set to the date, web access off, and the premisedb-state skill. Sessions for the same feature and subject run in date order, since each starts from the previous value; different subjects can run in parallel. Then run `fill-model` for derived features.
 5. **Export** with `premisedb state` and forward-fill to the frequency your model needs.
 
 For example, a feature defined once:
@@ -116,7 +118,6 @@ JSON
 
 These parts of the workflow are designed but not yet in PremiseDB; until they are, they are scripts you write around it:
 
-- A schedule on each feature definition and a list of the (feature, subject, date) sessions still to run.
 - A runner that works through that list, opening sessions at each cutoff.
 - Reports for repeat-run agreement and for values before and after an agent model's training cutoff.
 - A daily feature table; `state` exports change points.

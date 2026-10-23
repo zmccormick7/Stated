@@ -136,6 +136,20 @@ def _parser():
     command("update-feature", "update_feature", "Rewrite a feature definition that no value names yet.",
             "feature_id", payload=definition)
     command("feature", "read_feature", "Read a feature definition by ID, or the current one for a key.", "feature")
+    command("schedule-feature", "schedule_feature",
+            "Set the dates a value of a feature is due for each subject, or clear them with every null.", "feature",
+            payload="every (day, weekday, week, month, quarter or null), start (a date)")
+    todo = command("pending", "pending_work",
+                   "List the scheduled dates on which a subject has neither a value of the feature nor a check.", "feature")
+    todo.add_argument("--subject", dest="subject_ids", action="append", default=[], metavar="ENTITY_ID",
+                      help="A subject to list; repeatable.")
+    todo.add_argument("--subjects-file", metavar="FILE", help="A file of Entity IDs, one per line.")
+    todo.add_argument("--from", dest="start", metavar="DATE", help="Default: the schedule's start.")
+    todo.add_argument("--to", dest="end", metavar="DATE", help="Default: the cutoff, or today.")
+    todo.add_argument("--limit", type=int, default=1000)
+    command("confirm", "confirm_value",
+            "Record that a feature's latest value about its subject still holds on this date, instead of "
+            "writing it again.", "value_id", payload="author_id")
     features = command("features", "list_features", "List the current feature definitions by key.")
     features.add_argument("--replaced", action="store_true", help="Include definitions that were replaced.")
     command("check-answer", "check_answer",
@@ -382,6 +396,9 @@ def main(argv=None):
                 if not isinstance(payload.get("attributes") or {}, dict):
                     raise ValueError("attributes must be a JSON object")
                 payload["attributes"] = {"url": page.url, "retrieved_at": page.retrieved_at} | (payload.get("attributes") or {})
+        if (subjects_file := options.pop("subjects_file", None)) is not None:
+            options["subject_ids"] += [line.strip() for line in Path(subjects_file).read_text(encoding="utf-8").splitlines()
+                                       if line.strip() and not line.startswith("#")]
         if "date" in options:
             if (date := options.pop("date")) is not None:
                 if options.get("start") or options.get("end"):
