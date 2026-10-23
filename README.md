@@ -59,7 +59,7 @@ Four skills teach an agent the graph. `premisedb ui` installs them; for any othe
 - **premisedb-research**: recall what the graph holds, contribute findings with exact citations, and revise understanding as evidence changes.
 - **premisedb-answer**: return an answer document that passes `premisedb check-answer`.
 - **premisedb-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
-- **premisedb-state**: produce one feature's value for a subject as of a cutoff date, following the Feature's instructions over everything a reader on that date could see, or computed by its formula from other features.
+- **premisedb-state**: produce one feature's value for a subject as of a cutoff date, following the feature definition's instructions over everything a reader on that date could see, or computed by its formula from other features.
 
 Point a session at the folder with `PREMISEDB_DB=/path/to/research.sqlite` and ask it to use the skill. The [CLI guide](docs/cli.md) covers every command, and the [Python API](docs/python-api.md) is there for agents and tools you write yourself:
 
@@ -75,7 +75,7 @@ Document search and the model-written document summaries use OpenRouter; set `OP
 
 ## How the graph is organised
 
-Seven record types, connected by named links:
+Six record types, connected by named links:
 
 | Record | Holds |
 | --- | --- |
@@ -85,13 +85,12 @@ Seven record types, connected by named links:
 | **Question** | Something unresolved and worth investigating. |
 | **Model** | A driver model of a business. |
 | **Variable** | A model input or output, or a feature value, with its value, units, periods and the evidence it rests on. |
-| **Feature** | The instructions an agent follows to produce one feature's value for a subject as of a date, with the value's type: a number, a count, yes or no, or one of fixed categories. |
 
 Links such as `about`, `supported_by`, `depends_on`, `contradicts` and `raises` carry the reasoning: a Variable depends on a Finding, which is supported by a Source and raises a Question. Models are checked with `premisedb check-model`, which recomputes every output's formula from the stored inputs, and evaluated with overrides for the levers on the answer page.
 
 The graph is layered. A **base layer** is a published, read-only graph that any research folder can attach and later update; your own layer holds what your agents add on top, including corrections to base records. Knowledge belongs to the folder, not to any one conversation or harness: a fresh session, on either harness, picks up exactly where the last one left off.
 
-The graph can also be read **as of a date**. Every record carries the date its contents are as of, and a session opened at a cutoff sees only the sources published by then, the disclosed facts those sources support, and what earlier sessions wrote at or before that cutoff; what it writes is stamped with the cutoff in turn. That is what lets agents describe a company's state at a past date from the evidence that existed then, with their work checkable against the dated record rather than against hindsight. The [feature guide](docs/features.md) shows how to build systematic features this way: Feature records hold the instructions, agents write each value as of a date, and `premisedb state` exports the result.
+The graph can also be read **as of a date**. Every record carries the date its contents are as of, and a session opened at a cutoff sees only the sources published by then, the disclosed facts those sources support, and what earlier sessions wrote at or before that cutoff; what it writes is stamped with the cutoff in turn. That is what lets agents describe a company's state at a past date from the evidence that existed then, with their work checkable against the dated record rather than against hindsight. A **feature definition** (`premisedb define-feature`) holds the instructions agents follow to produce one such description, a feature of a subject as of a date, and the type of its values; definitions are kept beside the graph rather than in it, since they are procedures, not knowledge. The [feature guide](docs/features.md) shows how to build systematic features this way: definitions hold the instructions, agents write each value as of a date, and `premisedb state` exports the result.
 
 ## Status
 

@@ -19,17 +19,17 @@ This works because in a description task, knowledge of the future can only show 
 
 | What | In PremiseDB |
 | --- | --- |
-| A feature | A **Feature** record. Its text is the instructions an agent follows; its attributes give the `key` its values carry and their `type`: `number` (optionally within `min` and `max`), `count`, `boolean`, or `category` with its `categories`; optionally `units`, and a `formula` for a derived feature. |
+| A feature | A **feature definition**, kept beside the graph (`premisedb define-feature`): the instructions an agent follows, the `key` its values carry and their `type`: `number` (optionally within `min` and `max`), `count`, `boolean`, or `category` with its `categories`; optionally `units`, and a `formula` for a derived feature. |
 | A subject | An **Entity**: a company, a market, a sector, a deal, whatever the instructions describe. |
-| A value | A **Variable** linked `defined_by` its Feature and `about` its subject, carrying the feature's `key` and a `value` of its type, linked `depends_on` the Findings and Sources it was read from. PremiseDB refuses a value outside the type; nothing else about the value is checked. |
+| A value | A **Variable** whose `feature` attribute is the definition's ID, linked `about` its subject, carrying the feature's `key` and a `value` of its type, linked `depends_on` the Findings and Sources it was read from. PremiseDB refuses a value outside the type; nothing else about the value is checked. |
 | The date | The session's cutoff. A session opened with `PREMISEDB_AS_OF=2023-02-24` sees only Sources published by then and what earlier sessions wrote at or before then, and stamps everything it writes with that date. |
 | A change | A new Variable linked `updates` the previous value, which keeps its own value and date. |
-| A derived feature | A Feature with a `formula` over other features' keys. `premisedb fill-model ENTITY_ID` computes every derived value about a subject from the latest version of its inputs. |
+| A derived feature | A definition with a `formula` over other features' keys. `premisedb fill-model ENTITY_ID` computes every derived value about a subject from the latest version of its inputs. |
 | The feature table | `premisedb state` exports values as change points per subject: a row whenever some feature changed. A daily series is a forward fill of those rows. |
 
-A Feature is seen at every cutoff, because a session at any date follows it, and its `as_of` stamp records when it was written. Once values rest on a Feature, its instructions and definition are fixed, so every value stays tied to the instructions it was made under. Changed instructions are a new Feature linked `updates` the old one.
+Definitions are procedures, not knowledge, so they live beside the graph rather than in it: every cutoff reads them alike, they never turn up in search, and each records `written_at`, when its instructions were fixed. A definition can be edited until a value names it. After that, new instructions for its key are a new definition that `replaces` it, so every value stays tied to the instructions it was made under.
 
-The [premisedb-state skill](../premisedb/skills/premisedb-state/SKILL.md) teaches an agent to produce one value: given a Feature, a subject and a cutoff, read what is visible, write the value or leave the previous one standing, and leave derived features to `fill-model`.
+The [premisedb-state skill](../premisedb/skills/premisedb-state/SKILL.md) teaches an agent to produce one value: given a feature, a subject and a cutoff, read what is visible, write the value or leave the previous one standing, and leave derived features to `fill-model`.
 
 ## Writing a feature
 
@@ -65,12 +65,12 @@ The danger is a feature that is point-in-time in form but predictive in substanc
 
 | Leak | What PremiseDB does | What is left to you |
 | --- | --- | --- |
-| **Outcome-defined judgments**: "material", "key risk", scores | Feature types restrict values to numbers, counts, yes/no and fixed categories. | Writing instructions that ask for ingredients. |
+| **Outcome-defined judgments**: "material", "key risk", scores | Definitions restrict values to numbers, counts, yes/no and fixed categories. | Writing instructions that ask for ingredients. |
 | **Environment**: live search, current pages, restated data, today's ticker lists | A session at a cutoff sees no Source published later, no record written later and no model-written document summary; it cannot ingest from the web or link to anything hidden. | Running sessions with web access off; ingesting documents as filed, with their publication dates, not restated data; including subjects that later failed or were delisted. |
-| **Navigation**: digging into a firm that later blew up | A Feature is one procedure; the universe of subjects is chosen outside the session. | Running every Feature on the whole universe, not on subjects you have a hunch about. |
+| **Navigation**: digging into a firm that later blew up | A feature is one procedure; the universe of subjects is chosen outside the session. | Running every feature on the whole universe, not on subjects you have a hunch about. |
 | **Analog selection**: choosing the comparisons | Nothing. | Writing the similarity criteria into the instructions, so retrieval is mechanical. |
 | **Outcome-correlated error**: more careful work on firms that later became famous | Nothing; it can only be measured. | The audits below. |
-| **Researcher lookahead**: designing features around what turned out to matter | Each Feature records when it was written, and its instructions are fixed once values rest on it. | Deriving features from theory (run risk, asset–liability mismatch), fixing them in advance, and treating dates after a Feature was written as its honest test. |
+| **Researcher lookahead**: designing features around what turned out to matter | Each definition records when it was written, and its instructions are fixed once values name it. | Deriving features from theory (run risk, asset–liability mismatch), fixing them in advance, and treating dates after a definition was written as its honest test. |
 
 Leakage cannot be proven zero. The case is structural, backed by audits:
 
@@ -83,17 +83,17 @@ Leakage cannot be proven zero. The case is structural, backed by audits:
 
 1. **Collect documents as filed.** Ingest each filing, transcript or release as a Source with `published` set to the date it became public, and ideally `document_type`. A Source without a publication date is never seen at any cutoff.
 2. **Create the subjects.** One Entity per subject, including those that later failed, merged or were delisted.
-3. **Write the Features**, live, before any values. Their `as_of` records when the instructions were fixed.
-4. **Run sessions at cutoffs.** For each Feature, subject and date, open a fresh agent session with `PREMISEDB_AS_OF` set to the date, web access off, and the premisedb-state skill. Sessions for the same Feature and subject run in date order, since each starts from the previous value; different subjects can run in parallel. Then run `fill-model` for derived features.
+3. **Define the features**, without a cutoff, before any values. Each definition's `written_at` records when its instructions were fixed.
+4. **Run sessions at cutoffs.** For each feature, subject and date, open a fresh agent session with `PREMISEDB_AS_OF` set to the date, web access off, and the premisedb-state skill. Sessions for the same feature and subject run in date order, since each starts from the previous value; different subjects can run in parallel. Then run `fill-model` for derived features.
 5. **Export** with `premisedb state` and forward-fill to the frequency your model needs.
 
-For example, a Feature defined once:
+For example, a feature defined once:
 
 ```bash
-premisedb create Feature --input - <<'JSON'
-{"author_id": "researcher",
- "text": "Share of the bank's total deposits not covered by deposit insurance, as of the latest balance sheet the bank has reported. Add estimated uninsured domestic deposits to foreign deposits, which are uninsured, when they are disclosed separately; divide by total deposits. Use the bank's own estimates. Null when the bank has not disclosed an uninsured estimate.",
- "attributes": {"key": "uninsured_share", "type": "number", "min": 0, "max": 1, "units": "fraction of total deposits"}}
+premisedb define-feature --input - <<'JSON'
+{"author_id": "researcher", "key": "uninsured_share", "type": "number", "min": 0, "max": 1,
+ "units": "fraction of total deposits",
+ "instructions": "Share of the bank's total deposits not covered by deposit insurance, as of the latest balance sheet the bank has reported. Add estimated uninsured domestic deposits to foreign deposits, which are uninsured, when they are disclosed separately; divide by total deposits. Use the bank's own estimates. Null when the bank has not disclosed an uninsured estimate."}
 JSON
 ```
 
@@ -104,9 +104,8 @@ PREMISEDB_AS_OF=2023-02-24 premisedb contribute --input - <<'JSON'
 {"author_id": "feature-run/claude-opus-5-5",
  "records": [{"ref": "v", "kind": "Variable",
               "text": "Uninsured US deposits of $151.5B plus foreign deposits of $13.9B, of $173.1B total, at December 31, 2022.",
-              "attributes": {"key": "uninsured_share", "value": 0.955, "units": "fraction of total deposits", "period": "2022-12-31"}}],
- "links": [{"from_id": "v", "to_id": "FEATURE_ID", "relation": "defined_by"},
-           {"from_id": "v", "to_id": "SVB_ENTITY_ID", "relation": "about"},
+              "attributes": {"key": "uninsured_share", "feature": "FEATURE_ID", "value": 0.955, "units": "fraction of total deposits", "period": "2022-12-31"}}],
+ "links": [{"from_id": "v", "to_id": "SVB_ENTITY_ID", "relation": "about"},
            {"from_id": "v", "to_id": "FINDING_ID", "relation": "depends_on"}]}
 JSON
 ```
@@ -117,7 +116,7 @@ JSON
 
 These parts of the workflow are designed but not yet in PremiseDB; until they are, they are scripts you write around it:
 
-- A schedule on each Feature and a list of the (feature, subject, date) sessions still to run.
+- A schedule on each feature definition and a list of the (feature, subject, date) sessions still to run.
 - A runner that works through that list, opening sessions at each cutoff.
 - Reports for repeat-run agreement and for values before and after an agent model's training cutoff.
 - A daily feature table; `state` exports change points.

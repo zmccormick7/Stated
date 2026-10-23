@@ -107,15 +107,19 @@ The language: numbers, keys, `+ - * / **`, unary minus, comparisons (chained all
 
 ## Define a feature
 
-A Feature record holds the instructions an agent follows to produce one feature's value for a subject as of a date, and the type of that value. Its text is the instructions; its attributes give the `key` every value carries and the `type`: `number` (optionally within `min` and `max`), `count` (a whole number, 0 or more, optionally bounded), `boolean`, or `category` with its `categories`. `units` is optional, and a derived feature carries the `formula` its values compute from other features' keys. A value is a Variable linked `defined_by` the Feature, usually also `about` its subject, an Entity such as a company or a market. Its `value` must be null, a value of the type, or a list of them over `periods`, and it carries the Feature's `key` and `formula`; a create, edit, new version or `fill_model` result outside that raises `ValueError`. Nothing checks a value beyond its type: it is the agent's reading under the instructions, linked to what it was read from.
+A feature definition holds the instructions an agent follows to produce one feature's value for a subject as of a date, and the type of that value. Definitions are procedures, not knowledge, so they are kept in their own table rather than as records: they never appear in search or recall, and every cutoff reads them alike.
 
 ```python
-funding = db.create("Feature", author_id="researcher",
-    text="How much of the subject's funding could leave within weeks, from 0 (none) to 1 (all), judged from what it discloses about its depositors.",
-    attributes={"key": "flighty_funding", "type": "number", "min": 0, "max": 1})
+funding = db.define_feature(author_id="researcher", key="flighty_funding", type="number", min=0, max=1,
+    instructions="How much of the subject's funding could leave within weeks, from 0 (none) to 1 (all), "
+                 "judged from what it discloses about its depositors.")
 ```
 
-A Feature is seen at every cutoff, since a session at any date follows it, and its `as_of` stamp records when it was written. A Variable has one `defined_by` link, which changes only its explanation. Once values rest on a Feature, its text and the attributes above are fixed, so each value stays tied to the instructions it was made under; write changed instructions as a new Feature linked `updates` the old one. Other attributes, such as notes, may still be edited.
+`define_feature` takes the `key` every value carries, the `instructions`, and the `type`: `"number"` (optionally within `min` and `max`), `"count"` (a whole number, 0 or more, optionally bounded), `"boolean"`, or `"category"` with its `categories`; `units` is optional, and a derived feature gives the `formula` its values compute from other features' keys, which must parse (that the keys are other features is not checked). It returns a `FeatureDefinition` with those fields, its `id`, `author_id`, `written_at` (the UTC time the instructions were last written), `replaces` and `replaced_by`, and `values`, the number of Variables that name it. `read_feature(id_or_key)` reads one by ID, by a unique prefix of 8+ characters, or by key for the key's current definition; `list_features(replaced=False)` lists the current definitions by key. Definitions are written without a cutoff, since their instructions are fixed in the present and followed at every date.
+
+A value is a Variable whose `feature` attribute is the definition's full ID, carrying its `key` (and `formula`, for a derived feature), usually linked `about` its subject, an Entity such as a company or a market. Its `value` must be null, a value of the type, or a list of them over `periods`; a create, edit, new version or `fill_model` result outside that raises `ValueError`, as does changing or removing a Variable's `feature`. Nothing checks a value beyond its type: it is the agent's reading under the instructions, linked to what it was read from.
+
+`update_feature(id, ...)` rewrites a definition's instructions and type until a value names it. After that it is fixed, so every value stays tied to the instructions it was made under: define new instructions for the key with `replaces` naming its current definition, which then becomes the key's current definition. A key has one current definition; defining it again without `replaces` raises `ValueError`. Definitions are not yet carried with a published layer.
 
 ## Check an answer document
 
