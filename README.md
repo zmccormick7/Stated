@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
-[Install](#install) · [Ask a question](#ask-a-question) · [Use your own agent](#use-your-own-agent) · [How the graph is organised](#how-the-graph-is-organised) · [Status](#status) · [CLI](docs/cli.md) · [Python API](docs/python-api.md)
+[Install](#install) · [Ask a question](#ask-a-question) · [Use your own agent](#use-your-own-agent) · [How the graph is organised](#how-the-graph-is-organised) · [Status](#status) · [CLI](docs/cli.md) · [Python API](docs/python-api.md) · [Features](docs/features.md)
 
 ## Install
 
@@ -90,7 +90,7 @@ Links such as `about`, `supported_by`, `depends_on`, `contradicts` and `raises` 
 
 The graph is layered. A **base layer** is a published, read-only graph that any research folder can attach and later update; your own layer holds what your agents add on top, including corrections to base records. Knowledge belongs to the folder, not to any one conversation or harness: a fresh session, on either harness, picks up exactly where the last one left off.
 
-The graph can also be read **as of a date**. Every record carries the date its contents are as of, and a session opened at a cutoff sees only the sources published by then, the disclosed facts those sources support, and what earlier sessions wrote at or before that cutoff; what it writes is stamped with the cutoff in turn. That is what lets agents describe a company's state at a past date from the evidence that existed then, with their work checkable against the dated record rather than against hindsight. A **feature definition** (`premisedb define-feature`) holds the instructions agents follow to produce one such description, a feature of a subject as of a date, and the type of its values; definitions are kept beside the graph rather than in it, since they are procedures, not knowledge.
+The graph can also be read **as of a date**. Every record carries the date its contents are as of, and a session opened at a cutoff sees only the sources published by then, the disclosed facts those sources support, and what earlier sessions wrote at or before that cutoff; what it writes is stamped with the cutoff in turn. That is what lets agents describe a company's state at a past date from the evidence that existed then, with their work checkable against the dated record rather than against hindsight. A **feature definition** (`premisedb define-feature`) holds the instructions agents follow to produce one such description, a feature of a subject as of a date, and the type of its values; definitions are kept beside the graph rather than in it, since they are procedures, not knowledge. The [feature guide](docs/features.md) shows how to build systematic features this way: definitions hold the instructions, agents write each value as of a date, and `premisedb state` exports the result.
 
 ## Status
 
