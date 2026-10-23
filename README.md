@@ -54,11 +54,12 @@ What this has done so far: a run of 274 company coverage packs, two sessions per
 
 ## Use your own agent
 
-Four skills teach an agent the graph. `premisedb ui` installs them; for any other harness, copy the folders under `premisedb/skills/` into its skills directory.
+Five skills teach an agent the graph. `premisedb ui` installs them; for any other harness, copy the folders under `premisedb/skills/` into its skills directory.
 
 - **premisedb-research**: recall what the graph holds, contribute findings with exact citations, and revise understanding as evidence changes.
 - **premisedb-answer**: return an answer document that passes `premisedb check-answer`.
 - **premisedb-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
+- **premisedb-feature-design**: turn an idea for something to measure into feature definitions whose instructions describe state as of a date rather than forecast, and review existing definitions against the same tests.
 - **premisedb-state**: produce one feature's value for a subject as of a cutoff date, following the feature definition's instructions over everything a reader on that date could see, or computed by its formula from other features.
 
 Point a session at the folder with `PREMISEDB_DB=/path/to/research.sqlite` and ask it to use the skill. The [CLI guide](docs/cli.md) covers every command, and the [Python API](docs/python-api.md) is there for agents and tools you write yourself:
@@ -98,7 +99,7 @@ PremiseDB is early software. The database format changes without migrations; rec
 
 What exists today:
 
-- The CLI, Python API and four skills. Three are used daily by Claude Code and Codex; the state skill has been tried on six banks at one cutoff and on one bank at two, in a workspace holding only their pre-cutoff filings.
+- The CLI, Python API and five skills. Three are used daily by Claude Code and Codex; the feature-design skill is new; the state skill has been tried on six banks at one cutoff and on one bank at two, in a workspace holding only their pre-cutoff filings.
 - The answer page with checked answers, levers, research runs and the notes, pause and finish controls.
 - A base layer covering the 1,000 largest US filers by public float, with the full text of each company's latest annual report and, for 474 of them, a coverage pack of its business, segments, key figures, relationships, risks and open questions. Driver models exist for a handful of companies.
 
