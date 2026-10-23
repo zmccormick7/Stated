@@ -383,19 +383,16 @@ class RecordStore:
     def state_rows(self, *, entity_id: str | None = None, features: Iterable[str] | None = None,
                    start: str | None = None, end: str | None = None, limit: int = 1000) -> tuple[StateRow, ...]:
         """Feature values over a date range, as change points. A feature value is a Variable `about` an
-        Entity, named by its `key`. For each Entity with any, a row at `start` holding the latest version
-        of each feature stamped by then, and a row at every later date up to `end` on which some feature
-        changed. Between rows the state is unchanged, so a daily series is a forward fill. `end` defaults to
-        the store's cutoff, or today, and `start` to `end`, so with neither there is one row per Entity: its
-        current state. `features` keeps only those keys."""
+        Entity whose `feature` attribute names a feature definition; Variables that only share a key are not
+        read. For each Entity with any, a row at `start` holding the latest value of each feature dated by
+        then, and a row at every later date up to `end` on which some feature changed. Between rows the
+        state is unchanged, so a daily series is a forward fill. `end` defaults to the store's cutoff, or
+        today, and `start` to `end`, so with neither there is one row per Entity: its current state.
+        `features` names definitions by key (its current one) or ID; the default is every current one."""
+        from .features import selected
         if entity_id is not None and not isinstance(entity_id, str):
             raise ValueError("entity_id must be a string or None")
-        if features is not None:
-            if isinstance(features, (str, bytes)) or not isinstance(features, Iterable):
-                raise ValueError("features must be a list of keys or None")
-            features = tuple(features)
-            if not features or any(not isinstance(key, str) or not key for key in features):
-                raise ValueError("features must be a nonempty list of keys")
+        definitions = selected(self, features)
         _check_limit(limit)
         today = self.as_of or datetime.now(UTC).date().isoformat()
         end = end or today
@@ -408,22 +405,24 @@ class RecordStore:
         if self.as_of is not None and end > self.as_of:
             raise ValueError(f"end is after the cutoff {self.as_of}")
         entity_key = None if entity_id is None else self._record_key(entity_id)
+        if not definitions:
+            return ()
+        ids = f"json_extract(v.attributes, '$.feature') IN ({','.join('?' * len(definitions))})"
         entities = self._db.execute(
             f"""SELECT DISTINCT e.record_key, e.id, e.text
                 FROM links a JOIN records v ON v.record_key = a.from_key JOIN records e ON e.record_key = a.to_key
-                WHERE a.relation = 'about' AND v.kind = 'Variable' AND e.kind = 'Entity'
+                WHERE a.relation = 'about' AND v.kind = 'Variable' AND {ids} AND e.kind = 'Entity'
                   AND (? IS NULL OR e.record_key = ?) AND {self._seen('a', link=True)}
-                ORDER BY e.text, e.record_key""", (entity_key, entity_key)).fetchall()
+                ORDER BY e.text, e.record_key""", (*definitions, entity_key, entity_key)).fetchall()
         result = []
         for entity in entities:
             # Every version of every feature about the Entity stamped by the end, oldest first.
             versions = [(json.loads(row["attributes"]), row["as_of"]) for row in self._db.execute(
                 f"""SELECT v.attributes, v.as_of FROM links a JOIN records v ON v.record_key = a.from_key
-                    WHERE a.to_key = ? AND a.relation = 'about' AND v.kind = 'Variable'
+                    WHERE a.to_key = ? AND a.relation = 'about' AND v.kind = 'Variable' AND {ids}
                       AND v.as_of <= ? AND a.as_of <= ? AND {self._seen('a', link=True)}
-                    ORDER BY v.as_of, v.record_key""", (entity["record_key"], end, end))]
-            versions = [(a, stamp) for a, stamp in versions
-                        if isinstance(a.get("key"), str) and (features is None or a["key"] in features)]
+                    ORDER BY v.as_of, v.record_key""", (entity["record_key"], *definitions, end, end))]
+            versions = [(a | {"key": definitions[a["feature"]].key}, stamp) for a, stamp in versions]
             dates = sorted({start} | {stamp for _, stamp in versions if start < stamp <= end})
             for date in dates:
                 state = {}
@@ -522,6 +521,13 @@ class RecordStore:
         """The current feature definitions by key; with `replaced`, every definition."""
         from .features import list_definitions
         return list_definitions(self, replaced=replaced)
+
+    def feature_table(self, features: Iterable[str] | None = None, subject_ids: Iterable[str] | None = None, *,
+                      start: str, end: str | None = None, every: str = "day") -> "FeatureTable":
+        """One row per subject and date, every day or weekday from `start` to `end`: each feature's latest
+        value dated by then, the date it was dated (when it last changed) and the latest date it was read."""
+        from .features import table
+        return table(self, features, subject_ids, start=start, end=end, every=every)
 
     def schedule_feature(self, feature: str, *, every: str | None, start: str | None = None) -> "FeatureDefinition":
         """Set the dates a value of the feature is due for each subject (day, weekday, week, month or quarter

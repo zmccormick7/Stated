@@ -348,8 +348,11 @@ class CLITests(unittest.TestCase):
         bank = self.create("Entity", "A bank")
         keys = {}
         for key, attributes in (("a", {"value": 2}), ("b", {"value": None, "formula": "a / 3"})):
+            definition = self.call("define-feature", "--input", "-", payload={
+                "author_id": "r", "key": key, "type": "number", "instructions": f"The {key}.",
+                **({"formula": attributes["formula"]} if "formula" in attributes else {})})
             keys[key] = self.call("create", "Variable", "--input", "-", payload={
-                "text": key, "author_id": "agent-a", "attributes": {"key": key, **attributes}})
+                "text": key, "author_id": "agent-a", "attributes": {"key": key, "feature": definition["id"], **attributes}})
             self.call("link", keys[key]["id"], bank["id"], "about", "--input", "-", payload={"author_id": "agent-a"})
         self.call("link", keys["b"]["id"], keys["a"]["id"], "depends_on", "--input", "-", payload={"author_id": "agent-a"})
         filled = self.call("fill-model", keys["b"]["id"][:8], "--input", "-", payload={"author_id": "agent-a"})
@@ -359,7 +362,7 @@ class CLITests(unittest.TestCase):
         rows = self.call("state", "--entity", bank["id"][:8], "--feature", "b")["rows"]
         self.assertEqual([(r["entity"], r["date"], r["values"], r["stamps"]) for r in rows],
                          [("A bank", keys["b"]["as_of"], {"b": 2 / 3}, {"b": keys["b"]["as_of"]})])
-        self.assertEqual(self.call("state", "--feature", "none")["rows"], [])
+        self.assertEqual(self.call("state", "--feature", "none", status=1), {"error": "Not found: no feature none"})
         self.assertEqual(self.call("state", "--from", "2020-01-01", "--to", "2020-12-31")["rows"], [])
         self.assertEqual(self.call("state", "--date", "2020-01-01", "--to", "2020-12-31", status=1),
                          {"error": "give --date or --from/--to, not both"})

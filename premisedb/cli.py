@@ -171,6 +171,17 @@ def _parser():
     deriving.add_argument("--to", dest="end", metavar="DATE")
     deriving.add_argument("--author", dest="author_id", default="derive-features",
                           help="author_id for the values written (default: derive-features).")
+    table = command("feature-table", "feature_table",
+                    "Write the daily feature table as CSV: one row per subject and date, each feature's latest value "
+                    "dated by then, the date it was dated and the latest date it was read.")
+    table.add_argument("--feature", dest="features", action="append", metavar="KEY",
+                       help="A feature by key or definition ID; repeatable (default: every current definition).")
+    table.add_argument("--subject", dest="subject_ids", action="append", metavar="ENTITY_ID")
+    table.add_argument("--subjects-file", metavar="FILE", help="A file of Entity IDs, one per line.")
+    table.add_argument("--from", dest="start", metavar="DATE", required=True)
+    table.add_argument("--to", dest="end", metavar="DATE", help="Default: the cutoff, or today.")
+    table.add_argument("--every", choices=("day", "weekday"), default="day")
+    table.add_argument("--out", required=True, metavar="FILE", help="The CSV file to write.")
     command("confirm", "confirm_value",
             "Record that a feature's latest value about its subject still holds on this date, instead of "
             "writing it again.", "value_id", payload="author_id")
@@ -236,6 +247,18 @@ def _parser():
             "source_id", payload="title, summary, author_id, optional provenance")
     command("get-context", "read_document_context", "Read document context, or null if absent.", "source_id")
     return parser
+
+
+def _write_table(table, out):
+    """Write a FeatureTable as CSV: nulls empty, booleans true or false, lists as JSON."""
+    import csv
+    cell = lambda v: "" if v is None else ("true" if v is True else "false" if v is False
+                                           else json.dumps(v) if isinstance(v, list) else v)
+    with open(out, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(table.columns)
+        writer.writerows([cell(v) for v in row] for row in table.rows)
+    return {"path": str(Path(out).resolve()), "rows": len(table.rows), "columns": list(table.columns)}
 
 
 def _run_features(path, options, cutoff):
@@ -465,8 +488,9 @@ def main(argv=None):
                     raise ValueError("attributes must be a JSON object")
                 payload["attributes"] = {"url": page.url, "retrieved_at": page.retrieved_at} | (payload.get("attributes") or {})
         if (subjects_file := options.pop("subjects_file", None)) is not None:
-            options["subject_ids"] += [line.strip() for line in Path(subjects_file).read_text(encoding="utf-8").splitlines()
-                                       if line.strip() and not line.startswith("#")]
+            lines = Path(subjects_file).read_text(encoding="utf-8").splitlines()
+            options["subject_ids"] = (options["subject_ids"] or []) + [
+                line.strip() for line in lines if line.strip() and not line.startswith("#")]
         if "date" in options:
             if (date := options.pop("date")) is not None:
                 if options.get("start") or options.get("end"):
@@ -476,6 +500,7 @@ def main(argv=None):
             options["quote"] = sys.stdin.read().removesuffix("\n")
         if options.keys() & payload.keys():
             raise ValueError("JSON input must not repeat arguments supplied by the command")
+        out = options.pop("out", None)
         with RecordStore(path, layer=options.pop("layer", "workspace"), as_of=as_of) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
             for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id", "keep_id", "duplicate_id",
@@ -498,6 +523,8 @@ def main(argv=None):
                     result = _compact(db, method, result, options)
                 if method == "ingest_source":
                     _add_document_context(db, result, payload["author_id"])
+                if method == "feature_table":
+                    result = _write_table(result, out)
         print(json.dumps(_shape(method, result), default=asdict, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError, RuntimeError, sqlite3.Error) as error:

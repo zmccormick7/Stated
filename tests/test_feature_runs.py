@@ -33,7 +33,8 @@ class FakeHarness:
                     links=[{"from_id": "v", "to_id": subject, "relation": "about"}]).records["v"]
                 return Reply(f"{made.id} 0.5", None, ())
             if action == "confirm":
-                latest = db.list_records(kind="Variable", where={"key": "runnable"}).records[-1]
+                from premisedb.features import _latest
+                latest = _latest(db, self.feature.id, subject)
                 return Reply(db.confirm_value(latest.id, author_id="agent").value_id, None, ())
         return Reply("I could not decide.", None, ())
 

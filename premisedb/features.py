@@ -62,6 +62,12 @@ class PendingWork:
 
 
 @dataclass(frozen=True)
+class FeatureTable:
+    columns: tuple[str, ...]  # subject_id, subject, date, then KEY, KEY_as_of, KEY_checked for each feature.
+    rows: tuple[tuple, ...]
+
+
+@dataclass(frozen=True)
 class Derived:
     key: str
     feature_id: str
@@ -413,6 +419,83 @@ def derive(store, subject_id: str, *, author_id: str) -> tuple[Derived, ...]:
             continue
         results.append(Derived(definition.key, definition.id, prior, value, made.id, None))
     return tuple(results)
+
+
+def selected(store, features) -> dict[str, FeatureDefinition]:
+    """Definitions by ID: each named by key (its current definition) or ID, or every current one; one per key."""
+    if features is None:
+        chosen = list_definitions(store)
+    else:
+        if isinstance(features, (str, bytes)) or not isinstance(features, Iterable):
+            raise ValueError("features must be a list of keys or definition IDs, or None")
+        features = tuple(features)
+        if not features or any(not isinstance(f, str) or not f for f in features):
+            raise ValueError("features must be a nonempty list of keys or definition IDs")
+        chosen = [read(store, f) for f in dict.fromkeys(features)]
+    keys = [d.key for d in chosen]
+    if len(set(keys)) != len(keys):
+        raise ValueError("name one definition per key")
+    return {d.id: d for d in chosen}
+
+
+def table(store, features, subject_ids, *, start: str, end: str | None, every: str) -> FeatureTable:
+    """One row per subject and date, every day or weekday from `start` to `end` (default: the cutoff, or
+    today). For each feature: the latest value dated on or before the date, `KEY_as_of`, the date that value
+    is dated (when the feature last changed), and `KEY_checked`, the latest date it was read, by a new value
+    or a check. A value dated a day rests on what was published by the end of that day. Subjects default to
+    every Entity with a value of the features."""
+    definitions = selected(store, features)
+    if every not in ("day", "weekday"):
+        raise ValueError("every is day or weekday")
+    end = _day(end or store.as_of or datetime.now(UTC).date().isoformat(), "end")
+    start = _day(start, "start")
+    if start > end:
+        raise ValueError("start must not be after end")
+    if store.as_of is not None and end > store.as_of:
+        raise ValueError(f"end is after the cutoff {store.as_of}")
+    ids = f"json_extract(v.attributes, '$.feature') IN ({','.join('?' * len(definitions))})"
+    if subject_ids is None:
+        subjects = [(row[0], row[1]) for row in store._db.execute(
+            f"""SELECT DISTINCT e.id, e.text FROM records v JOIN links a ON a.from_key = v.record_key
+                JOIN records e ON e.record_key = a.to_key WHERE v.kind = 'Variable' AND {ids}
+                AND a.relation = 'about' AND e.kind = 'Entity' AND {store._seen('v')} ORDER BY e.text, e.id""",
+            tuple(definitions))]
+    else:
+        if isinstance(subject_ids, (str, bytes)) or not isinstance(subject_ids, Iterable):
+            raise ValueError("subject_ids must be a list of Entity IDs")
+        records = [store.read(store.resolve_id(s)) for s in dict.fromkeys(subject_ids)]
+        if not records or any(r.kind != "Entity" for r in records):
+            raise ValueError("subject_ids must name one or more Entities")
+        subjects = [(r.id, r.text) for r in records]
+    dates = scheduled_dates(every, start, start, end)
+    order = sorted(definitions.values(), key=lambda d: d.key)
+    rows = []
+    for subject_id, subject in subjects:
+        series = []
+        for definition in order:
+            values = [(row[0], json.loads(row[1]).get("value")) for row in store._db.execute(
+                f"""SELECT v.as_of, v.attributes FROM records v JOIN links a ON a.from_key = v.record_key
+                    WHERE v.kind = 'Variable' AND json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about'
+                      AND a.to_key = ? AND v.as_of <= ? AND {store._seen('v')} ORDER BY v.as_of, v.record_key""",
+                (definition.id, store._record_key(subject_id), end))]
+            checks = sorted({row[0] for row in store._db.execute(
+                """SELECT c.as_of FROM feature_checks c JOIN records v ON v.record_key = c.value_key
+                   JOIN links a ON a.from_key = v.record_key WHERE json_extract(v.attributes, '$.feature') = ?
+                   AND a.relation = 'about' AND a.to_key = ? AND c.as_of <= ?""",
+                (definition.id, store._record_key(subject_id), end))})
+            series.append((values, checks))
+        for day in dates:
+            row = [subject_id, subject, day]
+            for values, checks in series:
+                known = [v for v in values if v[0] <= day]  # Later versions of a date follow earlier ones.
+                if not known:
+                    row += [None, None, None]
+                    continue
+                row += [known[-1][1], known[-1][0], max([known[-1][0]] + [c for c in checks if c <= day])]
+            rows.append(tuple(row))
+    columns = ("subject_id", "subject", "date") + tuple(
+        name for d in order for name in (d.key, f"{d.key}_as_of", f"{d.key}_checked"))
+    return FeatureTable(columns, tuple(rows))
 
 
 def _latest(store, feature_id: str, subject_id: str):

@@ -17,6 +17,12 @@ class FeatureTests(unittest.TestCase):
         self.addCleanup(self.live.close)
         self.bank = self.live.create("Entity", text="Silicon Valley Bank", author_id="setup")
         self.other = self.live.create("Entity", text="Another Bank", author_id="setup")
+        formulas = {"uninsured_share": "uninsured_deposits / total_deposits",
+                    "deposit_change": "deposits_by_quarter / prev(deposits_by_quarter) - 1"}
+        self.definitions = {key: self.live.define_feature(author_id="setup", key=key, type="number", formula=formulas.get(key),
+                                                          instructions=f"The bank's {key}.")
+                            for key in ("total_deposits", "uninsured_deposits", "uninsured_share", "deposits_by_quarter",
+                                        "deposit_change")}
 
     def at(self, date):
         store = RecordStore(self.path, as_of=date)
@@ -24,7 +30,8 @@ class FeatureTests(unittest.TestCase):
         return store
 
     def feature(self, store, entity, key, value, *, formula=None, inputs=(), periods=None, updates=None):
-        attributes = {"key": key, "value": value, "basis": "derived" if formula else "disclosed"}
+        attributes = {"key": key, "feature": self.definitions[key].id, "value": value,
+                      "basis": "derived" if formula else "disclosed"}
         if formula:
             attributes["formula"] = formula
         if periods:
