@@ -26,12 +26,12 @@ This works because in a description task, knowledge of the future can only show 
 | A change | A new Variable linked `updates` the previous value, which keeps its own value and date. |
 | No change | A check, `premisedb confirm VALUE_ID`, recording that the latest value still held on the date, instead of writing it again. |
 | A schedule | The dates a value is due for each subject: every day, weekday, week, month or quarter from a start date (`premisedb schedule-feature`). `premisedb pending FEATURE --subjects-file FILE` lists the scheduled dates on which a subject has neither a value nor a check: the sessions still to run. |
-| A derived feature | A definition with a `formula` over other features' keys. `premisedb fill-model ENTITY_ID` computes every derived value about a subject from the latest version of its inputs. |
+| A derived feature | A definition with a `formula` over other features' keys. PremiseDB computes it, never an agent: at every date an input changed, from the latest value of each input about the subject as of that date (`premisedb derive-features`, which `run-features` does after each subject's sessions). |
 | The feature table | `premisedb state` exports values as change points per subject: a row whenever some feature changed. A daily series is a forward fill of those rows. |
 
 Definitions are procedures, not knowledge, so they live beside the graph rather than in it: every cutoff reads them alike, they never turn up in search, and each records `written_at`, when its instructions were fixed. A definition can be edited until a value names it. After that, new instructions for its key are a new definition that `replaces` it, so every value stays tied to the instructions it was made under.
 
-The [premisedb-state skill](../premisedb/skills/premisedb-state/SKILL.md) teaches an agent to produce one value: given a feature, a subject and a cutoff, read what is visible, write the value or leave the previous one standing, and leave derived features to `fill-model`.
+The [premisedb-state skill](../premisedb/skills/premisedb-state/SKILL.md) teaches an agent to produce one value: given a feature, a subject and a cutoff, read what is visible, write the value or leave the previous one standing, and leave derived features to PremiseDB.
 
 ## Writing a feature
 
@@ -86,7 +86,7 @@ Leakage cannot be proven zero. The case is structural, backed by audits:
 1. **Collect documents as filed.** Ingest each filing, transcript or release as a Source with `published` set to the date it became public, and ideally `document_type`. A Source without a publication date is never seen at any cutoff.
 2. **Create the subjects.** One Entity per subject, including those that later failed, merged or were delisted.
 3. **Define the features**, without a cutoff, before any values. Each definition's `written_at` records when its instructions were fixed.
-4. **Schedule and run sessions at cutoffs.** Give each feature a schedule; `premisedb run-features FEATURE --subjects-file FILE --workers N` then works through what `pending` lists, opening a fresh agent session for each (subject, date) with `PREMISEDB_AS_OF` set to the date, the web off, and the premisedb-state skill. Sessions for the same feature and subject run in date order, since each starts from the previous value; different subjects run in parallel. A run that stops is resumed by running it again. Then run `fill-model` for derived features.
+4. **Schedule and run sessions at cutoffs.** Give each feature a schedule; `premisedb run-features FEATURE --subjects-file FILE --workers N` then works through what `pending` lists, opening a fresh agent session for each (subject, date) with `PREMISEDB_AS_OF` set to the date, the web off, and the premisedb-state skill. Sessions for the same feature and subject run in date order, since each starts from the previous value; different subjects run in parallel. A run that stops is resumed by running it again. After each subject's sessions, its derived features are computed date by date.
 5. **Export** with `premisedb state` and forward-fill to the frequency your model needs.
 
 For example, a feature defined once:
@@ -118,7 +118,6 @@ JSON
 
 These parts of the workflow are designed but not yet in PremiseDB; until they are, they are scripts you write around it:
 
-- Derived features computed by the runner as their inputs change; for now, run `fill-model`.
 - Measuring residual lookahead: how a feature, and the agents producing it, behave before and after the agent model's training cutoff.
 - A daily feature table; `state` exports change points.
 

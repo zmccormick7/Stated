@@ -7,6 +7,7 @@ starts from the value the one before left. A session that ends without its date 
 run, because the dates after it would start from the wrong value. The pending list is the run's only state:
 a run that stops, for whatever reason, is picked up by running it again. Sessions run in an empty folder,
 with the web off and PremiseDB's own fetching off, so what they can read is what the cutoff shows them.
+After a subject's sessions, its derived features are computed mechanically, date by date.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -35,11 +36,55 @@ class SessionResult:
 
 
 @dataclass(frozen=True)
+class DerivedAt:
+    subject_id: str
+    date: str
+    key: str
+    value: object
+    id: str | None  # The value written, if any.
+    problem: str | None  # Why none was, if it could not be.
+
+
+@dataclass(frozen=True)
 class FeatureRun:
     feature_id: str
     key: str
     sessions: tuple[SessionResult, ...]
     remaining: int  # Scheduled dates still pending over the subjects and range when the run ended.
+    derived: tuple[DerivedAt, ...] = ()
+
+
+def derive_features(db_path: str | Path, subject_ids, *, author_id: str, start: str | None = None,
+                    end: str | None = None) -> tuple[DerivedAt, ...]:
+    """Compute each subject's derived features at every date from `start` to `end` on which a value of a
+    feature they read is dated, in date order, each from the inputs recorded as of that date. Running it
+    again after more inputs are written brings the derived values in line: a date's newer value is the
+    latest version for that date."""
+    from .features import derive
+    from .formulas import parse
+    db_path = Path(db_path).resolve()
+    with RecordStore(db_path) as db:
+        subjects = [db.read(db.resolve_id(s)).id for s in dict.fromkeys(subject_ids)]
+        current = {d.key: d for d in db.list_features()}
+        read = {name for d in current.values() if d.formula for name in parse(d.formula)[1] if name in current}
+        dates = {subject: [] for subject in subjects}
+        if not read:
+            return ()
+        for subject in subjects:  # Each subject's dates on which an input changed, in order.
+            dates[subject] = sorted({row[0] for row in db._db.execute(
+                f"""SELECT v.as_of FROM records v JOIN links a ON a.from_key = v.record_key
+                    WHERE v.kind = 'Variable' AND a.relation = 'about' AND a.to_key = ?
+                      AND json_extract(v.attributes, '$.feature') IN ({','.join('?' * len(read))})
+                      AND v.as_of BETWEEN ? AND ?""",
+                (db._record_key(subject), *(current[k].id for k in sorted(read)), start or "0000-00-00",
+                 end or "9999-99-99"))})
+    results = []
+    for subject in subjects:
+        for day in dates[subject]:
+            with RecordStore(db_path, as_of=day) as store:
+                results += [DerivedAt(subject, day, d.key, d.value, d.id, d.problem)
+                            for d in derive(store, subject, author_id=author_id)]
+    return tuple(results)
 
 
 def run_features(db_path: str | Path, feature: str, subject_ids, *, harness, workers: int = 1,
@@ -62,7 +107,7 @@ def run_features(db_path: str | Path, feature: str, subject_ids, *, harness, wor
     for task in work.tasks:
         by_subject.setdefault(task.subject_id, []).append(task)
     author = author_id or f"feature-run/{harness.name}"
-    lock, results, started = threading.Lock(), [], [0]
+    lock, results, derived, started = threading.Lock(), [], [], [0]
 
     def claim() -> bool:
         with lock:
@@ -74,20 +119,25 @@ def run_features(db_path: str | Path, feature: str, subject_ids, *, harness, wor
     def subject_run(tasks) -> None:
         for task in tasks:
             if not claim():
-                return
+                break
             result = _session(db_path, definition, task, harness, author, session_minutes)
             with lock:
                 results.append(result)
             on_result(result)
             if not result.done:
-                return
+                break
+        made = derive_features(db_path, [tasks[0].subject_id], author_id=author, start=work.start, end=work.end)
+        with lock:
+            derived.extend(made)
+        for item in made:
+            on_result(item)
 
     with ThreadPoolExecutor(workers) as pool:
         for future in [pool.submit(subject_run, tasks) for tasks in by_subject.values()]:
             future.result()
     with RecordStore(db_path) as db:
         remaining = db.pending_work(definition.id, subject_ids, start=start, end=work.end, limit=1).total
-    return FeatureRun(definition.id, definition.key, tuple(results), remaining)
+    return FeatureRun(definition.id, definition.key, tuple(results), remaining, tuple(derived))
 
 
 def _session(db_path: Path, definition, task, harness, author: str, minutes: float) -> SessionResult:

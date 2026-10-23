@@ -49,6 +49,8 @@ class FeatureRunTests(unittest.TestCase):
             self.feature = db.define_feature(author_id="r", key="runnable", type="number", min=0, max=1,
                                              instructions="Share of deposits that could leave within weeks.")
             db.schedule_feature("runnable", every="week", start="2023-01-02")
+            db.define_feature(author_id="r", key="runnable_pct", type="number", formula="runnable * 100",
+                              instructions="The runnable share in percent.")
 
     def run_with(self, script, **options):
         harness = FakeHarness(self.path, self.feature, script)
@@ -68,7 +70,9 @@ class FeatureRunTests(unittest.TestCase):
         self.assertIn("premisedb-state", prompt)
         self.assertIn('author_id "feature-run/fake"', prompt)
         self.assertEqual((result.remaining, len(result.sessions), all(s.done for s in result.sessions)), (0, 6, True))
-        self.assertEqual(len(seen), 6)
+        self.assertEqual(len(seen), 6 + 2)  # Each subject's derived feature, computed once: it never changes.
+        self.assertEqual({(d.subject_id, d.date, d.key, d.value) for d in result.derived},
+                         {(s, "2023-01-02", "runnable_pct", 50.0) for s in (self.a, self.b)})
         self.assertEqual(self.run_with({})[1].sessions, ())  # Nothing left: running again does nothing.
 
     def test_a_failed_date_stops_its_subject_and_the_run_resumes_from_it(self):

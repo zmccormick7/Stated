@@ -62,6 +62,16 @@ class PendingWork:
 
 
 @dataclass(frozen=True)
+class Derived:
+    key: str
+    feature_id: str
+    previous: object  # The latest value before, or None.
+    value: object  # The computed value; None when it could not be computed.
+    id: str | None  # The new value's ID, when one was written.
+    problem: str | None  # Why nothing was written, when the value could not be computed or stored.
+
+
+@dataclass(frozen=True)
 class FeatureCheck:
     value_id: str  # The latest value, found still to hold.
     feature_id: str
@@ -225,7 +235,7 @@ def schedule(store, feature: str, *, every: str | None, start: str | None = None
             raise ValueError(f"every is one of {', '.join(EVERY)}")
         _day(start, "start")
         if definition.formula is not None:
-            raise ValueError("a derived feature has no schedule: fill-model computes it when its inputs change")
+            raise ValueError("a derived feature has no schedule: it is computed whenever its inputs change")
     with store._db:
         store._db.execute("BEGIN IMMEDIATE")
         store._db.execute("UPDATE features SET every = ?, starts = ? WHERE id = ?", (every, start, definition.id))
@@ -327,6 +337,92 @@ def confirm(store, value_id: str, *, author_id: str) -> FeatureCheck:
                           (store._record_key(value.id), day, author_id, written_at))
     subject_id = store._db.execute("SELECT id FROM records WHERE record_key = ?", (subjects[0],)).fetchone()[0]
     return FeatureCheck(value.id, feature_id, subject_id, day, author_id, written_at)
+
+
+def derive(store, subject_id: str, *, author_id: str) -> tuple[Derived, ...]:
+    """Compute every current derived feature for one subject as of the store's date, from the latest value
+    about it of each feature its formula names, a derived feature after those it reads. Where the result
+    differs from the latest value, or there is none, write a new value dated the store's date, linked
+    `depends_on` the inputs and `updates` the previous value. Returns what was written or could not be."""
+    from .formulas import evaluate, exact, parse
+    if not isinstance(author_id, str) or not author_id.strip():
+        raise ValueError("author_id must be a nonblank string")
+    subject = store.read(store.resolve_id(subject_id))
+    if subject.kind != "Entity":
+        raise ValueError(f"{subject.id} is a {subject.kind}, not an Entity")
+    current = {d.key: d for d in list_definitions(store)}
+    ordered, placed = [], set()
+
+    def place(definition, path=()):
+        if definition.key in placed:
+            return
+        if definition.key in path:
+            raise ValueError(f"derived features read each other in a loop: {' -> '.join(path + (definition.key,))}")
+        for name in sorted(parse(definition.formula)[1]):
+            if name in current and current[name].formula is not None:
+                place(current[name], path + (definition.key,))
+        placed.add(definition.key)
+        ordered.append(definition)
+
+    for definition in sorted(current.values(), key=lambda d: d.key):
+        if definition.formula is not None:
+            place(definition)
+    results = []
+    for definition in ordered:
+        previous = _latest(store, definition.id, subject.id)
+        prior = None if previous is None else previous.attributes.get("value")
+
+        def skip(problem):
+            results.append(Derived(definition.key, definition.id, prior, None, None, problem))
+
+        inputs = {}
+        for name in sorted(parse(definition.formula)[1]):
+            value = _latest(store, current[name].id, subject.id) if name in current else None
+            if value is None:
+                break
+            inputs[name] = value
+        else:
+            name = None
+        if name is not None:
+            skip(f"no value of {name} about this subject yet")
+            continue
+        if any(isinstance(v.attributes.get("value"), list) for v in inputs.values()):
+            skip("inputs over several periods are not derived yet")
+            continue
+        periods = {v.attributes.get("period") for v in inputs.values()} - {None}
+        if len(periods) > 1:
+            skip(f"its inputs are for different periods: {', '.join(sorted(map(str, periods)))}")
+            continue
+        value = evaluate(definition.formula, {n: v.attributes.get("value") for n, v in inputs.items()})
+        if previous is not None and (exact(prior, value) or (isinstance(value, bool) and prior is value)):
+            continue
+        attributes = {"key": definition.key, "feature": definition.id, "formula": definition.formula, "value": value}
+        attributes |= {"period": periods.pop()} if periods else {}
+        attributes |= {"units": definition.units} if definition.units else {}
+        read_from = ", ".join(f"{n} = {v.attributes.get('value')!r}" for n, v in inputs.items())
+        links = [{"from_id": "v", "to_id": subject.id, "relation": "about"}] + [
+            {"from_id": "v", "to_id": v.id, "relation": "depends_on"} for v in inputs.values()] + (
+            [{"from_id": "v", "to_id": previous.id, "relation": "updates"}] if previous is not None else [])
+        try:
+            made = store.contribute(author_id=author_id, records=[{
+                "ref": "v", "kind": "Variable", "attributes": attributes,
+                "text": f"{definition.key} of {subject.text}, computed by its formula from {read_from}."}],
+                links=links).records["v"]
+        except ValueError as error:
+            skip(str(error))
+            continue
+        results.append(Derived(definition.key, definition.id, prior, value, made.id, None))
+    return tuple(results)
+
+
+def _latest(store, feature_id: str, subject_id: str):
+    """The latest value of a definition about a subject that the store sees, or None."""
+    row = store._db.execute(
+        f"""SELECT v.id FROM records v JOIN links a ON a.from_key = v.record_key
+            WHERE v.kind = 'Variable' AND json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about'
+              AND a.to_key = ? AND {store._seen('v')} AND {store._seen('a', link=True)}
+            ORDER BY v.as_of DESC, v.record_key DESC LIMIT 1""", (feature_id, store._record_key(subject_id))).fetchone()
+    return None if row is None else store.read(row[0])
 
 
 def _day(value: object, name: str) -> str:
