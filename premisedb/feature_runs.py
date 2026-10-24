@@ -1,6 +1,8 @@
-"""A feature run: the sessions `pending` lists for one feature and a list of subjects, each a fresh agent
-session opened at its date's cutoff that writes the feature's value for one subject or confirms that the
-latest value still holds.
+"""A feature run: the sessions `pending` lists for some features and a list of subjects. One fresh agent
+session, opened at a date's cutoff, takes every feature due for a subject on that date, writing each one's
+value or confirming that its latest value still holds. A feature with no new document about the subject
+since it was last read is confirmed without a session: a document is about a subject when its Source is
+linked `about` the subject's Entity.
 
 Subjects run in parallel, up to the number of workers; each subject's dates run in order, since each session
 starts from the value the one before left. A session that ends without its date done stops that subject's
@@ -31,8 +33,10 @@ class SessionResult:
     subject_id: str
     subject: str
     date: str
-    done: bool  # The date has a value or a check for the subject.
-    detail: str  # The agent's last message, or why the session failed.
+    keys: tuple[str, ...]  # The features due on the date that this result covers.
+    done: bool  # Each of them has a value or a check for the subject on the date.
+    detail: str  # The agent's last message, why the session failed, or why no session was needed.
+    session: bool  # Whether an agent session ran; False when nothing new had been published.
 
 
 @dataclass(frozen=True)
@@ -47,8 +51,7 @@ class DerivedAt:
 
 @dataclass(frozen=True)
 class FeatureRun:
-    feature_id: str
-    key: str
+    keys: tuple[str, ...]
     sessions: tuple[SessionResult, ...]
     remaining: int  # Scheduled dates still pending over the subjects and range when the run ended.
     derived: tuple[DerivedAt, ...] = ()
@@ -87,25 +90,34 @@ def derive_features(db_path: str | Path, subject_ids, *, author_id: str, start: 
     return tuple(results)
 
 
-def run_features(db_path: str | Path, feature: str, subject_ids, *, harness, workers: int = 1,
+def run_features(db_path: str | Path, features, subject_ids, *, harness, workers: int = 1,
                  start: str | None = None, end: str | None = None, author_id: str | None = None,
-                 max_sessions: int | None = None, session_minutes: float = 20,
+                 max_sessions: int | None = None, session_minutes: float = 20, skip_unchanged: bool = True,
                  on_result=lambda result: None) -> FeatureRun:
-    """Run the pending sessions for `feature` over `subject_ids` from `start` to `end`, as pending_work
-    reads them, with up to `workers` subjects at a time and at most `max_sessions` sessions. A usage limit
-    is waited out and the session tried again."""
+    """Run the pending dates of `features` over `subject_ids` from `start` to `end`, as pending_work reads
+    them, with up to `workers` subjects at a time and at most `max_sessions` agent sessions. At each of a
+    subject's dates, in order, a feature that has a value and no new document about the subject since it
+    was last read is confirmed without a session, unless `skip_unchanged` is False; the others share one
+    session. A usage limit is waited out and the session tried again."""
     if not isinstance(workers, int) or isinstance(workers, bool) or not 1 <= workers <= 32:
         raise ValueError("workers must be an integer from 1 to 32")
     if max_sessions is not None and (not isinstance(max_sessions, int) or max_sessions < 1):
         raise ValueError("max_sessions must be a positive integer")
+    if isinstance(features, str):
+        features = [features]
     db_path = Path(db_path).resolve()
     subject_ids = list(subject_ids)
     with RecordStore(db_path) as db:
-        definition = db.read_feature(feature)
-        work = db.pending_work(definition.id, subject_ids, start=start, end=end, limit=100000)
-    by_subject: dict[str, list] = {}
-    for task in work.tasks:
-        by_subject.setdefault(task.subject_id, []).append(task)
+        definitions = list({d.id: d for d in (db.read_feature(f) for f in features)}.values())
+        if not definitions:
+            raise ValueError("name one or more features")
+        works = [db.pending_work(d.id, subject_ids, start=start, end=end, limit=100000) for d in definitions]
+    due: dict[str, dict[str, list]] = {}  # Subject → date → the definitions due then.
+    names = {}
+    for definition, work in zip(definitions, works):
+        for task in work.tasks:
+            names[task.subject_id] = task.subject
+            due.setdefault(task.subject_id, {}).setdefault(task.date, []).append(definition)
     author = author_id or f"feature-run/{harness.name}"
     lock, results, derived, started = threading.Lock(), [], [], [0]
 
@@ -116,40 +128,77 @@ def run_features(db_path: str | Path, feature: str, subject_ids, *, harness, wor
             started[0] += 1
             return True
 
-    def subject_run(tasks) -> None:
-        for task in tasks:
+    def report(result) -> None:
+        with lock:
+            results.append(result)
+        on_result(result)
+
+    def subject_run(subject_id: str) -> None:
+        for day, definitions_due in sorted(due[subject_id].items()):
+            if skip_unchanged:
+                definitions_due = _confirm_unchanged(db_path, subject_id, names[subject_id], day, definitions_due,
+                                                     f"{author}/no-new-documents", report)
+            if not definitions_due:
+                continue
             if not claim():
                 break
-            result = _session(db_path, definition, task, harness, author, session_minutes)
-            with lock:
-                results.append(result)
-            on_result(result)
+            result = _session(db_path, definitions_due, subject_id, names[subject_id], day, harness, author,
+                              session_minutes)
+            report(result)
             if not result.done:
                 break
-        made = derive_features(db_path, [tasks[0].subject_id], author_id=author, start=work.start, end=work.end)
+        made = derive_features(db_path, [subject_id], author_id=author, start=min(w.start for w in works),
+                               end=max(w.end for w in works))
         with lock:
             derived.extend(made)
         for item in made:
             on_result(item)
 
     with ThreadPoolExecutor(workers) as pool:
-        for future in [pool.submit(subject_run, tasks) for tasks in by_subject.values()]:
+        for future in [pool.submit(subject_run, subject) for subject in due]:
             future.result()
     with RecordStore(db_path) as db:
-        remaining = db.pending_work(definition.id, subject_ids, start=start, end=work.end, limit=1).total
-    return FeatureRun(definition.id, definition.key, tuple(results), remaining, tuple(derived))
+        remaining = sum(db.pending_work(d.id, subject_ids, start=start, end=w.end, limit=1).total
+                        for d, w in zip(definitions, works))
+    return FeatureRun(tuple(d.key for d in definitions), tuple(results), remaining, tuple(derived))
 
 
-def _session(db_path: Path, definition, task, harness, author: str, minutes: float) -> SessionResult:
-    """One fresh session at the task's cutoff, tried again after a usage limit; done when the date has a
-    value or a check for the subject afterwards."""
-    env = os.environ | {"PREMISEDB_DB": str(db_path), "PREMISEDB_AS_OF": task.date, "PREMISEDB_FETCH": "0",
+def _confirm_unchanged(db_path: Path, subject_id: str, subject: str, day: str, definitions, author: str, report):
+    """Confirm, without a session, each definition whose latest value about the subject was last read on or
+    after the latest publication date of a document about it; return the definitions that need a session."""
+    from .features import _latest
+    left = []
+    with RecordStore(db_path, as_of=day) as db:
+        published = db._db.execute(
+            f"""SELECT max(substr(json_extract(s.attributes, '$.published'), 1, 10)) FROM records s
+                JOIN links a ON a.from_key = s.record_key
+                WHERE s.kind = 'Source' AND a.relation = 'about' AND a.to_key = ? AND {db._seen('s')}""",
+            (db._record_key(subject_id),)).fetchone()[0]
+        for definition in definitions:
+            latest = _latest(db, definition.id, subject_id)
+            read_on = None if latest is None else max([latest.as_of] + [row[0] for row in db._db.execute(
+                "SELECT as_of FROM feature_checks WHERE value_key = ? AND as_of < ?",
+                (db._record_key(latest.id), day))])
+            if latest is None or (published is not None and published > read_on):
+                left.append(definition)
+                continue
+            db.confirm_value(latest.id, author_id=author)
+            report(SessionResult(subject_id, subject, day, (definition.key,), True,
+                                 f"No new document about the subject since {read_on}; confirmed {latest.id}.", False))
+    return left
+
+
+def _session(db_path: Path, definitions, subject_id: str, subject: str, day: str, harness, author: str,
+             minutes: float) -> SessionResult:
+    """One fresh session at the date's cutoff for every feature due then, tried again after a usage limit;
+    done when each has a value or a check for the subject on the date afterwards."""
+    env = os.environ | {"PREMISEDB_DB": str(db_path), "PREMISEDB_AS_OF": day, "PREMISEDB_FETCH": "0",
                         "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"}
     while True:
         try:
             with tempfile.TemporaryDirectory() as folder:
-                reply = harness.run(_prompt(definition, task, author), cwd=folder, env=env, web=False,
-                                    writable=(db_path.parent,), timeout=minutes * 60)
+                reply = harness.run(_prompt(definitions, subject_id, subject, day, author), cwd=folder, env=env,
+                                    web=False, writable=(db_path.parent,), timeout=minutes * 60)
             detail = reply.text.strip()
             break
         except UsageLimit as limit:
@@ -158,18 +207,19 @@ def _session(db_path: Path, definition, task, harness, author: str, minutes: flo
         except HarnessError as error:
             detail = f"The session failed: {error}"
             break
-    with RecordStore(db_path, as_of=task.date) as db:
-        done = db.pending_work(definition.id, [task.subject_id], start=task.date, end=task.date).total == 0
-    if not done and not detail.startswith("The session failed"):
-        detail = f"The session ended without a value or a check for {task.date}: {detail}"
-    return SessionResult(task.subject_id, task.subject, task.date, done, detail[:2000])
+    with RecordStore(db_path, as_of=day) as db:
+        undone = [d.key for d in definitions
+                  if db.pending_work(d.id, [subject_id], start=day, end=day).total]
+    if undone and not detail.startswith("The session failed"):
+        detail = f"The session ended without a value or a check for {', '.join(undone)} on {day}: {detail}"
+    return SessionResult(subject_id, subject, day, tuple(d.key for d in definitions), not undone, detail[:2000], True)
 
 
-def _prompt(definition, task, author: str) -> str:
-    return (f"Use the premisedb-state skill. This session is at the cutoff {task.date}: every premisedb command "
-            f"reads and writes as of that date.\n\n"
-            f"Feature: {definition.key} (definition {definition.id}); `premisedb feature {definition.id}` shows its "
-            f"instructions.\nSubject: {task.subject} (Entity {task.subject_id}).\n\n"
-            f"Write this feature's value for this subject as of {task.date}, or, if the latest value still holds, "
-            f"confirm it. Use author_id \"{author}\". Finish with one line: the value's ID and value, or the "
-            f"confirmed value's ID.")
+def _prompt(definitions, subject_id: str, subject: str, day: str, author: str) -> str:
+    listed = "\n".join(f"- {d.key} (definition {d.id})" for d in definitions)
+    return (f"Use the premisedb-state skill for each feature below, one at a time. This session is at the cutoff "
+            f"{day}: every premisedb command reads and writes as of that date. `premisedb feature ID` shows a "
+            f"feature's instructions.\n\nSubject: {subject} (Entity {subject_id}).\nFeatures:\n{listed}\n\n"
+            f"For each feature, write its value for this subject as of {day}, or, if its latest value still holds, "
+            f"confirm it. Use author_id \"{author}\". Finish with one line per feature: its key, then the value's "
+            f"ID and value, or the confirmed value's ID.")

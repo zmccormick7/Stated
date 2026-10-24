@@ -148,8 +148,12 @@ def _parser():
     todo.add_argument("--to", dest="end", metavar="DATE", help="Default: the cutoff, or today.")
     todo.add_argument("--limit", type=int, default=1000)
     runner = command("run-features", "run_features",
-                     "Run the pending sessions for a feature: a fresh agent session at each date's cutoff, the web "
-                     "off, writing the value or confirming the latest one; each subject's dates in order.", "feature")
+                     "Run the pending dates of features: at each subject's date, a fresh agent session at that cutoff, "
+                     "the web off, for every feature due, writing values or confirming the latest; features with no "
+                     "new document about the subject are confirmed without one. Each subject's dates in order.")
+    runner.add_argument("features", nargs="+", metavar="FEATURE")
+    runner.add_argument("--every-date", dest="skip_unchanged", action="store_false",
+                        help="Run a session even when no new document about the subject has been published.")
     runner.add_argument("--subject", dest="subject_ids", action="append", default=[], metavar="ENTITY_ID")
     runner.add_argument("--subjects-file", metavar="FILE", help="A file of Entity IDs, one per line.")
     runner.add_argument("--from", dest="start", metavar="DATE")
@@ -287,16 +291,18 @@ def _run_features(path, options, cutoff):
                    if options["harness"] == "codex" else ClaudeCode())
         install_skills(harness)
         report = lambda result: print(json.dumps(asdict(result)), file=sys.stderr, flush=True)
-        result = run_features(path, options["feature"], subjects, harness=harness, workers=options["workers"],
+        result = run_features(path, options["features"], subjects, harness=harness, workers=options["workers"],
                               start=options["start"], end=options["end"], author_id=options["author_id"],
                               max_sessions=options["max_sessions"], session_minutes=options["session_minutes"],
-                              on_result=report)
+                              skip_unchanged=options["skip_unchanged"], on_result=report)
     except (OSError, ValueError, KeyError, sqlite3.Error) as error:
         message = f"Not found: {error.args[0]}" if isinstance(error, KeyError) and error.args else str(error)
         print(json.dumps({"error": message}), file=sys.stderr)
         return 1
-    print(json.dumps({"feature_id": result.feature_id, "key": result.key, "remaining": result.remaining,
-                      "sessions": len(result.sessions), "done": sum(s.done for s in result.sessions),
+    print(json.dumps({"features": list(result.keys), "remaining": result.remaining,
+                      "sessions": sum(s.session for s in result.sessions),
+                      "confirmed_without_session": sum(not s.session for s in result.sessions),
+                      "done": sum(s.done for s in result.sessions),
                       "failed": [asdict(s) for s in result.sessions if not s.done],
                       "derived": len([d for d in result.derived if d.id]),
                       "not_derived": [asdict(d) for d in result.derived if d.problem]}))
