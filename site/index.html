@@ -151,6 +151,50 @@ h1 {
 .btn-glass:hover { background: var(--btn2-hover); }
 .btn svg { width: 18px; height: 18px; fill: currentColor; }
 
+
+/* ---------- Section variations: each section gets its own shape ---------- */
+.on-dark {
+  --bg: #0D1016; --fg: #F2F3F5; --muted: #A0A6B0; --faint: #6F7682; --rule: #232835;
+  --hl-strong: rgba(110, 135, 255, 0.38); --accent: #8A9DFF;
+  --up-bg: rgba(110, 135, 255, 0.2); --up-ink: #B4C1FF; --down-bg: rgba(240, 150, 70, 0.18); --down-ink: #F4BB87;
+  --flat-bg: rgba(255, 255, 255, 0.07); --flat-ink: #BFC3CA;
+  color-scheme: dark; background: var(--bg); color: var(--fg);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .on-dark { --bg: #151924; } }
+:root[data-theme="dark"] .on-dark { --bg: #151924; }
+.scale.on-dark { border-top: 0; border-radius: 24px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
+.on-dark + .scale { border-top: 0; }
+.center-head { display: grid; justify-items: center; gap: 18px; text-align: center; margin-bottom: clamp(44px, 5vw, 72px); }
+.center-head .label { margin: 0; text-align: center; }
+.center-head h2 { margin: 0; max-width: 18ch; font-size: clamp(2rem, 4.4vw, 3.75rem); font-weight: 400; line-height: 1.06; letter-spacing: -0.035em; text-wrap: balance; }
+.center-head p { margin: 0; max-width: 34rem; color: var(--muted); font-size: 1.125rem; line-height: 1.6; text-wrap: balance; }
+
+.split { display: grid; gap: 36px 72px; align-items: center; }
+@media (min-width: 960px) { .split { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr); } }
+.split-copy { display: grid; gap: 20px; align-content: center; }
+.split-copy .label { margin: 0; }
+.split-copy h2 { margin: 0; font-size: clamp(1.75rem, 2.8vw, 2.5rem); font-weight: 400; line-height: 1.14; letter-spacing: -0.028em; text-wrap: balance; }
+.split-copy p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 30rem; }
+.split-copy .graph-key { display: grid; gap: 10px; margin-top: 8px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 0.875rem; }
+.split #graph { height: 520px; }
+@media (max-width: 600px) { .split #graph { height: 380px; } }
+
+.stack-head { max-width: 54rem; margin-bottom: clamp(40px, 5vw, 64px); }
+.stack-head .label { margin: 0 0 22px; text-align: left; }
+.stack-head h2 { margin: 0 0 22px; font-size: clamp(2.5rem, 5.6vw, 5rem); font-weight: 400; line-height: 1.02; letter-spacing: -0.04em; text-wrap: balance; }
+.stack-head p { margin: 0; max-width: 38rem; color: var(--muted); font-size: clamp(1.0625rem, 1.3vw, 1.1875rem); line-height: 1.6; }
+
+/* ---------- Proof: what is running today ---------- */
+.proof { padding: clamp(72px, 9vw, 128px) clamp(4px, 3vw, 40px); border-top: 1px solid var(--rule); }
+.proof .label { text-align: left; margin: 0 0 clamp(28px, 3vw, 44px); }
+.proof-grid { display: grid; gap: 44px 48px; }
+@media (min-width: 760px) { .proof-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.stat { display: grid; gap: 16px; align-content: start; padding-top: 22px; border-top: 1px solid var(--fg); }
+.stat .num { font-size: clamp(4rem, 8.6vw, 8rem); font-weight: 400; line-height: 0.9; letter-spacing: -0.055em; font-variant-numeric: tabular-nums; }
+.stat .num small { font-size: 0.42em; letter-spacing: -0.02em; margin-left: 0.06em; color: var(--muted); }
+.stat p { margin: 0; max-width: 22rem; color: var(--muted); font-size: 1rem; line-height: 1.5; }
+.proof-note { margin: clamp(32px, 4vw, 48px) 0 0; font-size: 0.8125rem; color: var(--faint); }
+
 /* ---------- Closing panel and footer ---------- */
 .closing { height: auto; min-height: 480px; }
 .closing .hero-copy { padding: 88px 20px; }
@@ -263,7 +307,6 @@ mark.on { background-size: 100% 100%; }
 /* ---------- Compounding: a shared graph that agents grow together ---------- */
 #graph { display: block; width: 100%; height: 460px; }
 @media (max-width: 600px) { #graph { height: 380px; } }
-.graph-note { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 0.8125rem; color: var(--faint); }
 .graph-key { display: inline-flex; flex-wrap: wrap; gap: 6px 20px; align-items: center; color: var(--muted); }
 .graph-key b { font-family: var(--mono); font-weight: 500; color: var(--fg); margin-right: 4px; font-variant-numeric: tabular-nums; }
 .graph-key i { display: inline-block; width: 8px; height: 8px; margin-right: 8px; vertical-align: 0; background: var(--fg); }
@@ -401,10 +444,10 @@ mark.on { background-size: 100% 100%; }
   </div>
 </section>
 
-<section class="scale" aria-labelledby="scale-label">
+<section class="scale on-dark" aria-labelledby="scale-label">
   <div class="scale-inner">
-    <p class="label" id="scale-label">Now readable at scale</p>
-    <div class="scale-head">
+    <div class="center-head">
+      <p class="label" id="scale-label">Now readable at scale</p>
       <h2>LLMs can finally read like analysts, across every company, every day.</h2>
       <p>Define the signals you care about, and Implied measures them across your entire universe, turning the written record into data your models can use.</p>
     </div>
@@ -430,28 +473,38 @@ mark.on { background-size: 100% 100%; }
 
 <section class="scale" aria-labelledby="graph-label">
   <div class="scale-inner">
-    <p class="label" id="graph-label">Research that compounds</p>
-    <div class="scale-head">
-      <h2>Deep research doesn't scale when every agent starts from scratch.</h2>
-      <p>In Implied, agents share a knowledge graph, where each finding is recorded with its source, linked to related work, and revised as new evidence arrives. Many agents can work in parallel, and each one builds on everything the others have already learned.</p>
+    <div class="split">
+      <div class="split-copy">
+        <p class="label" id="graph-label">Research that compounds</p>
+        <h2>Deep research doesn't scale when every agent starts from scratch.</h2>
+        <p>In Implied, agents share a knowledge graph, where each finding is recorded with its source, linked to related work, and revised as new evidence arrives. Many agents can work in parallel, and each one builds on everything the others have already learned.</p>
+        <span class="graph-key">
+          <span><i class="k-entity"></i>Companies</span>
+          <span><i class="k-finding"></i><b id="n-finding">0</b>Findings</span>
+          <span><i class="k-source"></i><b id="n-source">0</b>Sources</span>
+          <span><i class="k-question"></i><b id="n-question">0</b>Open questions</span>
+        </span>
+      </div>
+      <canvas id="graph" role="img" aria-label="Several agents adding findings, sources and open questions to one shared graph, each linking new work to what is already there; illustrative"></canvas>
     </div>
-    <canvas id="graph" role="img" aria-label="Several agents adding findings, sources and open questions to one shared graph, each linking new work to what is already there"></canvas>
-    <div class="graph-note">
-      <span class="graph-key">
-        <span><i class="k-entity"></i>Companies</span>
-        <span><i class="k-finding"></i><b id="n-finding">0</b>Findings</span>
-        <span><i class="k-source"></i><b id="n-source">0</b>Sources</span>
-        <span><i class="k-question"></i><b id="n-question">0</b>Open questions</span>
-      </span>
-      <span>Illustrative. New work is linked to what is already in the graph.</span>
+  </div>
+</section>
+
+<section class="proof" aria-labelledby="proof-label">
+  <div class="scale-inner">
+    <p class="label" id="proof-label">Running today</p>
+    <div class="proof-grid">
+      <div class="stat"><span class="num">1,000</span><p>Largest US filers in the published base layer, each with its latest annual report in full.</p></div>
+      <div class="stat"><span class="num">6,900</span><p>Cited findings added by a single research run across 274 companies.</p></div>
+      <div class="stat"><span class="num">7.5<small>h</small></span><p>For that run, using about 40% of one week's Codex usage limit.</p></div>
     </div>
   </div>
 </section>
 
 <section class="scale" aria-labelledby="bt-label">
   <div class="scale-inner">
-    <p class="label" id="bt-label">Built for backtests</p>
-    <div class="scale-head">
+    <div class="stack-head">
+      <p class="label" id="bt-label">Built for backtests</p>
       <h2>LLMs know how history turned out.</h2>
       <p>Ask one about a company in 2021 and it may remember what happened instead of reasoning about it. That looks like alpha in a backtest and disappears in live trading.</p>
     </div>
