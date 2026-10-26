@@ -1,0 +1,1084 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Most of the information that moves markets is qualitative. Implied uses LLMs to unlock this data for systematic strategies.">
+<title>Implied</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+html, body { margin: 0; }
+[hidden] { display: none !important; }
+/* Layout: quiet and premium. An inset, rounded hero panel whose "photograph" is a slow wall of disclosure text,
+   phrases lighting up as they are read; a floating glass nav; then soft light windows showing one passage become data.
+   One sans at regular weight carries everything; mono only for values. Colour is nearly absent. */
+:root {
+  --bg: #FFFFFF;
+  --fg: #0A0A0C;
+  --muted: #66676D;
+  --faint: #9A9BA1;
+  --rule: #E9EAEE;
+  --band: #F4F4F6;
+  --win: #FFFFFF;
+  --win-rule: #E6E7EB;
+  --win-bar: #FAFAFB;
+  --hl: #E3E9FF;
+  --hl-strong: #CBD6FF;
+  --accent: #3452F0;
+  --up-bg: #E4EAFF; --up-ink: #2A3FB8;
+  --down-bg: #FCEBD9; --down-ink: #94500F;
+  --flat-bg: #F0F1F3; --flat-ink: #4B4E56;
+  --media: #F2F3F6;
+  --media-ink: #0A0A0C;
+  --media-muted: #50535B;
+  --veil-0: rgba(242, 243, 246, 0.97);
+  --veil-1: rgba(242, 243, 246, 0.84);
+  --veil-2: rgba(242, 243, 246, 0);
+  --wall-ink: #0A0A0C;
+  --wall-base: 0.075;
+  --wall-lit: 0.72;
+  --wall-hl: #D3DCFF;
+  --wall-hl-a: 1;
+  --nav-bg: rgba(255, 255, 255, 0.72);
+  --nav-ink: #0A0A0C;
+  --nav-rule: rgba(10, 10, 12, 0.07);
+  --btn-bg: #0A0A0C;
+  --btn-ink: #FFFFFF;
+  --btn-hover: #26282E;
+  --btn2-bg: rgba(255, 255, 255, 0.75);
+  --btn2-ink: #0A0A0C;
+  --btn2-rule: rgba(10, 10, 12, 0.1);
+  --btn2-hover: #FFFFFF;
+  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0A0A0C; --fg: #F2F2F4; --muted: #9C9DA4; --faint: #6E6F76; --rule: #1E1F24;
+    --band: #111216; --win: #17181D; --win-rule: #26272E; --win-bar: #1B1C22;
+    --hl: rgba(110, 135, 255, 0.2); --hl-strong: rgba(110, 135, 255, 0.38); --accent: #8A9DFF; --up-bg: rgba(110, 135, 255, 0.18); --up-ink: #A9B8FF; --down-bg: rgba(240, 150, 70, 0.16); --down-ink: #F2B47E; --flat-bg: rgba(255, 255, 255, 0.06); --flat-ink: #B5B8BF;
+    --media: #0B0F16; --media-ink: #F5F7FA; --media-muted: rgba(245, 247, 250, 0.78);
+    --veil-0: rgba(11, 15, 22, 0.96); --veil-1: rgba(11, 15, 22, 0.8); --veil-2: rgba(11, 15, 22, 0);
+    --wall-ink: #E8ECF4; --wall-base: 0.11; --wall-lit: 0.6; --wall-hl: #AFC0FF; --wall-hl-a: 0.14;
+    --nav-bg: rgba(255, 255, 255, 0.07); --nav-ink: #F5F7FA; --nav-rule: rgba(255, 255, 255, 0.1);
+    --btn-bg: #FFFFFF; --btn-ink: #0A0A0C; --btn-hover: #E9ECF2;
+    --btn2-bg: rgba(255, 255, 255, 0.1); --btn2-ink: #F5F7FA; --btn2-rule: rgba(255, 255, 255, 0.14); --btn2-hover: rgba(255, 255, 255, 0.16);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0A0A0C; --fg: #F2F2F4; --muted: #9C9DA4; --faint: #6E6F76; --rule: #1E1F24;
+  --band: #111216; --win: #17181D; --win-rule: #26272E; --win-bar: #1B1C22;
+  --hl: rgba(110, 135, 255, 0.2); --hl-strong: rgba(110, 135, 255, 0.38); --accent: #8A9DFF; --up-bg: rgba(110, 135, 255, 0.18); --up-ink: #A9B8FF; --down-bg: rgba(240, 150, 70, 0.16); --down-ink: #F2B47E; --flat-bg: rgba(255, 255, 255, 0.06); --flat-ink: #B5B8BF;
+  --media: #0B0F16; --media-ink: #F5F7FA; --media-muted: rgba(245, 247, 250, 0.78);
+    --veil-0: rgba(11, 15, 22, 0.96); --veil-1: rgba(11, 15, 22, 0.8); --veil-2: rgba(11, 15, 22, 0);
+    --wall-ink: #E8ECF4; --wall-base: 0.11; --wall-lit: 0.6; --wall-hl: #AFC0FF; --wall-hl-a: 0.14;
+    --nav-bg: rgba(255, 255, 255, 0.07); --nav-ink: #F5F7FA; --nav-rule: rgba(255, 255, 255, 0.1);
+    --btn-bg: #FFFFFF; --btn-ink: #0A0A0C; --btn-hover: #E9ECF2;
+    --btn2-bg: rgba(255, 255, 255, 0.1); --btn2-ink: #F5F7FA; --btn2-rule: rgba(255, 255, 255, 0.14); --btn2-hover: rgba(255, 255, 255, 0.16);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 0;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+
+/* ---------- Hero panel ---------- */
+.hero {
+  position: relative; overflow: hidden; isolation: isolate;
+  border-radius: 24px; background: var(--media); color: var(--media-ink);
+  min-height: 560px; height: min(84vh, 820px);
+  display: grid; place-items: center; text-align: center;
+}
+#wall, #wall2 { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -2; }
+.veil {
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(40% 42% at 50% 54%, var(--veil-0) 0%, var(--veil-1) 55%, var(--veil-2) 100%);
+}
+
+.nav {
+  position: absolute; top: 14px; left: 14px; right: 14px; z-index: 3;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  height: 56px; padding: 0 8px 0 18px; border-radius: 999px;
+  background: var(--nav-bg); color: var(--nav-ink);
+  box-shadow: inset 0 0 0 1px var(--nav-rule);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4);
+  text-align: left;
+}
+.brand { display: inline-flex; align-items: center; text-decoration: none; }
+.logo {
+  display: block; height: 22px; aspect-ratio: 544 / 120; background-color: currentColor;
+  -webkit-mask: url("data:image/png;base64,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") center / contain no-repeat;
+          mask: url("data:image/png;base64,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") center / contain no-repeat;
+}
+.nav-mid { display: flex; gap: 32px; font-size: 0.875rem; }
+.nav-mid a, .nav-end a.plain { text-decoration: none; opacity: 0.8; }
+.nav-mid a:hover, .nav-end a.plain:hover { opacity: 1; }
+.nav-end { display: flex; align-items: center; gap: 20px; font-size: 0.875rem; }
+.pill { text-decoration: none; background: var(--btn-bg); color: var(--btn-ink); padding: 9px 16px; border-radius: 999px; font-weight: 500; }
+@media (max-width: 760px) { .nav-mid, .nav-end a.plain { display: none; } }
+
+.hero-copy { display: grid; justify-items: center; gap: 22px; padding: 96px 20px 48px; max-width: 920px; }
+h1 {
+  margin: 0; font-weight: 400;
+  font-size: clamp(2.6rem, 5.6vw, 4.9rem);
+  line-height: 1.03; letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+.lede { margin: 0; max-width: 36rem; text-wrap: balance; font-size: clamp(1.05rem, 1.35vw, 1.2rem); line-height: 1.6; color: var(--media-muted); }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 10px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 10px; text-decoration: none;
+  font-size: 1.0625rem; font-weight: 500; line-height: 1; padding: 17px 34px; border-radius: 16px;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn-light { background: var(--btn-bg); color: var(--btn-ink); }
+.btn-light:hover { background: var(--btn-hover); }
+.btn-glass { background: var(--btn2-bg); color: var(--btn2-ink); box-shadow: inset 0 0 0 1px var(--btn2-rule); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.btn-glass:hover { background: var(--btn2-hover); }
+.btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+/* ---------- Closing panel and footer ---------- */
+.closing { height: auto; min-height: 480px; }
+.closing .hero-copy { padding: 88px 20px; }
+.closing h2 { margin: 0; font-weight: 400; font-size: clamp(2.3rem, 4.8vw, 4.25rem); line-height: 1.04; letter-spacing: -0.035em; text-wrap: balance; }
+.footer { max-width: 1160px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px 32px; padding: 28px clamp(4px, 3vw, 40px) 36px; font-size: 0.875rem; color: var(--muted); }
+.footer .brand { color: var(--fg); }
+.footer .logo { height: 18px; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.footer-links a { text-decoration: none; }
+.footer-links a:hover { color: var(--fg); }
+
+/* ---------- Text → data ---------- */
+.band { padding: clamp(80px, 10vw, 136px) clamp(4px, 3vw, 40px) 72px; }
+.band-inner { max-width: 1160px; margin: 0 auto; }
+.label { margin: 0 0 clamp(36px, 5vw, 56px); text-align: center; font-size: 0.875rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); }
+
+.stage { position: relative; display: grid; gap: 64px; }
+@media (min-width: 900px) { .stage { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 112px; align-items: stretch; } }
+.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 2; }
+.wires path { fill: none; stroke: var(--accent); stroke-width: 1.5; transition: stroke-dashoffset 480ms cubic-bezier(.5,0,.2,1), opacity 300ms; }
+.wires circle { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; transition: opacity 300ms; }
+
+.win { min-width: 0; display: flex; flex-direction: column; }
+.bar { display: flex; align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--fg); }
+.dots { display: none; }
+.bar-title { font-family: var(--mono); font-size: 0.71875rem; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.doc { padding: 24px 0 0; display: flex; flex-direction: column; flex: 1; transition: opacity 350ms ease, transform 350ms ease; }
+.doc.out { opacity: 0; transform: translateY(6px); }
+.doc-co { font-weight: 600; font-size: 0.9375rem; letter-spacing: -0.01em; }
+.doc-src { font-size: 0.8125rem; color: var(--faint); margin-top: 2px; }
+.doc-text { margin: 18px 0 28px; font-size: clamp(1.25rem, 1.85vw, 1.625rem); line-height: 1.5; letter-spacing: -0.015em; min-height: 7.5em; text-wrap: pretty; }
+.doc-foot { margin-top: auto; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 0.75rem; color: var(--faint); }
+.doc-foot span { white-space: nowrap; }
+mark {
+  color: inherit;
+  background-image: linear-gradient(var(--hl), var(--hl));
+  background-color: transparent; background-repeat: no-repeat; background-position: 0 0; background-size: 0% 100%;
+  border-radius: 4px; padding: 0.06em 0.12em; margin: 0 -0.12em;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  transition: background-size 620ms cubic-bezier(.6,.05,.3,1);
+}
+mark.on { background-size: 100% 100%; }
+
+.rec { padding: 24px 0 6px; transition: opacity 350ms ease; }
+.rec.out { opacity: 0.3; }
+.rec-head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 12px; }
+.rec-id { font-family: var(--mono); font-weight: 500; font-size: 0.9375rem; }
+.rec-date { font-size: 0.8125rem; color: var(--faint); }
+.fields { margin: 0; }
+.field { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 11px 0; border-top: 1px solid var(--rule); }
+.field::before { content: ""; position: absolute; left: -16px; top: 9px; bottom: 9px; width: 2px; border-radius: 2px; background: var(--accent); opacity: 0; transition: opacity 500ms ease; }
+.field.lit::before { opacity: 1; transition: none; }
+.field dt { font-size: 0.9375rem; }
+.field dt small { white-space: nowrap; font-size: 0.75rem; color: var(--faint); margin-left: 8px; }
+.field dd {
+  margin: 0 -8px 0 0; font-family: var(--mono); font-size: 0.875rem; font-weight: 500; min-width: 10ch; text-align: right;
+  padding: 4px 8px; border-radius: 6px; transition: background-color 900ms ease;
+}
+.field dd.null { color: var(--faint); font-weight: 400; }
+.field dd.new { background: var(--hl-strong); transition: none; }
+.field dd.pending::after { content: ""; display: inline-block; width: 0.5em; height: 1em; vertical-align: -0.15em; background: var(--faint); border-radius: 1px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.table { margin-top: auto; padding: 16px 0 0; border-top: 1px solid var(--rule); }
+.table-label { display: flex; justify-content: space-between; gap: 12px; font-size: 0.75rem; color: var(--faint); margin-bottom: 10px; }
+#grid { display: block; width: 100%; height: 94px; }
+
+.caption { margin: 56px 0 0; text-align: center; font-size: 0.8125rem; color: var(--faint); }
+
+/* ---------- Thesis statements ---------- */
+.thesis { padding: clamp(72px, 9vw, 136px) clamp(4px, 3vw, 40px); border-top: 1px solid var(--rule); }
+.thesis-inner { max-width: 1160px; margin: 0 auto; }
+.thesis .label { text-align: left; margin-bottom: clamp(20px, 2.4vw, 28px); }
+.statement {
+  margin: 0; max-width: 23em;
+  font-size: clamp(1.75rem, 3.3vw, 3rem); font-weight: 400; line-height: 1.24; letter-spacing: -0.028em;
+  text-wrap: pretty;
+}
+.statement mark { padding-block: 0; border-radius: 6px; }
+.statement .quiet { color: var(--faint); }
+
+/* ---------- At scale: the universe as a live matrix ---------- */
+.scale { padding: clamp(72px, 9vw, 136px) clamp(4px, 3vw, 40px) clamp(56px, 7vw, 96px); border-top: 1px solid var(--rule); }
+.scale-inner { max-width: 1160px; margin: 0 auto; }
+.scale .label { text-align: left; margin-bottom: clamp(20px, 2.4vw, 28px); }
+.scale-head { display: grid; gap: 20px 64px; align-items: end; margin-bottom: clamp(40px, 5vw, 64px); }
+@media (min-width: 900px) { .scale-head { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); } }
+.scale-head h2 { margin: 0; font-size: clamp(1.75rem, 3.1vw, 2.75rem); font-weight: 400; line-height: 1.16; letter-spacing: -0.028em; text-wrap: balance; }
+.scale-head p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 26rem; text-wrap: pretty; }
+
+.matrix-wrap {
+  position: relative; overflow-x: auto;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 58%, transparent 100%);
+          mask-image: linear-gradient(180deg, #000 0%, #000 58%, transparent 100%);
+}
+.matrix { width: 100%; min-width: 760px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.matrix th, .matrix td { text-align: left; padding: 0 12px; height: 46px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+.matrix th:first-child, .matrix td:first-child { padding-left: 0; }
+.matrix thead th { height: 64px; vertical-align: bottom; padding-bottom: 12px; border-bottom: 1px solid var(--fg); font-size: 0.875rem; font-weight: 500; }
+.matrix thead th small { display: block; font-size: 0.75rem; font-weight: 400; color: var(--faint); margin-top: 2px; }
+.matrix .asof { font-family: var(--mono); font-size: 0.8125rem; font-weight: 500; }
+.matrix .asof small { font-family: var(--sans); }
+.matrix .add span { display: inline-block; font-weight: 500; color: var(--muted); padding: 6px 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--rule); }
+.matrix td.co { font-family: var(--mono); font-size: 0.8125rem; font-weight: 500; }
+.matrix td.co small { font-family: var(--sans); font-weight: 400; font-size: 0.8125rem; color: var(--faint); margin-left: 10px; }
+.matrix td.v span { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.78125rem; font-weight: 500; padding: 5px 10px; border-radius: 999px; transition: box-shadow 1200ms ease; box-shadow: 0 0 0 2px transparent; }
+.matrix td.v.null span { color: var(--faint); padding-inline: 2px; font-weight: 400; }
+@media (max-width: 600px) { .matrix { min-width: 700px; } .matrix td.co small { display: none; } }
+
+/* ---------- Compounding: a shared graph that agents grow together ---------- */
+#graph { display: block; width: 100%; height: 460px; }
+@media (max-width: 600px) { #graph { height: 380px; } }
+.graph-note { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 0.8125rem; color: var(--faint); }
+.graph-key { display: inline-flex; flex-wrap: wrap; gap: 6px 20px; align-items: center; color: var(--muted); }
+.graph-key b { font-family: var(--mono); font-weight: 500; color: var(--fg); margin-right: 4px; font-variant-numeric: tabular-nums; }
+.graph-key i { display: inline-block; width: 8px; height: 8px; margin-right: 8px; vertical-align: 0; background: var(--fg); }
+.graph-key .k-entity { width: 11px; height: 11px; border-radius: 50%; vertical-align: -1px; }
+.graph-key .k-finding { border-radius: 50%; }
+.graph-key .k-source { opacity: 0.5; border-radius: 1px; }
+
+/* ---------- Backtests: a reading only ever reaches as far as the as-of date ---------- */
+#bt-svg { display: block; width: 100%; height: 312px; overflow: visible; touch-action: pan-y; cursor: ew-resize; user-select: none; -webkit-user-select: none; }
+.bt-grid { stroke: var(--rule); }
+.bt-lab { fill: var(--faint); font: 12px var(--sans); }
+.bt-mon { fill: var(--faint); font: 11px var(--mono); }
+.bt-doc { stroke: var(--fg); }
+.bt-doc-t { fill: var(--fg); font: 500 11px var(--mono); }
+.bt-later .bt-doc { stroke: var(--faint); stroke-dasharray: 2 3; }
+.bt-later .bt-doc-t { fill: var(--faint); font-weight: 400; }
+.bt-line { fill: none; stroke: var(--fg); stroke-width: 2; stroke-linejoin: round; }
+.bt-dot { fill: var(--fg); }
+.bt-chk { fill: var(--bg); stroke: var(--fg); stroke-width: 1.5; }
+.bt-hatch-l { stroke: var(--rule); stroke-width: 1; }
+.bt-future-t { fill: var(--muted); font: 500 13px var(--sans); text-anchor: middle; }
+.bt-future-s { fill: var(--faint); font: 12px var(--sans); text-anchor: middle; }
+.bt-cut { stroke: var(--accent); stroke-width: 1.5; }
+.bt-pill { fill: var(--accent); }
+.bt-pill-t { fill: var(--bg); font: 500 11px var(--mono); }
+.bt-now { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+.bt-now-t { fill: var(--fg); font: 500 13px var(--sans); }
+.bt-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 0.8125rem; color: var(--faint); }
+.bt-controls label { color: var(--muted); font-weight: 500; }
+#bt-range { flex: 1 1 220px; accent-color: var(--accent); min-width: 0; }
+.bt-key { display: inline-flex; gap: 16px; align-items: center; }
+.bt-key i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--fg); }
+.bt-key i.chk { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg); }
+.bt-answer { display: grid; gap: 16px 64px; align-items: start; margin-top: clamp(48px, 6vw, 80px); }
+@media (min-width: 900px) { .bt-answer { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); } }
+.bt-answer h3 { margin: 0; font-size: clamp(1.5rem, 2.4vw, 2.125rem); font-weight: 400; line-height: 1.2; letter-spacing: -0.025em; }
+.bt-answer h3 mark { background-size: 100% 100%; border-radius: 6px; padding-block: 0; }
+.bt-answer p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 26rem; }
+.graph-key .k-question { border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg); }
+
+.matrix .up { background: var(--up-bg); color: var(--up-ink); }
+.matrix .down { background: var(--down-bg); color: var(--down-ink); }
+.matrix .flat { background: var(--flat-bg); color: var(--flat-ink); }
+.matrix .share { padding-inline: 0; }
+.matrix .share i { position: relative; display: block; width: 64px; height: 6px; border-radius: 3px; background: var(--flat-bg); overflow: hidden; }
+.matrix .share i b { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--fg); opacity: 0.75; }
+.matrix td.v span.flash { box-shadow: 0 0 0 2px var(--accent); transition: none; }
+.matrix-note .legend { display: inline-flex; gap: 16px; align-items: center; }
+.matrix-note .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.matrix-note { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; margin-top: 4px; font-size: 0.8125rem; color: var(--faint); }
+
+
+@media (max-width: 600px) {
+  .hero { border-radius: 18px; height: auto; min-height: 640px; }
+  .veil { background: radial-gradient(90% 50% at 50% 50%, var(--veil-0) 0%, var(--veil-1) 60%, var(--veil-2) 100%); }
+  .btn { padding: 16px 26px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  mark, .doc, .rec, .field dd, .field::before, .wires path, .btn { transition: none; }
+  .field dd.pending::after { animation: none; }
+}
+</style>
+</head>
+<body>
+<header class="hero">
+  <canvas id="wall" aria-hidden="true"></canvas>
+  <div class="veil"></div>
+
+  <nav class="nav">
+    <a class="brand" href="https://github.com/zmccormick7/PremiseDB" aria-label="Implied"><span class="logo" role="img" aria-label="Implied"></span></a>
+    <div class="nav-mid">
+      <a href="#how">How it works</a>
+      <a href="https://github.com/zmccormick7/PremiseDB/blob/main/docs/features.md">Docs</a>
+    </div>
+    <div class="nav-end">
+      <a class="plain" href="https://github.com/zmccormick7/PremiseDB">GitHub</a>
+      <a class="pill" href="https://github.com/zmccormick7/PremiseDB#install">Get started</a>
+    </div>
+  </nav>
+
+  <div class="hero-copy">
+    <h1>The market's biggest untapped dataset.</h1>
+    <p class="lede">Most of the information that moves markets is qualitative. We use LLMs to unlock this data for systematic strategies for the first time.</p>
+    <div class="actions">
+      <a class="btn btn-light" href="https://github.com/zmccormick7/PremiseDB#install">Get started</a>
+      <a class="btn btn-glass" href="https://github.com/zmccormick7/PremiseDB">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+        View on GitHub
+      </a>
+    </div>
+  </div>
+</header>
+
+<section class="band" id="how" aria-label="Example: a passage from an earnings call becomes feature values">
+  <div class="band-inner">
+    <p class="label">From text to data</p>
+    <div class="stage" id="stage">
+      <div class="win" id="doc-win">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="bar-title" id="doc-file">PLHM_Q2-2024_earnings-call.pdf</span></div>
+        <article class="doc" id="doc">
+          <div class="doc-co" id="doc-co">Pellham Retail Group</div>
+          <div class="doc-src" id="doc-src">Q2 earnings call · 2024-08-21</div>
+          <p class="doc-text" id="doc-text">Traffic softened through July, and <mark class="on" data-f="guidance">we are withdrawing our full-year outlook</mark>. <mark class="on" data-f="pricing">We took targeted price reductions in home and apparel</mark> to clear seasonal inventory. <mark class="on" data-f="disclosure">Beginning this quarter, we will no longer report comparable store traffic</mark>.</p>
+          <div class="doc-foot"><span id="doc-page">Prepared remarks · p. 3</span><span id="doc-public">Public 2024-08-21 08:30 ET</span></div>
+        </article>
+      </div>
+
+      <div class="win" id="vals">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="bar-title">feature values · point-in-time</span></div>
+        <div class="rec" id="rec">
+          <div class="rec-head"><span class="rec-id" id="rec-id">PLHM</span><span class="rec-date" id="rec-date">as of 2024-08-21</span></div>
+          <dl class="fields">
+            <div class="field"><dt>Guidance stance<small>category</small></dt><dd id="f-guidance">Withdrawn</dd></div>
+            <div class="field"><dt>Pricing action<small>category</small></dt><dd id="f-pricing">Cut</dd></div>
+            <div class="field"><dt>Capacity plans<small>category</small></dt><dd id="f-capacity" class="null">—</dd></div>
+            <div class="field"><dt>Disclosure dropped<small>yes / no</small></dt><dd id="f-disclosure">Yes</dd></div>
+          </dl>
+        </div>
+        <div class="table">
+          <div class="table-label"><span>Feature table</span><span>companies × trading days</span></div>
+          <canvas id="grid" aria-hidden="true"></canvas>
+        </div>
+      </div>
+
+      <svg class="wires" aria-hidden="true"><path id="wire" opacity="0"></path><circle id="wire-dot" r="3.5" opacity="0"></circle></svg>
+    </div>
+    <p class="caption">Illustrative companies and excerpts. Every value is read only from what was public on its as-of date.</p>
+  </div>
+</section>
+
+<section class="thesis" aria-labelledby="locked">
+  <div class="thesis-inner">
+    <p class="label" id="locked">Locked in text</p>
+    <p class="statement">Systematic strategies run on numbers. But what moves a stock is often written down: <mark>a shift in strategy</mark>, <mark>a new risk</mark>, <mark>a promise quietly dropped</mark>. <span class="quiet">Sentiment scores and keyword counts capture how that text sounds, not what it says.</span> Understanding it still takes an analyst, reading one company at a time.</p>
+  </div>
+</section>
+
+<section class="scale" aria-labelledby="scale-label">
+  <div class="scale-inner">
+    <p class="label" id="scale-label">Now readable at scale</p>
+    <div class="scale-head">
+      <h2>LLMs can finally read like analysts, across every company, every day.</h2>
+      <p>Define the signals you care about, and Implied measures them across your entire universe, turning the written record into data your models can use.</p>
+    </div>
+    <div class="matrix-wrap">
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th class="asof"><span id="mx-date">2024-08-01</span><small>daily, every company</small></th>
+            <th>Guidance stance<small>category</small></th>
+            <th>Pricing action<small>category</small></th>
+            <th>Capacity plans<small>category</small></th>
+            <th>Disclosure dropped<small>yes / no</small></th>
+            <th>Claims corroborated<small>share</small></th>
+            <th class="add"><span>+ Define a signal</span></th>
+          </tr>
+        </thead>
+        <tbody id="mx-body"></tbody>
+      </table>
+    </div>
+    <div class="matrix-note"><span>Illustrative companies and values. Outlined values changed on the date shown.</span><span class="legend"><span><i style="background: var(--up-bg)"></i>Up</span><span><i style="background: var(--down-bg)"></i>Down</span><span><i style="background: var(--flat-bg)"></i>Unchanged or no</span></span></div>
+  </div>
+</section>
+
+<section class="scale" aria-labelledby="graph-label">
+  <div class="scale-inner">
+    <p class="label" id="graph-label">Research that compounds</p>
+    <div class="scale-head">
+      <h2>Deep research doesn't scale when every agent starts from scratch.</h2>
+      <p>In Implied, agents share a knowledge graph, where each finding is recorded with its source, linked to related work, and revised as new evidence arrives. Many agents can work in parallel, and each one builds on everything the others have already learned.</p>
+    </div>
+    <canvas id="graph" role="img" aria-label="Several agents adding findings, sources and open questions to one shared graph, each linking new work to what is already there"></canvas>
+    <div class="graph-note">
+      <span class="graph-key">
+        <span><i class="k-entity"></i>Companies</span>
+        <span><i class="k-finding"></i><b id="n-finding">0</b>Findings</span>
+        <span><i class="k-source"></i><b id="n-source">0</b>Sources</span>
+        <span><i class="k-question"></i><b id="n-question">0</b>Open questions</span>
+      </span>
+      <span>Illustrative. New work is linked to what is already in the graph.</span>
+    </div>
+  </div>
+</section>
+
+<section class="scale" aria-labelledby="bt-label">
+  <div class="scale-inner">
+    <p class="label" id="bt-label">Built for backtests</p>
+    <div class="scale-head">
+      <h2>LLMs know how history turned out.</h2>
+      <p>Ask one about a company in 2021 and it may remember what happened instead of reasoning about it. That looks like alpha in a backtest and disappears in live trading.</p>
+    </div>
+    <svg id="bt-svg" role="img" aria-label="Guidance stance for an illustrative bank, read only from documents public on or before the as-of date; nothing is drawn after it"></svg>
+    <div class="bt-controls">
+      <label for="bt-range">Move the as-of date</label>
+      <input type="range" id="bt-range" min="0" max="211" value="72" aria-label="As-of date">
+      <span class="bt-key"><span><i></i>Reading changed</span><span><i class="chk"></i>Checked, unchanged</span></span>
+    </div>
+    <div class="bt-answer">
+      <h3>Our answer is to <mark>describe, not predict</mark>.</h3>
+      <p>Each signal records what a company looked like on a given date, using only what was public then, and your own models do the forecasting. Knowing the ending doesn't help an agent describe the starting point, so every signal stays point-in-time.</p>
+    </div>
+  </div>
+</section>
+
+<section class="hero closing" aria-labelledby="closing-title">
+  <canvas id="wall2" aria-hidden="true"></canvas>
+  <div class="veil"></div>
+  <div class="hero-copy">
+    <h2 id="closing-title">Everything an analyst reads, as a signal.</h2>
+    <p class="lede">Open source, and it runs on the AI agents you already use.</p>
+    <div class="actions">
+      <a class="btn btn-light" href="https://github.com/zmccormick7/PremiseDB#install">Get started</a>
+      <a class="btn btn-glass" href="https://github.com/zmccormick7/PremiseDB">View on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <a class="brand" href="https://github.com/zmccormick7/PremiseDB" aria-label="Implied"><span class="logo" role="img" aria-label="Implied"></span></a>
+  <nav class="footer-links" aria-label="Footer">
+    <a href="#how">How it works</a>
+    <a href="https://github.com/zmccormick7/PremiseDB/blob/main/docs/features.md">Docs</a>
+    <a href="https://github.com/zmccormick7/PremiseDB">GitHub</a>
+  </nav>
+  <span>Open source · MIT License</span>
+</footer>
+
+
+
+
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  /* ---------- Hero: a slow wall of disclosure text, phrases lighting up as they are read ---------- */
+  function wall(cv, navGap, ryScale) {
+    var PHRASES = [
+      "we are withdrawing our full-year outlook", "pricing remained disciplined across the portfolio", "we expect capital expenditures to moderate",
+      "beginning this quarter we will no longer report", "demand softened in the second half", "inventory levels have normalized",
+      "the board authorized an additional repurchase", "we amended our revolving credit agreement", "subject to customary regulatory approvals",
+      "our largest customer accounted for a growing share", "we are reaffirming our guidance", "margins were pressured by input costs",
+      "we deferred construction until conditions improve", "management believes liquidity is sufficient", "we exited two unprofitable markets",
+      "bookings accelerated through the quarter", "we recorded an impairment charge", "the transaction is expected to close",
+      "we raised list prices effective July 1", "headcount was reduced by approximately", "we see early signs of stabilization",
+      "contract renewals came in at flat pricing", "we no longer expect to meet", "the review of strategic alternatives continues"
+    ];
+    var ctx = cv.getContext("2d");
+    var W = 0, H = 0, rows = [], lit = [], running = false, last = 0;
+    var LINE = 28, GAP = 34, FONT = '14px "Instrument Sans", system-ui, sans-serif';
+    var tone = {};
+    function readTone() {
+      var cs = getComputedStyle(root);
+      tone = { ink: cs.getPropertyValue("--wall-ink").trim(), hl: cs.getPropertyValue("--wall-hl").trim(),
+               base: parseFloat(cs.getPropertyValue("--wall-base")), lit: parseFloat(cs.getPropertyValue("--wall-lit")),
+               hlA: parseFloat(cs.getPropertyValue("--wall-hl-a")) };
+    }
+    readTone();
+    var tq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (tq.addEventListener) tq.addEventListener("change", function () { readTone(); draw(performance.now(), 0); });
+    function pick() { return PHRASES[Math.floor(Math.random() * PHRASES.length)]; }
+    function seg() { var t = pick(); return { t: t, w: ctx.measureText(t).width, h: 0 }; }
+    function build() {
+      var dpr = window.devicePixelRatio || 1;
+      W = cv.clientWidth; H = cv.clientHeight;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.font = FONT; ctx.textBaseline = "middle";
+      rows = []; lit = [];
+      for (var y = LINE / 2 + 4; y < H + LINE; y += LINE) {
+        var r = { y: y, x: -Math.random() * 400, v: 4 + Math.random() * 6, segs: [] }, total = 0;
+        while (total < W + 800) { var s = seg(); r.segs.push(s); total += s.w + GAP; }
+        rows.push(r);
+      }
+    }
+    function clear(x, w, y) { // where the veil has thinned out, and not under the nav
+      if (y < navGap) return false;
+      var narrow = W < 600, rx = (narrow ? 0.9 : 0.4) * W, ry = (narrow ? 0.5 : 0.42) * H * ryScale;
+      var dx = (x + w / 2 - W / 2) / rx, dy = (y - H * (narrow ? 0.5 : 0.54)) / ry;
+      return dx * dx + dy * dy > 0.7;
+    }
+    function light(now) { // pick any readable phrase on a random row, clear of the nav, the headline and the bottom edge
+      var r = rows[Math.floor(Math.random() * rows.length)], x = r.x, options = [];
+      if (r.y > H - 24) return false;
+      for (var i = 0; i < r.segs.length; i++) {
+        var s = r.segs[i];
+        if (x > W * 0.04 && x + s.w < W * 0.96 && !s.h && clear(x, s.w, r.y)) options.push(s);
+        x += s.w + GAP;
+      }
+      if (!options.length) return false;
+      var pickd = options[Math.floor(Math.random() * options.length)];
+      pickd.h = now; lit.push(pickd);
+      return true;
+    }
+    function draw(now, dt) {
+      ctx.clearRect(0, 0, W, H);
+      ctx.font = FONT;
+      for (var j = 0; j < rows.length; j++) {
+        var r = rows[j];
+        r.x -= r.v * dt;
+        while (r.x + r.segs[0].w + GAP < 0) { var s0 = r.segs.shift(); r.x += s0.w + GAP; s0.h = 0; var n = seg(); r.segs.push(n); }
+        var x = r.x;
+        for (var i = 0; i < r.segs.length && x < W; i++) {
+          var s = r.segs[i], a = 0, sweep = 0;
+          if (s.h) {
+            var t = (now - s.h) / 1000;            // 0.9s sweep, 2.2s hold, 1.2s fade
+            sweep = Math.min(1, t / 0.9);
+            a = t < 3.1 ? 1 : Math.max(0, 1 - (t - 3.1) / 1.2);
+            if (a === 0) s.h = 0;
+          }
+          if (a > 0) {
+            ctx.globalAlpha = tone.hlA * a;
+            ctx.fillStyle = tone.hl;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(x - 6, r.y - 12, (s.w + 12) * sweep, 24, 6); else ctx.rect(x - 6, r.y - 12, (s.w + 12) * sweep, 24);
+            ctx.fill();
+          }
+          ctx.globalAlpha = tone.base + tone.lit * a * sweep;
+          ctx.fillStyle = tone.ink;
+          ctx.fillText(s.t, x, r.y);
+          x += s.w + GAP;
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+    function frame(now) {
+      if (!running) return;
+      var dt = last ? Math.min(0.05, (now - last) / 1000) : 0; last = now;
+      if (Math.random() < dt * 1.6) light(now);
+      draw(now, dt);
+      requestAnimationFrame(frame);
+    }
+    function seed(t, n) { for (var tries = 0; n > 0 && tries < 80; tries++) if (light(t)) n--; } // the first frame shows phrases being read
+    function start() {
+      build();
+      if (reduce) {
+        var now = performance.now();
+        seed(now - 1000, 6);
+        draw(now, 0);
+        return;
+      }
+      seed(performance.now() - 1500, 5);
+      draw(performance.now(), 0); // first frame paints without waiting on animation frames
+      var io = new IntersectionObserver(function (es) {
+        var vis = es[0].isIntersecting;
+        if (vis && !running) { running = true; last = 0; requestAnimationFrame(frame); }
+        if (!vis) running = false;
+      });
+      io.observe(cv);
+    }
+    (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(start);
+    var rt;
+    window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { build(); if (reduce) draw(performance.now(), 0); }, 150); });
+  }
+  wall(document.getElementById("wall"), 104, 1);
+  wall(document.getElementById("wall2"), 0, 1.5);   // the closing panel is shorter, so its headline fills more of it
+
+  /* ---------- Text → data ---------- */
+  var FIELDS = ["guidance", "pricing", "capacity", "disclosure"];
+  var docs = [
+    { co: "Pellham Retail Group", tk: "PLHM", file: "PLHM_Q2-2024_earnings-call.pdf", src: "Q2 earnings call", date: "2024-08-21", pg: "Prepared remarks · p. 3", pub: "Public 2024-08-21 08:30 ET", parts: [
+      "Traffic softened through July, and ", { t: "we are withdrawing our full-year outlook", f: "guidance", v: "Withdrawn" }, ". ",
+      { t: "We took targeted price reductions in home and apparel", f: "pricing", v: "Cut" }, " to clear seasonal inventory. ",
+      { t: "Beginning this quarter, we will no longer report comparable store traffic", f: "disclosure", v: "Yes" }, "." ] },
+    { co: "Ostrava Semiconductor", tk: "OSTV", file: "OSTV_10-Q_2024-Q2.htm", src: "10-Q · MD&A", date: "2024-08-06", pg: "Item 2 · p. 31", pub: "Public 2024-08-06 16:12 ET", parts: [
+      "Demand from our largest customer remained strong. ", { t: "We raised list prices on legacy nodes effective July 1", f: "pricing", v: "Raised" }, ", and ",
+      { t: "construction of our second fab has been deferred until market conditions improve", f: "capacity", v: "Deferred" }, ". ",
+      { t: "We continue to expect full-year revenue in line with the outlook we gave in April", f: "guidance", v: "Maintained" }, "." ] },
+    { co: "Meridian Freight", tk: "MRDF", file: "MRDF_Q2-2024_earnings-call.pdf", src: "Q2 earnings call", date: "2024-07-30", pg: "Prepared remarks · p. 2", pub: "Public 2024-07-30 17:00 ET", parts: [
+      "Volumes ran ahead of plan in the Southeast, so ", { t: "we are raising our full-year guidance", f: "guidance", v: "Raised" }, ". ",
+      { t: "We expect to open three more cross-dock terminals by year end", f: "capacity", v: "Expanding" }, ", and ",
+      { t: "contract rates renewed at roughly flat pricing", f: "pricing", v: "Held" }, "." ] }
+  ];
+
+  var stage = document.getElementById("stage");
+  var docWin = document.getElementById("doc-win");
+  var docEl = document.getElementById("doc");
+  var docText = document.getElementById("doc-text");
+  var docFile = document.getElementById("doc-file");
+  var docCo = document.getElementById("doc-co");
+  var docSrc = document.getElementById("doc-src");
+  var docPage = document.getElementById("doc-page");
+  var docPublic = document.getElementById("doc-public");
+  var vals = document.getElementById("vals");
+  var rec = document.getElementById("rec");
+  var recId = document.getElementById("rec-id");
+  var recDate = document.getElementById("rec-date");
+  var wire = document.getElementById("wire");
+  var dot = document.getElementById("wire-dot");
+  var dd = {};
+  FIELDS.forEach(function (f) { dd[f] = document.getElementById("f-" + f); });
+  var wide = window.matchMedia("(min-width: 900px)");
+
+  /* Feature table: one row per company, one column per trading day */
+  var grid = (function () {
+    var cv = document.getElementById("grid"), ctx = cv.getContext("2d");
+    var CELL = 4, GAP = 2, ROWS = 15, cols = 0, base, hot, w = 0, ink, glow;
+    function rand(seed) { var x = Math.sin(seed * 9301 + 49297) * 233280; return x - Math.floor(x); }
+    function colors() { var cs = getComputedStyle(root); ink = cs.getPropertyValue("--fg").trim() || "#0A0A0C"; glow = cs.getPropertyValue("--accent").trim() || "#3452F0"; }
+    function resize() {
+      w = cv.clientWidth;
+      var dpr = window.devicePixelRatio || 1;
+      cols = Math.max(10, Math.floor((w + GAP) / (CELL + GAP)));
+      var h = ROWS * (CELL + GAP) - GAP;
+      cv.style.height = h + "px";
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      base = new Float32Array(cols * ROWS); hot = new Float32Array(cols * ROWS);
+      for (var r = 0; r < ROWS; r++) {
+        var start = rand(r + 1) < 0.25 ? Math.floor(rand(r + 50) * cols * 0.6) : 0; // later listings start partway
+        for (var c = 0; c < cols; c++) {
+          var i = r * cols + c;
+          if (c < start) { base[i] = 0; continue; }
+          base[i] = rand(i * 7 + 3) < 0.035 ? 0.42 : 0.07 + rand(i + 11) * 0.05; // values change sparsely
+        }
+      }
+      draw();
+    }
+    function draw() {
+      ctx.clearRect(0, 0, w, ROWS * (CELL + GAP));
+      for (var r = 0; r < ROWS; r++) for (var c = 0; c < cols; c++) {
+        var i = r * cols + c, x = c * (CELL + GAP), y = r * (CELL + GAP);
+        if (base[i] === 0 && hot[i] < 0.02) continue;
+        ctx.globalAlpha = base[i]; ctx.fillStyle = ink; ctx.fillRect(x, y, CELL, CELL);
+        if (hot[i] > 0.02) { ctx.globalAlpha = hot[i]; ctx.fillStyle = glow; ctx.fillRect(x, y, CELL, CELL); }
+      }
+      ctx.globalAlpha = 1;
+    }
+    function tick() {
+      var any = false;
+      for (var i = 0; i < hot.length; i++) if (hot[i] > 0.02) { hot[i] *= 0.975; any = true; }
+      if (Math.random() < 0.14) { var j = Math.floor(Math.random() * hot.length); if (base[j] > 0) hot[j] = 0.9; any = true; }
+      if (any) draw();
+      requestAnimationFrame(tick);
+    }
+    function commit() { // a new reading lands: light the latest days of one row
+      var r = Math.floor(Math.random() * ROWS);
+      for (var k = 0; k < 9; k++) { var c = cols - 1 - k; hot[r * cols + c] = 1 - k * 0.06; base[r * cols + c] = Math.max(base[r * cols + c], 0.14); }
+    }
+    colors(); resize();
+    window.addEventListener("resize", resize);
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", function () { colors(); draw(); });
+    if (!reduce) requestAnimationFrame(tick);
+    return { commit: commit };
+  })();
+
+  /* Thesis highlights: read in turn when the statement scrolls into view */
+  var thesisMarks = Array.prototype.slice.call(document.querySelectorAll(".statement mark"));
+  if (reduce || !("IntersectionObserver" in window)) thesisMarks.forEach(function (m) { m.classList.add("on"); });
+  else {
+    var tio = new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        tio.unobserve(e.target);
+        e.target.querySelectorAll("mark").forEach(function (m, k) { setTimeout(function () { m.classList.add("on"); }, 250 + k * 420); });
+      });
+    }, { threshold: 0.5 });
+    document.querySelectorAll(".statement").forEach(function (el) { tio.observe(el); });
+  }
+
+  /* At scale: every company, every day; a few readings change on each date */
+  (function matrix() {
+    var body = document.getElementById("mx-body"), dateEl = document.getElementById("mx-date");
+    var UP = { Raised: 1, Expanding: 1 }, DOWN = { Lowered: 1, Withdrawn: 1, Cut: 1, Deferred: 1, Yes: 1 };
+    var COS = [["PLHM", "Pellham Retail"], ["OSTV", "Ostrava Semiconductor"], ["MRDF", "Meridian Freight"], ["HLCN", "Halcyon Bancorp"],
+      ["CRVN", "Corvane Therapeutics"], ["ALDR", "Alder Packaging"], ["BRKW", "Brookway Utilities"], ["CNTX", "Contexa Software"],
+      ["DVRA", "Devara Mining"], ["ELMS", "Elmstead Homes"], ["FNWK", "Fenwick Media"], ["GRVL", "Gravelle Chemicals"],
+      ["HSKY", "Husky Logistics"], ["IRNW", "Ironwood Energy"]];
+    var COLS = [
+      ["Raised", "Maintained", "Maintained", "Lowered", "Withdrawn", null],
+      ["Raised", "Held", "Held", "Cut", null],
+      ["Expanding", "Unchanged", "Unchanged", "Deferred", null],
+      ["No", "No", "No", "Yes"],
+      ["83%", "67%", "50%", "100%", "75%", "40%", null]
+    ];
+    function any(list) { return list[Math.floor(Math.random() * list.length)]; }
+    var cells = [];
+    COS.forEach(function (c, r) {
+      var tr = document.createElement("tr");
+      var co = document.createElement("td"); co.className = "co"; co.textContent = c[0];
+      var nm = document.createElement("small"); nm.textContent = c[1]; co.appendChild(nm); tr.appendChild(co);
+      COLS.forEach(function (opts) {
+        var td = document.createElement("td"), sp = document.createElement("span");
+        td.appendChild(sp); tr.appendChild(td);
+        var cell = { td: td, sp: sp, opts: opts }; set(cell, any(opts), false); cells.push(cell);
+      });
+      tr.appendChild(document.createElement("td"));
+      body.appendChild(tr);
+    });
+    function set(cell, v, flash) { // pills encode direction only, never good or bad
+      cell.v = v;
+      cell.td.className = "v" + (v === null ? " null" : "");
+      cell.sp.textContent = "";
+      var kind = v === null ? "" : /%$/.test(v) ? "share" : UP[v] ? "up" : DOWN[v] ? "down" : "flat";
+      if (kind === "share") {
+        var bar = document.createElement("i"), fill = document.createElement("b");
+        fill.style.width = v; bar.appendChild(fill); cell.sp.appendChild(bar);
+      }
+      cell.sp.appendChild(document.createTextNode(v === null ? "—" : v));
+      cell.sp.className = kind + (flash ? " flash" : "");
+      if (flash) setTimeout(function () { cell.sp.classList.remove("flash"); }, 700);
+    }
+    var day = new Date(Date.UTC(2024, 7, 1));
+    function nextDay() {
+      do { day.setUTCDate(day.getUTCDate() + 1); } while (day.getUTCDay() === 0 || day.getUTCDay() === 6);
+      dateEl.textContent = day.toISOString().slice(0, 10);
+    }
+    function tick() {
+      nextDay();
+      var n = 1 + Math.floor(Math.random() * 3);   // most values hold from one day to the next
+      for (var k = 0; k < n; k++) {
+        var c = any(cells), v = any(c.opts), tries = 0;
+        while (v === c.v && tries++ < 6) v = any(c.opts);
+        if (v !== c.v) set(c, v, true);
+      }
+    }
+    if (reduce || !("IntersectionObserver" in window)) return;
+    var timer = null;
+    new IntersectionObserver(function (es) {
+      if (es[0].isIntersecting && !timer) timer = setInterval(tick, 1300);
+      if (!es[0].isIntersecting && timer) { clearInterval(timer); timer = null; }
+    }).observe(body);
+  })();
+
+  /* Compounding: agents grow one shared graph, each linking new work to what is there */
+  (function graphViz() {
+    var cv = document.getElementById("graph"), ctx = cv.getContext("2d");
+    var W = 0, H = 0, nodes = [], edges = [], agents = [], MAX = 0, col = {}, running = false;
+    var counts = { finding: document.getElementById("n-finding"), source: document.getElementById("n-source"), question: document.getElementById("n-question") };
+    function tone() {
+      var cs = getComputedStyle(root);
+      col = { fg: cs.getPropertyValue("--fg").trim(), bg: cs.getPropertyValue("--bg").trim(), accent: cs.getPropertyValue("--accent").trim() };
+    }
+    function kind() { var r = Math.random(); return r < 0.56 ? "finding" : r < 0.82 ? "source" : r < 0.97 ? "question" : "entity"; }
+    function free(x, y, min) {
+      for (var i = 0; i < nodes.length; i++) { var dx = nodes[i].x - x, dy = nodes[i].y - y; if (dx * dx + dy * dy < min * min) return false; }
+      return true;
+    }
+    function spawn(near, t, type) {
+      for (var a = 0; a < 14; a++) {
+        var ang = Math.random() * Math.PI * 2, d = 22 + Math.random() * 30;
+        var x = near.x + Math.cos(ang) * d, y = near.y + Math.sin(ang) * d * 0.8;
+        if (x < 28 || x > W - 28 || y < 34 || y > H - 18 || !free(x, y, 17)) continue;
+        var n = { x: x, y: y, type: type || kind(), t: t, rev: -1e9 };
+        nodes.push(n);
+        edges.push({ a: near, b: n, t: t });
+        var best = null, bd = 95 * 95;            // also link to the nearest related record
+        nodes.forEach(function (m) { if (m === n || m === near) return; var dx = m.x - x, dy = m.y - y, dd = dx * dx + dy * dy; if (dd < bd) { bd = dd; best = m; } });
+        if (best && Math.random() < 0.65) edges.push({ a: best, b: n, t: t });
+        return n;
+      }
+      return null;
+    }
+    function seed(n) {
+      nodes = []; edges = [];
+      var hubs = W < 600 ? [[0.25, 0.4], [0.7, 0.35], [0.45, 0.7]] : [[0.12, 0.46], [0.31, 0.64], [0.5, 0.36], [0.69, 0.62], [0.88, 0.42]];
+      hubs.forEach(function (h) { nodes.push({ x: W * h[0], y: H * h[1], type: "entity", t: -1e9, rev: -1e9 }); });
+      nodes.slice().forEach(function (hub) { for (var c = 0; c < 4; c++) spawn(hub, -1e9); }); // every company starts with some work
+      for (var k = 0; nodes.length < n && k < n * 6; k++) spawn(nodes[Math.floor(Math.random() * nodes.length)], -1e9);
+    }
+    function pickTarget() { // agents mostly extend recent work
+      var pool = Math.random() < 0.6 ? nodes.slice(-24) : nodes;
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+    function build() {
+      var dpr = window.devicePixelRatio || 1;
+      W = cv.clientWidth; H = cv.clientHeight;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      MAX = Math.min(280, Math.floor(W * H / 1500));
+      seed(Math.floor(MAX * (reduce ? 0.85 : 0.6)));
+      agents = [];
+      var na = W < 600 ? 3 : 4, now = performance.now();
+      for (var i = 0; i < na; i++) {
+        var at = pickTarget();
+        agents.push({ name: "agent " + (i + 1), x: at.x, y: at.y, fx: at.x, fy: at.y, to: at, t0: now + i * 350, dur: 1, phase: "work" });
+      }
+      count(); draw(now);
+    }
+    function count() {
+      var c = { finding: 0, source: 0, question: 0 };
+      nodes.forEach(function (n) { if (c[n.type] !== undefined) c[n.type]++; });
+      Object.keys(c).forEach(function (k) { counts[k].textContent = c[k]; });
+    }
+    function step(now) {
+      agents.forEach(function (g) {
+        var p = Math.min(1, Math.max(0, (now - g.t0) / g.dur));
+        if (g.phase === "move") {
+          var e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+          g.x = g.fx + (g.to.x - g.fx) * e; g.y = g.fy + (g.to.y - g.fy) * e;
+          if (p >= 1) {
+            g.phase = "work"; g.t0 = now; g.dur = 650;
+            if (nodes.length < MAX) { if (spawn(g.to, now)) count(); }
+            else g.to.rev = now;                     // the graph is full here: revise what is there
+          }
+        } else if (p >= 1) {
+          var next = pickTarget(), dx = next.x - g.x, dy = next.y - g.y;
+          g.fx = g.x; g.fy = g.y; g.to = next; g.phase = "move"; g.t0 = now;
+          g.dur = 600 + Math.min(900, Math.sqrt(dx * dx + dy * dy) * 3);
+        }
+      });
+    }
+    function draw(now) {
+      ctx.clearRect(0, 0, W, H);
+      ctx.lineWidth = 1;
+      edges.forEach(function (e) {
+        var age = now - e.t;
+        ctx.globalAlpha = age < 1400 ? 0.9 - 0.7 * (age / 1400) : 0.16;
+        ctx.strokeStyle = age < 1400 ? col.accent : col.fg;
+        ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
+      });
+      nodes.forEach(function (n) {
+        var age = now - n.t, fresh = age < 1600, pop = fresh ? 1 + 0.6 * Math.max(0, 1 - age / 400) : 1;
+        ctx.globalAlpha = n.type === "source" ? 0.5 : 1;
+        if (fresh) ctx.globalAlpha = 1;
+        var c = fresh ? col.accent : col.fg;
+        ctx.fillStyle = c; ctx.strokeStyle = c;
+        if (n.type === "entity") { ctx.beginPath(); ctx.arc(n.x, n.y, 6.5 * pop, 0, 7); ctx.fill(); }
+        else if (n.type === "finding") { ctx.beginPath(); ctx.arc(n.x, n.y, 3.6 * pop, 0, 7); ctx.fill(); }
+        else if (n.type === "source") { var r = 3.4 * pop; ctx.fillRect(n.x - r, n.y - r, r * 2, r * 2); }
+        else { ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(n.x, n.y, 4 * pop, 0, 7); ctx.stroke(); ctx.lineWidth = 1; }
+        var ra = now - n.rev;
+        if (ra < 1200) { ctx.globalAlpha = 1 - ra / 1200; ctx.strokeStyle = col.accent; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(n.x, n.y, 7 + ra / 60, 0, 7); ctx.stroke(); ctx.lineWidth = 1; }
+      });
+      ctx.globalAlpha = 1;
+      ctx.font = '500 11px "JetBrains Mono", ui-monospace, monospace'; ctx.textBaseline = "middle";
+      agents.forEach(function (g) {
+        var tw = ctx.measureText(g.name).width, bx = g.x + 9, by = g.y - 25;
+        if (bx + tw + 14 > W) bx = g.x - tw - 23;
+        ctx.fillStyle = col.fg;
+        ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, by, tw + 14, 20, 10); else ctx.rect(bx, by, tw + 14, 20); ctx.fill();
+        ctx.fillStyle = col.bg; ctx.fillText(g.name, bx + 7, by + 10.5);
+        ctx.fillStyle = col.fg; ctx.beginPath(); ctx.arc(g.x, g.y, 3, 0, 7); ctx.fill();
+      });
+    }
+    function frame(now) { if (!running) return; step(now); draw(now); requestAnimationFrame(frame); }
+    tone();
+    (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(function () {
+      build();
+      if (reduce || !("IntersectionObserver" in window)) return;
+      new IntersectionObserver(function (es) {
+        if (es[0].isIntersecting && !running) { running = true; requestAnimationFrame(frame); }
+        if (!es[0].isIntersecting) running = false;
+      }).observe(cv);
+    });
+    var gq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (gq.addEventListener) gq.addEventListener("change", function () { tone(); draw(performance.now()); });
+    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(build, 200); });
+  })();
+
+  /* Backtests: the reading is drawn only as far as the as-of date; what comes later is not yet public */
+  (function backtest() {
+    var svg = document.getElementById("bt-svg"), range = document.getElementById("bt-range");
+    var START = Date.UTC(2023, 0, 1), DAYS = 211;
+    var LEVELS = ["Raised", "Maintained", "Lowered", "Withdrawn"];
+    var DOCS = [["2023-01-26", "Q4 call", "Maintained"], ["2023-02-24", "10-K", "Maintained"], ["2023-03-09", "8-K", "Lowered"],
+      ["2023-04-27", "Q1 call", "Withdrawn"], ["2023-05-08", "10-Q", "Withdrawn"], ["2023-06-14", "Investor day", "Lowered"], ["2023-07-27", "Q2 call", "Maintained"]]
+      .map(function (d, i, all) { return { day: Math.round((Date.parse(d[0]) - START) / 864e5), kind: d[1], v: d[2], changed: i === 0 || all[i - 1][2] !== d[2] }; });
+    var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"];
+    function iso(n) { return new Date(START + n * 864e5).toISOString().slice(0, 10); }
+    function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+    var cut = +range.value;
+    function render() {
+      var W = svg.clientWidth, narrow = W < 600, H = narrow ? 280 : 312;
+      svg.style.height = H + "px"; svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+      var L = narrow ? 80 : 104, R = 8, T = 90, B = 28, ph = H - T - B;
+      function x(d) { return L + (W - L - R) * d / DAYS; }
+      function y(v) { return T + ph * (LEVELS.indexOf(v) + 0.5) / LEVELS.length; }
+      var o = [], cx = x(cut);
+      o.push('<defs><pattern id="bt-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="bt-hatch-l" x1="0" y1="0" x2="0" y2="8"></line></pattern></defs>');
+      LEVELS.forEach(function (v) { o.push('<line class="bt-grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '"></line><text class="bt-lab" x="0" y="' + (y(v) + 4) + '">' + v + '</text>'); });
+      for (var m = 0; m < 8; m++) {
+        var md = Math.round((Date.UTC(2023, m, 1) - START) / 864e5);
+        if (md > DAYS) break;
+        o.push('<text class="bt-mon" x="' + (x(md) + 2) + '" y="' + (H - 6) + '">' + MONTHS[m] + '</text><line class="bt-grid" x1="' + x(md) + '" x2="' + x(md) + '" y1="' + (H - B) + '" y2="' + (H - B + 6) + '"></line>');
+      }
+      if (cut < DAYS) {   // what a reader on the as-of date could not yet see
+        o.push('<rect x="' + cx + '" y="' + (T - 62) + '" width="' + (W - R - cx) + '" height="' + (H - B - T + 62) + '" fill="url(#bt-hatch)"></rect>');
+        var mid = (cx + W - R) / 2;
+        if (W - R - cx > (narrow ? 130 : 220)) {
+          o.push('<text class="bt-future-t" x="' + mid + '" y="' + (T + ph / 2 - 4) + '">Not yet public</text>');
+          o.push('<text class="bt-future-s" x="' + mid + '" y="' + (T + ph / 2 + 16) + '">' + (narrow ? "Nothing here is guessed" : "The agent can't see it, and doesn't guess") + '</text>');
+        }
+      }
+      var rowEnd = [-1e9, -1e9];   // place each label on the first of two rows where it fits, else show the tick alone
+      DOCS.forEach(function (d) {
+        var dx = x(d.day), later = d.day > cut, w = d.kind.length * 6.8 + 6, tx = Math.min(dx + 4, W - R - w), row = -1;
+        for (var k = 0; k < 2; k++) if (tx > rowEnd[k] + 8) { row = k; break; }
+        var ly = T - 30 - (row < 0 ? 0 : row) * 16;
+        o.push('<g class="' + (later ? "bt-later" : "") + '"><line class="bt-doc" x1="' + dx + '" x2="' + dx + '" y1="' + (row < 0 ? T - 24 : ly + 5) + '" y2="' + (T - 8) + '"></line>');
+        if (row >= 0) { rowEnd[row] = tx + w; o.push('<text class="bt-doc-t" x="' + tx + '" y="' + ly + '">' + esc(d.kind) + '</text>'); }
+        o.push('</g>');
+      });
+      var seen = DOCS.filter(function (d) { return d.day <= cut; });
+      if (seen.length) {
+        var path = "M" + x(seen[0].day) + " " + y(seen[0].v);
+        seen.forEach(function (d, i) {
+          var end = i + 1 < seen.length ? seen[i + 1].day : cut;
+          path += " H" + x(end);
+          if (i + 1 < seen.length) path += " V" + y(seen[i + 1].v);
+        });
+        o.push('<path class="bt-line" d="' + path + '"></path>');
+        seen.forEach(function (d) { o.push('<circle class="' + (d.changed ? "bt-dot" : "bt-chk") + '" cx="' + x(d.day) + '" cy="' + y(d.v) + '" r="4"></circle>'); });
+      }
+      o.push('<line class="bt-cut" x1="' + cx + '" x2="' + cx + '" y1="' + (T - 68) + '" y2="' + (H - B) + '"></line>');
+      var label = "As of " + iso(cut), pw = label.length * 6.8 + 16, px = Math.min(Math.max(cx - pw / 2, L - 4), W - R - pw);
+      o.push('<rect class="bt-pill" x="' + px + '" y="' + (T - 88) + '" width="' + pw + '" height="20" rx="10"></rect><text class="bt-pill-t" x="' + (px + 8) + '" y="' + (T - 74) + '">' + label + '</text>');
+      if (seen.length) {
+        var now = seen[seen.length - 1], ny = y(now.v), txt = now.v, right = cx + 14 + txt.length * 7.5 < W - R;
+        o.push('<circle class="bt-now" cx="' + cx + '" cy="' + ny + '" r="6"></circle>');
+        o.push('<text class="bt-now-t" x="' + (right ? cx + 12 : cx - 12) + '" y="' + (ny - 10) + '" text-anchor="' + (right ? "start" : "end") + '">' + txt + '</text>');
+      }
+      svg.innerHTML = o.join("");
+    }
+    var timer = null, held = 0;
+    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+    function set(v) { cut = Math.max(0, Math.min(DAYS, v)); range.value = cut; render(); }
+    range.addEventListener("input", function () { stop(); set(+range.value); });
+    function fromPointer(e) {
+      var r = svg.getBoundingClientRect(), L = r.width < 600 ? 80 : 104;
+      set(Math.round((e.clientX - r.left - L) / (r.width - L - 8) * DAYS));
+    }
+    svg.addEventListener("pointerdown", function (e) { stop(); svg.setPointerCapture(e.pointerId); fromPointer(e); });
+    svg.addEventListener("pointermove", function (e) { if (svg.hasPointerCapture && svg.hasPointerCapture(e.pointerId)) fromPointer(e); });
+    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(render, 120); });
+    render();
+    if (reduce || !("IntersectionObserver" in window)) return;
+    var touched = false;
+    ["pointerdown", "keydown"].forEach(function (ev) { svg.addEventListener(ev, function () { touched = true; }); range.addEventListener(ev, function () { touched = true; }); });
+    new IntersectionObserver(function (es) {
+      if (es[0].isIntersecting && !timer && !touched) {
+        timer = setInterval(function () {   // sweep the as-of date forward, pausing at the end
+          if (cut >= DAYS) { if (++held > 40) { held = 0; set(0); } return; }
+          set(cut + 1);
+        }, 55);
+      }
+      if (!es[0].isIntersecting) stop();
+    }).observe(svg);
+  })();
+
+  if (reduce) return; // the resting state is the first excerpt, fully read
+
+  function renderDoc(d) {
+    docFile.textContent = d.file;
+    docCo.textContent = d.co;
+    docSrc.textContent = d.src + " · " + d.date;
+    docPage.textContent = d.pg;
+    docPublic.textContent = d.pub;
+    docText.textContent = "";
+    d.parts.forEach(function (p) {
+      if (typeof p === "string") { docText.appendChild(document.createTextNode(p)); return; }
+      var m = document.createElement("mark");
+      m.textContent = p.t; m.dataset.f = p.f; m.dataset.v = p.v;
+      docText.appendChild(m);
+    });
+    recId.textContent = d.tk;
+    recDate.textContent = "as of " + d.date;
+    FIELDS.forEach(function (f) { dd[f].className = "pending"; dd[f].textContent = ""; });
+  }
+  function hideWire() { wire.setAttribute("opacity", "0"); dot.setAttribute("opacity", "0"); }
+  function drawWire(m, target) {
+    if (!wide.matches) return false;
+    var s = stage.getBoundingClientRect();
+    var rects = m.getClientRects(), r = rects[rects.length - 1];
+    var dc = docWin.getBoundingClientRect(), vw = vals.getBoundingClientRect(), t = target.parentElement.getBoundingClientRect();
+    var x1 = dc.right - s.left, y1 = r.top + r.height / 2 - s.top;
+    var x2 = vw.left - s.left, y2 = t.top + t.height / 2 - s.top;
+    var dx = (x2 - x1) * 0.55;
+    wire.setAttribute("d", "M" + x1 + " " + y1 + " C " + (x1 + dx) + " " + y1 + ", " + (x2 - dx) + " " + y2 + ", " + x2 + " " + y2);
+    var len = wire.getTotalLength();
+    wire.style.transition = "none";
+    wire.style.strokeDasharray = len; wire.style.strokeDashoffset = len;
+    wire.setAttribute("opacity", "1");
+    dot.setAttribute("cx", x1); dot.setAttribute("cy", y1); dot.setAttribute("opacity", "1");
+    wire.getBoundingClientRect(); // commit the start state before animating
+    wire.style.transition = "";
+    wire.style.strokeDashoffset = 0;
+    return true;
+  }
+  async function type(el, text) {
+    el.className = "new"; el.textContent = "";
+    for (var i = 0; i < text.length; i++) { el.textContent += text[i]; await wait(38); }
+  }
+  async function play(d) {
+    docEl.classList.add("out"); rec.classList.add("out");
+    await wait(380);
+    renderDoc(d);
+    docEl.classList.remove("out"); rec.classList.remove("out");
+    await wait(900);
+    var marks = docText.querySelectorAll("mark");
+    for (var i = 0; i < marks.length; i++) {
+      var m = marks[i], target = dd[m.dataset.f];
+      m.classList.add("on");
+      await wait(560);
+      if (drawWire(m, target)) await wait(480);
+      target.parentElement.classList.add("lit");
+      await type(target, m.dataset.v);
+      await wait(260);
+      hideWire();
+      (function (el) { setTimeout(function () { el.className = ""; el.parentElement.classList.remove("lit"); }, 500); })(target);
+      await wait(380);
+    }
+    FIELDS.forEach(function (f) { if (dd[f].classList.contains("pending")) { dd[f].className = "null"; dd[f].textContent = "—"; } });
+    grid.commit();
+    await wait(2600);
+  }
+  (async function loop() {
+    await wait(2400);
+    var i = 1;
+    for (;;) { await play(docs[i]); i = (i + 1) % docs.length; }
+  })();
+})();
+</script>
+</body>
+</html>
