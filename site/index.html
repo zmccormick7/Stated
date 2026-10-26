@@ -151,7 +151,6 @@ h1 {
 .btn-glass:hover { background: var(--btn2-hover); }
 .btn svg { width: 18px; height: 18px; fill: currentColor; }
 
-
 /* ---------- Section variations: each section gets its own shape ---------- */
 .on-dark {
   --bg: #0D1016; --fg: #F2F3F5; --muted: #A0A6B0; --faint: #6F7682; --rule: #232835;
@@ -183,17 +182,6 @@ h1 {
 .stack-head .label { margin: 0 0 22px; text-align: left; }
 .stack-head h2 { margin: 0 0 22px; font-size: clamp(2.5rem, 5.6vw, 5rem); font-weight: 400; line-height: 1.02; letter-spacing: -0.04em; text-wrap: balance; }
 .stack-head p { margin: 0; max-width: 38rem; color: var(--muted); font-size: clamp(1.0625rem, 1.3vw, 1.1875rem); line-height: 1.6; }
-
-/* ---------- Proof: what is running today ---------- */
-.proof { padding: clamp(72px, 9vw, 128px) clamp(4px, 3vw, 40px); border-top: 1px solid var(--rule); }
-.proof .label { text-align: left; margin: 0 0 clamp(28px, 3vw, 44px); }
-.proof-grid { display: grid; gap: 44px 48px; }
-@media (min-width: 760px) { .proof-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-.stat { display: grid; gap: 16px; align-content: start; padding-top: 22px; border-top: 1px solid var(--fg); }
-.stat .num { font-size: clamp(4rem, 8.6vw, 8rem); font-weight: 400; line-height: 0.9; letter-spacing: -0.055em; font-variant-numeric: tabular-nums; }
-.stat .num small { font-size: 0.42em; letter-spacing: -0.02em; margin-left: 0.06em; color: var(--muted); }
-.stat p { margin: 0; max-width: 22rem; color: var(--muted); font-size: 1rem; line-height: 1.5; }
-.proof-note { margin: clamp(32px, 4vw, 48px) 0 0; font-size: 0.8125rem; color: var(--faint); }
 
 /* ---------- Closing panel and footer ---------- */
 .closing { height: auto; min-height: 480px; }
@@ -358,7 +346,6 @@ mark.on { background-size: 100% 100%; }
 .matrix-note .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
 .matrix-note { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; margin-top: 4px; font-size: 0.8125rem; color: var(--faint); }
 
-
 @media (max-width: 600px) {
   .hero { border-radius: 18px; height: auto; min-height: 640px; }
   .veil { background: radial-gradient(90% 50% at 50% 50%, var(--veil-0) 0%, var(--veil-1) 60%, var(--veil-2) 100%); }
@@ -490,17 +477,6 @@ mark.on { background-size: 100% 100%; }
   </div>
 </section>
 
-<section class="proof" aria-labelledby="proof-label">
-  <div class="scale-inner">
-    <p class="label" id="proof-label">Running today</p>
-    <div class="proof-grid">
-      <div class="stat"><span class="num">1,000</span><p>Largest US filers in the published base layer, each with its latest annual report in full.</p></div>
-      <div class="stat"><span class="num">6,900</span><p>Cited findings added by a single research run across 274 companies.</p></div>
-      <div class="stat"><span class="num">7.5<small>h</small></span><p>For that run, using about 40% of one week's Codex usage limit.</p></div>
-    </div>
-  </div>
-</section>
-
 <section class="scale" aria-labelledby="bt-label">
   <div class="scale-inner">
     <div class="stack-head">
@@ -543,10 +519,6 @@ mark.on { background-size: 100% 100%; }
   </nav>
   <span>Open source · MIT License</span>
 </footer>
-
-
-
-
 
 <script>
 (function () {
