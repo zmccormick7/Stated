@@ -32,7 +32,7 @@ Read [README.md](README.md) before planning or implementing changes. PremiseDB i
 
 - Keep README status and examples honest about what is implemented. Skill installation is a documented file copy; do not imply an automated harness installer.
 - Build one reviewable commit at a time, targeting 100–400 changed lines including SQL, tests and documentation. Stop for review before adding the next layer.
-- For each increment, create a new `codex/` branch and open a draft PR against `main` for review. Keep the increment in one commit; merge only when the user requests it.
+- For each increment, create a new branch from `main`, named for the change with no prefix, and open a draft PR against `main` for review. Keep the increment in one commit; merge only when the user requests it.
 - Test meaningful contracts and failure modes with `python -m unittest discover -s tests -v`; see README for runtime requirements.
 - Keep downloaded source documents and local research material out of version control. Commit only appropriate excerpts, summaries and provenance.
 - Preserve the existing GitHub repository and history. The open-source ambition does not authorize changing visibility, publishing packages or deploying a site.
