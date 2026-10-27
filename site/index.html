@@ -12,7 +12,8 @@
 html, body { margin: 0; }
 [hidden] { display: none !important; }
 /* Layout: quiet and premium. An inset, rounded hero panel whose "photograph" is a slow wall of disclosure text,
-   phrases lighting up as they are read; a floating glass nav; then soft light windows showing one passage become data.
+   phrases lighting up as they are read; a floating glass nav; then one dark, pinned story in which a feature is answered for
+   one company on one date and the camera pulls back to the whole dataset.
    One sans at regular weight carries everything; mono only for values. Colour is nearly absent. */
 :root {
   --bg: #FFFFFF;
@@ -151,7 +152,7 @@ h1 {
 .btn-glass:hover { background: var(--btn2-hover); }
 .btn svg { width: 18px; height: 18px; fill: currentColor; }
 
-/* ---------- Section variations: each section gets its own shape ---------- */
+/* ---------- The dark panel the story sits in ---------- */
 .on-dark {
   --bg: #0D1016; --fg: #F2F3F5; --muted: #A0A6B0; --faint: #6F7682; --rule: #232835;
   --hl-strong: rgba(110, 135, 255, 0.38); --accent: #8A9DFF;
@@ -161,23 +162,6 @@ h1 {
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .on-dark { --bg: #151924; } }
 :root[data-theme="dark"] .on-dark { --bg: #151924; }
-.scale.on-dark { border-top: 0; border-radius: 24px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
-.on-dark + .scale { border-top: 0; }
-.center-head { display: grid; justify-items: center; gap: 18px; text-align: center; margin-bottom: clamp(44px, 5vw, 72px); }
-.center-head .label { margin: 0; text-align: center; }
-.center-head h2 { margin: 0; max-width: 18ch; font-size: clamp(2rem, 4.4vw, 3.75rem); font-weight: 400; line-height: 1.06; letter-spacing: -0.035em; text-wrap: balance; }
-.center-head p { margin: 0; max-width: 34rem; color: var(--muted); font-size: 1.125rem; line-height: 1.6; text-wrap: balance; }
-
-.split { display: grid; gap: 36px 72px; align-items: center; }
-@media (min-width: 960px) { .split { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr); } }
-.split-copy { display: grid; gap: 20px; align-content: center; }
-.split-copy .label { margin: 0; }
-.split-copy h2 { margin: 0; font-size: clamp(1.75rem, 2.8vw, 2.5rem); font-weight: 400; line-height: 1.14; letter-spacing: -0.028em; text-wrap: balance; }
-.split-copy p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 30rem; }
-.split-copy .graph-key { display: grid; gap: 10px; margin-top: 8px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 0.875rem; }
-.split #graph { height: 520px; }
-@media (max-width: 600px) { .split #graph { height: 380px; } }
-
 
 /* ---------- Closing panel and footer ---------- */
 .closing { height: auto; min-height: 480px; }
@@ -190,29 +174,8 @@ h1 {
 .footer-links a { text-decoration: none; }
 .footer-links a:hover { color: var(--fg); }
 
-/* ---------- Text → data ---------- */
-.band { padding: clamp(80px, 10vw, 136px) clamp(4px, 3vw, 40px) 72px; }
-.band-inner { max-width: 1160px; margin: 0 auto; }
 .label { margin: 0 0 clamp(36px, 5vw, 56px); text-align: center; font-size: 0.875rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint); }
 
-.stage { position: relative; display: grid; gap: 64px; }
-@media (min-width: 900px) { .stage { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 112px; align-items: stretch; } }
-.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 2; }
-.wires path { fill: none; stroke: var(--accent); stroke-width: 1.5; transition: stroke-dashoffset 480ms cubic-bezier(.5,0,.2,1), opacity 300ms; }
-.wires circle { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; transition: opacity 300ms; }
-
-.win { min-width: 0; display: flex; flex-direction: column; }
-.bar { display: flex; align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--fg); }
-.dots { display: none; }
-.bar-title { font-family: var(--mono); font-size: 0.71875rem; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-.doc { padding: 24px 0 0; display: flex; flex-direction: column; flex: 1; transition: opacity 350ms ease, transform 350ms ease; }
-.doc.out { opacity: 0; transform: translateY(6px); }
-.doc-co { font-weight: 600; font-size: 0.9375rem; letter-spacing: -0.01em; }
-.doc-src { font-size: 0.8125rem; color: var(--faint); margin-top: 2px; }
-.doc-text { margin: 18px 0 28px; font-size: clamp(1.25rem, 1.85vw, 1.625rem); line-height: 1.5; letter-spacing: -0.015em; min-height: 7.5em; text-wrap: pretty; }
-.doc-foot { margin-top: auto; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 0.75rem; color: var(--faint); }
-.doc-foot span { white-space: nowrap; }
 mark {
   color: inherit;
   background-image: linear-gradient(var(--hl), var(--hl));
@@ -222,30 +185,6 @@ mark {
   transition: background-size 620ms cubic-bezier(.6,.05,.3,1);
 }
 mark.on { background-size: 100% 100%; }
-
-.rec { padding: 24px 0 6px; transition: opacity 350ms ease; }
-.rec.out { opacity: 0.3; }
-.rec-head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 12px; }
-.rec-id { font-family: var(--mono); font-weight: 500; font-size: 0.9375rem; }
-.rec-date { font-size: 0.8125rem; color: var(--faint); }
-.fields { margin: 0; }
-.field { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 11px 0; border-top: 1px solid var(--rule); }
-.field::before { content: ""; position: absolute; left: -16px; top: 9px; bottom: 9px; width: 2px; border-radius: 2px; background: var(--accent); opacity: 0; transition: opacity 500ms ease; }
-.field.lit::before { opacity: 1; transition: none; }
-.field dt { font-size: 0.9375rem; }
-.field dt small { white-space: nowrap; font-size: 0.75rem; color: var(--faint); margin-left: 8px; }
-.field dd {
-  margin: 0 -8px 0 0; font-family: var(--mono); font-size: 0.875rem; font-weight: 500; min-width: 10ch; text-align: right;
-  padding: 4px 8px; border-radius: 6px; transition: background-color 900ms ease;
-}
-.field dd.null { color: var(--faint); font-weight: 400; }
-.field dd.new { background: var(--hl-strong); transition: none; }
-.field dd.pending::after { content: ""; display: inline-block; width: 0.5em; height: 1em; vertical-align: -0.15em; background: var(--faint); border-radius: 1px; animation: blink 1s steps(1) infinite; }
-@keyframes blink { 50% { opacity: 0; } }
-.table { margin-top: auto; padding: 16px 0 0; border-top: 1px solid var(--rule); }
-.table-label { display: flex; justify-content: space-between; gap: 12px; font-size: 0.75rem; color: var(--faint); margin-bottom: 10px; }
-#grid { display: block; width: 100%; height: 94px; }
-
 
 /* ---------- Thesis statements ---------- */
 .thesis { padding: clamp(72px, 9vw, 136px) clamp(4px, 3vw, 40px); border-top: 1px solid var(--rule); }
@@ -259,128 +198,71 @@ mark.on { background-size: 100% 100%; }
 .statement mark { padding-block: 0; border-radius: 6px; }
 .statement .quiet { color: var(--faint); }
 
-/* ---------- At scale: the universe as a live matrix ---------- */
-.scale { padding: clamp(72px, 9vw, 136px) clamp(4px, 3vw, 40px) clamp(56px, 7vw, 96px); border-top: 1px solid var(--rule); }
-.scale-inner { max-width: 1160px; margin: 0 auto; }
-.scale .label { text-align: left; margin-bottom: clamp(20px, 2.4vw, 28px); }
-.scale-head { display: grid; gap: 20px 64px; align-items: end; margin-bottom: clamp(40px, 5vw, 64px); }
-@media (min-width: 900px) { .scale-head { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); } }
-.scale-head h2 { margin: 0; font-size: clamp(1.75rem, 3.1vw, 2.75rem); font-weight: 400; line-height: 1.16; letter-spacing: -0.028em; text-wrap: balance; }
-.scale-head p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 26rem; text-wrap: pretty; }
-
-.matrix-wrap {
-  position: relative; overflow-x: auto;
-  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 58%, transparent 100%);
-          mask-image: linear-gradient(180deg, #000 0%, #000 58%, transparent 100%);
+/* ---------- The story: one feature answered for one company on one date, then the camera pulls back to the whole dataset ---------- */
+.story { position: relative; height: 900vh; margin-top: 12px; border-radius: 24px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
+.story-pin {
+  position: sticky; top: 0; height: 100vh; height: 100svh; box-sizing: border-box;
+  padding: clamp(20px, 4vh, 40px) clamp(16px, 3vw, 48px);
+  display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: clamp(32px, 4vw, 64px);
 }
-.matrix { width: 100%; min-width: 760px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-.matrix th, .matrix td { text-align: left; padding: 0 12px; height: 46px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
-.matrix th:first-child, .matrix td:first-child { padding-left: 0; }
-.matrix thead th { height: 64px; vertical-align: bottom; padding-bottom: 12px; border-bottom: 1px solid var(--fg); font-size: 0.875rem; font-weight: 500; }
-.matrix thead th small { display: block; font-size: 0.75rem; font-weight: 400; color: var(--faint); margin-top: 2px; }
-.matrix .asof { font-family: var(--mono); font-size: 0.8125rem; font-weight: 500; }
-.matrix .asof small { font-family: var(--sans); }
-.matrix .add span { display: inline-block; font-weight: 500; color: var(--muted); padding: 6px 12px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--rule); }
-.matrix td.co { font-family: var(--mono); font-size: 0.8125rem; font-weight: 500; }
-.matrix td.co small { font-family: var(--sans); font-weight: 400; font-size: 0.8125rem; color: var(--faint); margin-left: 10px; }
-.matrix td.v span { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.78125rem; font-weight: 500; padding: 5px 10px; border-radius: 999px; transition: box-shadow 1200ms ease; box-shadow: 0 0 0 2px transparent; }
-.matrix td.v.null span { color: var(--faint); padding-inline: 2px; font-weight: 400; }
-@media (max-width: 600px) { .matrix { min-width: 700px; } .matrix td.co small { display: none; } }
+.story-copy { align-self: center; display: grid; gap: 40px; }
+.beats { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; border-left: 1px solid var(--rule); }
+.beats button { appearance: none; border: 0; background: none; cursor: pointer; text-align: left; padding: 6px 0 6px 16px; margin-left: -1px; border-left: 1px solid transparent; font: 400 0.875rem var(--sans); color: var(--faint); transition: color 300ms ease, border-color 300ms ease; }
+.beats button:hover { color: var(--muted); }
+.beats button[aria-current="step"] { color: var(--fg); border-left-color: var(--fg); }
+.beats button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.copies { display: grid; }
+.copy { grid-area: 1 / 1; display: grid; gap: 16px; align-content: start; opacity: 0; transform: translateY(12px); transition: opacity 450ms ease, transform 600ms cubic-bezier(.2,.7,.2,1); }
+.copy.on { opacity: 1; transform: none; }
+.copy h2 { margin: 0; font-size: clamp(1.75rem, 2.6vw, 2.5rem); font-weight: 400; line-height: 1.1; letter-spacing: -0.035em; text-wrap: balance; }
+.copy p { margin: 0; color: var(--muted); font-size: 1rem; line-height: 1.6; text-wrap: pretty; }
+.copy p b { color: var(--fg); font-weight: 500; }
 
-/* ---------- Compounding: a shared graph that agents grow together ---------- */
-#graph { display: block; width: 100%; height: 460px; }
-@media (max-width: 600px) { #graph { height: 380px; } }
-.graph-key { display: inline-flex; flex-wrap: wrap; gap: 6px 20px; align-items: center; color: var(--muted); }
-.graph-key b { font-family: var(--mono); font-weight: 500; color: var(--fg); margin-right: 4px; font-variant-numeric: tabular-nums; }
-.graph-key i { display: inline-block; width: 8px; height: 8px; margin-right: 8px; vertical-align: 0; background: var(--fg); }
-.graph-key .k-entity { width: 11px; height: 11px; border-radius: 50%; vertical-align: -1px; }
-.graph-key .k-finding { border-radius: 50%; }
-.graph-key .k-source { opacity: 0.5; border-radius: 1px; }
+.view { position: relative; min-width: 0; min-height: 0; }
+#scene { position: absolute; top: 30px; bottom: 30px; left: 0; width: 100%; height: calc(100% - 60px); display: block; }
+.hud { position: absolute; inset: 0; pointer-events: none; font: 12px var(--mono); color: var(--faint); transition: opacity 300ms ease; }
+.hud span { position: absolute; max-width: 48%; }
+.hud b { font-weight: 500; color: var(--fg); font-variant-numeric: tabular-nums; }
+#hud-tl { left: 0; top: 0; }
+#hud-tr { right: 0; top: 0; text-align: right; }
+#hud-bl { left: 0; bottom: 0; }
+#hud-br { right: 0; bottom: 0; text-align: right; }
 
-/* ---------- Backtests: the as-of date moves along one bank's filings; anything published later stays out of focus ---------- */
-.pit-head { display: grid; gap: 28px 72px; margin-bottom: clamp(56px, 7vw, 96px); }
-@media (min-width: 960px) { .pit-head { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: end; } }
-.pit-head .label { grid-column: 1 / -1; margin: 0; text-align: left; }
-.pit-head h2 { margin: 0; font-size: clamp(3rem, 7vw, 6.25rem); font-weight: 400; line-height: 0.96; letter-spacing: -0.05em; }
-.pit-copy { display: grid; gap: 18px; }
-.pit-copy p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 31rem; }
-.pit-copy b { color: var(--fg); font-weight: 500; }
+.brief { position: absolute; left: 50%; top: 50%; width: min(600px, 100%); box-sizing: border-box; padding: 28px 32px; border-radius: 18px; background: rgba(255, 255, 255, 0.03); box-shadow: inset 0 0 0 1px var(--rule); transform: translate(-50%, -50%); }
+.brief-k { display: flex; justify-content: space-between; gap: 12px; font: 12px var(--mono); color: var(--faint); }
+.brief-text { margin: 16px 0 24px; min-height: 5.6em; font-size: clamp(1.2rem, 1.9vw, 1.6rem); line-height: 1.4; letter-spacing: -0.02em; text-wrap: pretty; }
+.caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -0.15em; background: var(--accent); animation: caret 1s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+.brief-meta { display: grid; grid-template-columns: auto 1fr; gap: 8px 24px; margin: 0; padding-top: 16px; border-top: 1px solid var(--rule); font-size: 0.9375rem; }
+.brief-meta dt { font: 12px/1.8 var(--mono); color: var(--faint); }
+.brief-meta dd { margin: 0; }
 
-.pit { position: relative; padding-top: 112px; touch-action: pan-y; cursor: ew-resize; user-select: none; -webkit-user-select: none; outline: none; }
-.pit:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 12px; }
-.pit-subject { position: absolute; top: 0; left: 0; display: flex; gap: 10px; align-items: baseline; font-size: 0.8125rem; color: var(--faint); }
-.pit-subject b { font: 500 13px var(--mono); color: var(--fg); }
-.pit-axis { position: absolute; left: 0; right: 0; top: 86px; border-top: 1px dashed var(--faint); opacity: 0.6; }
-.pit-past { position: absolute; left: 0; top: 85px; height: 2px; width: var(--cut, 0); background: var(--fg); }
-.pit-tick { position: absolute; top: 62px; left: var(--cut, 0); height: 30px; border-left: 1.5px solid var(--accent); }
-.pit-now { position: absolute; top: 86px; left: var(--cut, 0); width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--bg); }
-.pit-pill { position: absolute; top: 36px; left: 0; padding: 3px 10px; border-radius: 999px; background: var(--accent); color: var(--bg); font: 500 12px var(--mono); white-space: nowrap; }
-.pit-later { position: absolute; top: 66px; left: calc(var(--cut, 0) + 14px); font-size: 0.75rem; color: var(--faint); white-space: nowrap; }
-.pit-docs { list-style: none; margin: 0 0 0 56px; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.pit-doc { position: relative; display: flex; flex-direction: column; align-items: flex-start; padding-right: 28px; transition: filter 500ms ease, opacity 500ms ease; }
-.pit-doc::before { content: ""; position: absolute; left: 0; top: -26px; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--fg); }
-.pit-src { font: 12px var(--mono); color: var(--faint); }
-.pit-src b { font-weight: 500; color: var(--fg); }
-.pit-doc p { margin: 12px 0 20px; font-size: 1.0625rem; line-height: 1.5; letter-spacing: -0.01em; }
-.pit-doc mark { padding-block: 0; }
-.pit-val { margin-top: auto; padding: 4px 10px; border-radius: 999px; font: 500 12px var(--mono); transition: box-shadow 300ms ease; }
-.pit-val.up { background: var(--up-bg); color: var(--up-ink); }
-.pit-val.down { background: var(--down-bg); color: var(--down-ink); }
-.pit-val.flat { background: var(--flat-bg); color: var(--flat-ink); }
-.pit-doc.now .pit-val { box-shadow: 0 0 0 2px var(--accent); }
-.pit-doc.later { filter: blur(6px); opacity: 0.45; }
-.pit-doc.later::before { background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--faint); }
-@media (max-width: 719px) {
-  .pit { padding: 76px 0 0 32px; cursor: ns-resize; touch-action: pan-x pan-y; }
-  .pit-axis { left: 8px; right: auto; top: 76px; bottom: 0; border-top: 0; border-left: 1px dashed var(--faint); }
-  .pit-past { left: 7.5px; top: 76px; width: 2px; height: calc(var(--cut, 76px) - 76px); }
-  .pit-tick, .pit-later { display: none; }
-  .pit-now { left: 8px; top: var(--cut, 76px); }
-  .pit-pill { top: 30px; left: 32px; }
-  .pit-docs { margin: 0; grid-template-columns: 1fr; gap: 32px; }
-  .pit-doc { padding-right: 0; }
-  .pit-doc::before { left: -24px; top: 9px; }
-  .pit-doc p { margin: 8px 0 14px; }
+.ft { position: absolute; left: 50%; top: 50%; width: min(680px, 100%); transform: translate(-50%, -50%); }
+.ft-head { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 12px; font: 12px var(--mono); color: var(--faint); }
+.ft-head b { color: var(--fg); font-weight: 500; }
+.ft-scroll { overflow-x: auto; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--rule); background: var(--bg); }
+.ft table { width: 100%; border-collapse: collapse; font: 12.5px var(--mono); font-variant-numeric: tabular-nums; }
+.ft th, .ft td { padding: 10px 14px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--rule); }
+.ft th { font-weight: 500; color: var(--muted); }
+.ft .n { text-align: right; }
+.ft tbody tr:last-child td { border-bottom: 0; }
+.ft tr.more td { color: var(--faint); padding-block: 4px; }
+.ft tr.me td { background: rgba(138, 157, 255, 0.16); color: var(--fg); }
+
+@media (max-width: 999px) {
+  .story { height: 800vh; border-radius: 18px; }
+  .story-pin { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 16px; padding: 20px 16px; }
+  .story-copy { align-self: start; gap: 0; }
+  .beats { display: none; }
+  .copy { gap: 8px; }
+  .copy h2 { font-size: 1.375rem; }
+  .copy p { font-size: 0.8125rem; line-height: 1.45; }
+  .hud { font-size: 10.5px; }
+  .brief { padding: 20px; }
+  .brief-text { font-size: 1.0625rem; }
+  .ft table { font-size: 11px; }
+  .ft th, .ft td { padding: 8px 10px; }
 }
-
-/* ---------- Your own features: a definition is written, then agents read whatever it takes ---------- */
-.ff { border-top: 1px solid var(--fg); }
-.ff-tabs { display: flex; flex-wrap: wrap; gap: 8px; padding: 18px 0; border-bottom: 1px solid var(--rule); }
-.ff-tabs button { appearance: none; border: 0; cursor: pointer; padding: 7px 14px; border-radius: 999px; background: transparent; color: var(--muted); font: 500 13px var(--mono); box-shadow: inset 0 0 0 1px var(--rule); transition: background 200ms ease, color 200ms ease; }
-.ff-tabs button:hover { color: var(--fg); }
-.ff-tabs button[aria-selected="true"] { background: var(--fg); color: var(--bg); box-shadow: none; }
-.ff-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.ff-body { display: grid; gap: 40px 64px; padding-top: 36px; }
-@media (min-width: 900px) { .ff-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ff-work { border-left: 1px solid var(--rule); padding-left: 64px; } }
-.ff-k { display: block; font: 12px var(--mono); color: var(--faint); letter-spacing: 0.02em; }
-.ff-text { margin: 14px 0 32px; min-height: 7.2em; font-size: clamp(1.25rem, 1.9vw, 1.625rem); line-height: 1.4; letter-spacing: -0.02em; text-wrap: pretty; }
-.ff-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -0.15em; background: var(--accent); animation: ff-blink 1s steps(1) infinite; }
-@keyframes ff-blink { 50% { opacity: 0; } }
-.ff-meta { display: grid; grid-template-columns: auto 1fr; gap: 10px 24px; margin: 0; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 0.9375rem; }
-.ff-meta dt { font: 12px/1.9 var(--mono); color: var(--faint); }
-.ff-meta dd { margin: 0; }
-.ff-work-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-.ff-work-top span:last-child { font-size: 0.8125rem; color: var(--faint); text-align: right; }
-#ff-docs { display: block; width: 100%; height: 300px; margin: 18px 0 24px; }
-.ff-out { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 24px; padding-top: 18px; border-top: 1px solid var(--rule); }
-.ff-count { font-size: 0.9375rem; color: var(--muted); }
-.ff-count b { font: 500 1.5rem var(--mono); color: var(--fg); letter-spacing: -0.02em; margin-right: 8px; font-variant-numeric: tabular-nums; }
-.ff-res { display: inline-flex; align-items: center; gap: 12px; font-size: 0.8125rem; color: var(--faint); }
-.ff-val { padding: 5px 12px; border-radius: 999px; background: var(--up-bg); color: var(--up-ink); font: 500 13px var(--mono); opacity: 0; transform: translateY(4px); transition: opacity 400ms ease, transform 400ms ease; }
-.ff-val.on { opacity: 1; transform: none; }
-@media (prefers-reduced-motion: reduce) { .ff-caret { animation: none; } .ff-val { transition: none; } }
-.graph-key .k-question { border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg); }
-
-.matrix .up { background: var(--up-bg); color: var(--up-ink); }
-.matrix .down { background: var(--down-bg); color: var(--down-ink); }
-.matrix .flat { background: var(--flat-bg); color: var(--flat-ink); }
-.matrix .share { padding-inline: 0; }
-.matrix .share i { position: relative; display: block; width: 64px; height: 6px; border-radius: 3px; background: var(--flat-bg); overflow: hidden; }
-.matrix .share i b { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--fg); opacity: 0.75; }
-.matrix td.v span.flash { box-shadow: 0 0 0 2px var(--accent); transition: none; }
-.matrix-note .legend { display: inline-flex; gap: 16px; align-items: center; }
-.matrix-note .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
-.matrix-note { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 24px; margin-top: 4px; font-size: 0.8125rem; color: var(--faint); }
 
 @media (max-width: 600px) {
   .hero { border-radius: 18px; height: auto; min-height: 640px; }
@@ -388,8 +270,8 @@ mark.on { background-size: 100% 100%; }
   .btn { padding: 16px 26px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  mark, .doc, .rec, .field dd, .field::before, .wires path, .btn, .pit-doc, .pit-val { transition: none; }
-  .field dd.pending::after { animation: none; }
+  mark, .btn, .copy { transition: none; }
+  .caret { animation: none; }
 }
 </style>
 </head>
@@ -423,41 +305,6 @@ mark.on { background-size: 100% 100%; }
   </div>
 </header>
 
-<section class="band" id="how" aria-label="Example: a passage from an earnings call becomes feature values">
-  <div class="band-inner">
-    <p class="label">From text to data</p>
-    <div class="stage" id="stage">
-      <div class="win" id="doc-win">
-        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="bar-title" id="doc-file">PLHM_Q2-2024_earnings-call.pdf</span></div>
-        <article class="doc" id="doc">
-          <div class="doc-co" id="doc-co">Pellham Retail Group</div>
-          <div class="doc-src" id="doc-src">Q2 earnings call · 2024-08-21</div>
-          <p class="doc-text" id="doc-text">Traffic softened through July, and <mark class="on" data-f="guidance">we are withdrawing our full-year outlook</mark>. <mark class="on" data-f="pricing">We took targeted price reductions in home and apparel</mark> to clear seasonal inventory. <mark class="on" data-f="disclosure">Beginning this quarter, we will no longer report comparable store traffic</mark>.</p>
-          <div class="doc-foot"><span id="doc-page">Prepared remarks · p. 3</span><span id="doc-public">Public 2024-08-21 08:30 ET</span></div>
-        </article>
-      </div>
-
-      <div class="win" id="vals">
-        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="bar-title">feature values · point-in-time</span></div>
-        <div class="rec" id="rec">
-          <div class="rec-head"><span class="rec-id" id="rec-id">PLHM</span><span class="rec-date" id="rec-date">as of 2024-08-21</span></div>
-          <dl class="fields">
-            <div class="field"><dt>Guidance stance<small>category</small></dt><dd id="f-guidance">Withdrawn</dd></div>
-            <div class="field"><dt>Pricing action<small>category</small></dt><dd id="f-pricing">Cut</dd></div>
-            <div class="field"><dt>Capacity plans<small>category</small></dt><dd id="f-capacity" class="null">—</dd></div>
-            <div class="field"><dt>Disclosure dropped<small>yes / no</small></dt><dd id="f-disclosure">Yes</dd></div>
-          </dl>
-        </div>
-        <div class="table">
-          <div class="table-label"><span>Feature table</span><span>companies × trading days</span></div>
-          <canvas id="grid" aria-hidden="true"></canvas>
-        </div>
-      </div>
-
-      <svg class="wires" aria-hidden="true"><path id="wire" opacity="0"></path><circle id="wire-dot" r="3.5" opacity="0"></circle></svg>
-    </div>
-  </div>
-</section>
 
 <section class="thesis" aria-labelledby="locked">
   <div class="thesis-inner">
@@ -466,104 +313,54 @@ mark.on { background-size: 100% 100%; }
   </div>
 </section>
 
-<section class="scale on-dark" aria-labelledby="scale-label">
-  <div class="scale-inner">
-    <div class="center-head">
-      <p class="label" id="scale-label">Now readable at scale</p>
-      <h2>LLMs can finally read like analysts, across every company, every day.</h2>
-      <p>Define the signals you care about, and Implied measures them across your entire universe, turning the written record into data your models can use.</p>
-    </div>
-    <div class="matrix-wrap">
-      <table class="matrix">
-        <thead>
-          <tr>
-            <th class="asof"><span id="mx-date">2024-08-01</span><small>daily, every company</small></th>
-            <th>Guidance stance<small>category</small></th>
-            <th>Pricing action<small>category</small></th>
-            <th>Capacity plans<small>category</small></th>
-            <th>Disclosure dropped<small>yes / no</small></th>
-            <th>Claims corroborated<small>share</small></th>
-            <th class="add"><span>+ Define a signal</span></th>
-          </tr>
-        </thead>
-        <tbody id="mx-body"></tbody>
-      </table>
-    </div>
-    <div class="matrix-note"><span class="legend"><span><i style="background: var(--up-bg)"></i>Up</span><span><i style="background: var(--down-bg)"></i>Down</span><span><i style="background: var(--flat-bg)"></i>Unchanged or no</span></span></div>
-  </div>
-</section>
-
-<section class="scale" aria-labelledby="graph-label">
-  <div class="scale-inner">
-    <div class="split">
-      <div class="split-copy">
-        <p class="label" id="graph-label">Research that compounds</p>
-        <h2>Deep research doesn't scale when every agent starts from scratch.</h2>
-        <p>In Implied, agents share a knowledge graph, where each finding is recorded with its source, linked to related work, and revised as new evidence arrives. Many agents can work in parallel, and each one builds on everything the others have already learned.</p>
-        <span class="graph-key">
-          <span><i class="k-entity"></i>Companies</span>
-          <span><i class="k-finding"></i><b id="n-finding">0</b>Findings</span>
-          <span><i class="k-source"></i><b id="n-source">0</b>Sources</span>
-          <span><i class="k-question"></i><b id="n-question">0</b>Open questions</span>
-        </span>
-      </div>
-      <canvas id="graph" role="img" aria-label="Several agents adding findings, sources and open questions to one shared graph, each linking new work to what is already there; illustrative"></canvas>
-    </div>
-  </div>
-</section>
-
-<section class="scale" aria-labelledby="pit-label">
-  <div class="scale-inner">
-    <div class="pit-head">
-      <p class="label" id="pit-label">Built for backtests</p>
-      <h2>Describe, don't predict.</h2>
-      <div class="pit-copy">
-        <p><b>LLMs know how history turned out.</b> Ask one to predict a bank's prospects in March 2023 and it may simply remember what happened next. That lookahead bias looks like alpha in a backtest and disappears in live trading.</p>
-        <p><b>So our agents never predict anything.</b> They describe a company as it stood on a date: guidance withdrawn, prices raised, a disclosure dropped. The forecasting is left to your models. And because knowing the ending doesn't help describe the starting point, every description is point-in-time by construction.</p>
-      </div>
-    </div>
-    <div class="pit" id="pit" tabindex="0" role="slider" aria-label="As-of date for Halcyon Bancorp's guidance stance">
-      <span class="pit-subject"><b>HLCN</b>Halcyon Bancorp · Guidance stance</span>
-      <span class="pit-axis" aria-hidden="true"></span><span class="pit-past" aria-hidden="true"></span>
-      <span class="pit-tick" aria-hidden="true"></span><span class="pit-now" aria-hidden="true"></span>
-      <span class="pit-pill" aria-hidden="true">As of <span id="pit-date">2023-05-20</span></span>
-      <span class="pit-later" aria-hidden="true">Not yet public</span>
-      <ol class="pit-docs">
-        <li class="pit-doc" data-date="2023-01-26"><span class="pit-src"><b>Jan 26</b> · Q4 call</span><p>We are <mark class="on">reaffirming our full-year guidance</mark> for loan growth and net interest income.</p><span class="pit-val flat">Maintained</span></li>
-        <li class="pit-doc" data-date="2023-03-14"><span class="pit-src"><b>Mar 14</b> · 8-K</span><p>Deposit outflows since March 10 will bring net interest income <mark class="on">below our prior outlook</mark>.</p><span class="pit-val down">Lowered</span></li>
-        <li class="pit-doc" data-date="2023-04-27"><span class="pit-src"><b>Apr 27</b> · Q1 call</span><p>Given the uncertainty, <mark class="on">we are withdrawing our outlook</mark> for the remainder of the year.</p><span class="pit-val down">Withdrawn</span></li>
-        <li class="pit-doc" data-date="2023-06-14"><span class="pit-src"><b>Jun 14</b> · Investor day</span><p><mark class="on">We now expect net interest income to decline</mark> 8 to 10% for the full year.</p><span class="pit-val up">Reinstated</span></li>
-        <li class="pit-doc" data-date="2023-07-27"><span class="pit-src"><b>Jul 27</b> · Q2 call</span><p>We are <mark class="on">raising the low end of our range</mark> for net interest income.</p><span class="pit-val up">Raised</span></li>
+<section class="story on-dark" id="how" aria-label="How it works">
+  <div class="story-pin">
+    <div class="story-copy">
+      <ol class="beats" aria-label="Steps">
+        <li><button type="button">The question</button></li>
+        <li><button type="button">The work</button></li>
+        <li><button type="button">The discipline</button></li>
+        <li><button type="button">The dataset</button></li>
       </ol>
-    </div>
-  </div>
-</section>
-
-<section class="scale" aria-labelledby="ff-label">
-  <div class="scale-inner">
-    <div class="center-head">
-      <p class="label" id="ff-label">Your own features</p>
-      <h2>If you can write it down, you can measure it.</h2>
-      <p>Write a feature the way you'd brief an analyst. Agents read whatever it takes, from one earnings call to everything a company's suppliers and customers have published, and record the answer for every company on every date.</p>
-    </div>
-    <div class="ff" id="ff">
-      <div class="ff-tabs" role="tablist" aria-label="Example features"></div>
-      <div class="ff-body" role="tabpanel" id="ff-panel">
-        <div class="ff-def">
-          <span class="ff-k">Instructions</span>
-          <p class="ff-text" id="ff-text"></p>
-          <dl class="ff-meta">
-            <dt>Value</dt><dd id="ff-type"></dd>
-            <dt>Runs on</dt><dd>Every company, every trading day</dd>
-          </dl>
+      <div class="copies">
+        <div class="copy">
+          <h2>If you can write it down, you can measure it.</h2>
+          <p>Write a feature the way you'd brief an analyst.</p>
         </div>
-        <div class="ff-work">
-          <div class="ff-work-top"><span class="ff-k">Agents reading</span><span id="ff-src"></span></div>
-          <canvas id="ff-docs" aria-hidden="true"></canvas>
-          <div class="ff-out">
-            <span class="ff-count"><b id="ff-n">0</b>documents</span>
-            <span class="ff-res"><span>OSTV · as of 2024-08-06</span><span class="ff-val" id="ff-val"></span></span>
-          </div>
+        <div class="copy">
+          <h2>LLMs can finally read like analysts.</h2>
+          <p>Agents read whatever it takes, from one earnings call to everything a company's suppliers and customers have published.</p>
+        </div>
+        <div class="copy">
+          <h2>Describe, don't predict.</h2>
+          <p><b>LLMs know how history turned out.</b> Ask one to predict a bank's prospects in March 2023 and it may simply remember what happened next. That lookahead bias looks like alpha in a backtest and disappears in live trading.</p>
+          <p><b>So our agents never predict anything.</b> They describe a company as it stood on a date: guidance withdrawn, prices raised, a disclosure dropped. The forecasting is left to your models. And because knowing the ending doesn't help describe the starting point, every description is point-in-time by construction.</p>
+        </div>
+        <div class="copy">
+          <h2>Across every company, every day.</h2>
+          <p>Define the signals you care about, and Implied measures them across your entire universe, turning the written record into data your models can use.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="view" id="view">
+      <canvas id="scene" role="img" aria-label="Illustrative: one feature answered for one company on one date by reading its own filings and calls and those of 64 counterparties, using only documents published by that date; then the same value shown as one cell among millions, companies by trading days"></canvas>
+      <div class="hud" id="hud" aria-hidden="true"><span id="hud-tl"></span><span id="hud-tr"></span><span id="hud-bl"></span><span id="hud-br"></span></div>
+      <div class="brief" id="brief">
+        <div class="brief-k"><span>New feature</span><span>demand_corroborated</span></div>
+        <p class="brief-text"><span id="brief-text"></span><span class="caret" aria-hidden="true"></span></p>
+        <dl class="brief-meta">
+          <dt>Value</dt><dd>Share, 0 to 1</dd>
+          <dt>Runs on</dt><dd>Every company, every trading day</dd>
+        </dl>
+      </div>
+      <div class="ft" id="ft" aria-label="The feature table: one row per company per day">
+        <div class="ft-head"><span><b>feature_table.csv</b></span><span id="ft-n"></span></div>
+        <div class="ft-scroll">
+          <table>
+            <thead><tr><th>date</th><th>subject</th><th class="n">demand_corroborated</th><th class="n">debt_due_2y</th><th>kpi_dropped</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -721,95 +518,6 @@ mark.on { background-size: 100% 100%; }
   wall(document.getElementById("wall"), 104, 1);
   wall(document.getElementById("wall2"), 0, 1.5);   // the closing panel is shorter, so its headline fills more of it
 
-  /* ---------- Text → data ---------- */
-  var FIELDS = ["guidance", "pricing", "capacity", "disclosure"];
-  var docs = [
-    { co: "Pellham Retail Group", tk: "PLHM", file: "PLHM_Q2-2024_earnings-call.pdf", src: "Q2 earnings call", date: "2024-08-21", pg: "Prepared remarks · p. 3", pub: "Public 2024-08-21 08:30 ET", parts: [
-      "Traffic softened through July, and ", { t: "we are withdrawing our full-year outlook", f: "guidance", v: "Withdrawn" }, ". ",
-      { t: "We took targeted price reductions in home and apparel", f: "pricing", v: "Cut" }, " to clear seasonal inventory. ",
-      { t: "Beginning this quarter, we will no longer report comparable store traffic", f: "disclosure", v: "Yes" }, "." ] },
-    { co: "Ostrava Semiconductor", tk: "OSTV", file: "OSTV_10-Q_2024-Q2.htm", src: "10-Q · MD&A", date: "2024-08-06", pg: "Item 2 · p. 31", pub: "Public 2024-08-06 16:12 ET", parts: [
-      "Demand from our largest customer remained strong. ", { t: "We raised list prices on legacy nodes effective July 1", f: "pricing", v: "Raised" }, ", and ",
-      { t: "construction of our second fab has been deferred until market conditions improve", f: "capacity", v: "Deferred" }, ". ",
-      { t: "We continue to expect full-year revenue in line with the outlook we gave in April", f: "guidance", v: "Maintained" }, "." ] },
-    { co: "Meridian Freight", tk: "MRDF", file: "MRDF_Q2-2024_earnings-call.pdf", src: "Q2 earnings call", date: "2024-07-30", pg: "Prepared remarks · p. 2", pub: "Public 2024-07-30 17:00 ET", parts: [
-      "Volumes ran ahead of plan in the Southeast, so ", { t: "we are raising our full-year guidance", f: "guidance", v: "Raised" }, ". ",
-      { t: "We expect to open three more cross-dock terminals by year end", f: "capacity", v: "Expanding" }, ", and ",
-      { t: "contract rates renewed at roughly flat pricing", f: "pricing", v: "Held" }, "." ] }
-  ];
-
-  var stage = document.getElementById("stage");
-  var docWin = document.getElementById("doc-win");
-  var docEl = document.getElementById("doc");
-  var docText = document.getElementById("doc-text");
-  var docFile = document.getElementById("doc-file");
-  var docCo = document.getElementById("doc-co");
-  var docSrc = document.getElementById("doc-src");
-  var docPage = document.getElementById("doc-page");
-  var docPublic = document.getElementById("doc-public");
-  var vals = document.getElementById("vals");
-  var rec = document.getElementById("rec");
-  var recId = document.getElementById("rec-id");
-  var recDate = document.getElementById("rec-date");
-  var wire = document.getElementById("wire");
-  var dot = document.getElementById("wire-dot");
-  var dd = {};
-  FIELDS.forEach(function (f) { dd[f] = document.getElementById("f-" + f); });
-  var wide = window.matchMedia("(min-width: 900px)");
-
-  /* Feature table: one row per company, one column per trading day */
-  var grid = (function () {
-    var cv = document.getElementById("grid"), ctx = cv.getContext("2d");
-    var CELL = 4, GAP = 2, ROWS = 15, cols = 0, base, hot, w = 0, ink, glow;
-    function rand(seed) { var x = Math.sin(seed * 9301 + 49297) * 233280; return x - Math.floor(x); }
-    function colors() { var cs = getComputedStyle(root); ink = cs.getPropertyValue("--fg").trim() || "#0A0A0C"; glow = cs.getPropertyValue("--accent").trim() || "#3452F0"; }
-    function resize() {
-      w = cv.clientWidth;
-      var dpr = window.devicePixelRatio || 1;
-      cols = Math.max(10, Math.floor((w + GAP) / (CELL + GAP)));
-      var h = ROWS * (CELL + GAP) - GAP;
-      cv.style.height = h + "px";
-      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      base = new Float32Array(cols * ROWS); hot = new Float32Array(cols * ROWS);
-      for (var r = 0; r < ROWS; r++) {
-        var start = rand(r + 1) < 0.25 ? Math.floor(rand(r + 50) * cols * 0.6) : 0; // later listings start partway
-        for (var c = 0; c < cols; c++) {
-          var i = r * cols + c;
-          if (c < start) { base[i] = 0; continue; }
-          base[i] = rand(i * 7 + 3) < 0.035 ? 0.42 : 0.07 + rand(i + 11) * 0.05; // values change sparsely
-        }
-      }
-      draw();
-    }
-    function draw() {
-      ctx.clearRect(0, 0, w, ROWS * (CELL + GAP));
-      for (var r = 0; r < ROWS; r++) for (var c = 0; c < cols; c++) {
-        var i = r * cols + c, x = c * (CELL + GAP), y = r * (CELL + GAP);
-        if (base[i] === 0 && hot[i] < 0.02) continue;
-        ctx.globalAlpha = base[i]; ctx.fillStyle = ink; ctx.fillRect(x, y, CELL, CELL);
-        if (hot[i] > 0.02) { ctx.globalAlpha = hot[i]; ctx.fillStyle = glow; ctx.fillRect(x, y, CELL, CELL); }
-      }
-      ctx.globalAlpha = 1;
-    }
-    function tick() {
-      var any = false;
-      for (var i = 0; i < hot.length; i++) if (hot[i] > 0.02) { hot[i] *= 0.975; any = true; }
-      if (Math.random() < 0.14) { var j = Math.floor(Math.random() * hot.length); if (base[j] > 0) hot[j] = 0.9; any = true; }
-      if (any) draw();
-      requestAnimationFrame(tick);
-    }
-    function commit() { // a new reading lands: light the latest days of one row
-      var r = Math.floor(Math.random() * ROWS);
-      for (var k = 0; k < 9; k++) { var c = cols - 1 - k; hot[r * cols + c] = 1 - k * 0.06; base[r * cols + c] = Math.max(base[r * cols + c], 0.14); }
-    }
-    colors(); resize();
-    window.addEventListener("resize", resize);
-    var mq = window.matchMedia("(prefers-color-scheme: dark)");
-    if (mq.addEventListener) mq.addEventListener("change", function () { colors(); draw(); });
-    if (!reduce) requestAnimationFrame(tick);
-    return { commit: commit };
-  })();
 
   /* Thesis highlights: read in turn when the statement scrolls into view */
   var thesisMarks = Array.prototype.slice.call(document.querySelectorAll(".statement mark"));
@@ -825,423 +533,378 @@ mark.on { background-size: 100% 100%; }
     document.querySelectorAll(".statement").forEach(function (el) { tio.observe(el); });
   }
 
-  /* At scale: every company, every day; a few readings change on each date */
-  (function matrix() {
-    var body = document.getElementById("mx-body"), dateEl = document.getElementById("mx-date");
-    var UP = { Raised: 1, Expanding: 1 }, DOWN = { Lowered: 1, Withdrawn: 1, Cut: 1, Deferred: 1, Yes: 1 };
-    var COS = [["PLHM", "Pellham Retail"], ["OSTV", "Ostrava Semiconductor"], ["MRDF", "Meridian Freight"], ["HLCN", "Halcyon Bancorp"],
-      ["CRVN", "Corvane Therapeutics"], ["ALDR", "Alder Packaging"], ["BRKW", "Brookway Utilities"], ["CNTX", "Contexa Software"],
-      ["DVRA", "Devara Mining"], ["ELMS", "Elmstead Homes"], ["FNWK", "Fenwick Media"], ["GRVL", "Gravelle Chemicals"],
-      ["HSKY", "Husky Logistics"], ["IRNW", "Ironwood Energy"]];
-    var COLS = [
-      ["Raised", "Maintained", "Maintained", "Lowered", "Withdrawn", null],
-      ["Raised", "Held", "Held", "Cut", null],
-      ["Expanding", "Unchanged", "Unchanged", "Deferred", null],
-      ["No", "No", "No", "Yes"],
-      ["83%", "67%", "50%", "100%", "75%", "40%", null]
-    ];
-    function any(list) { return list[Math.floor(Math.random() * list.length)]; }
-    var cells = [];
-    COS.forEach(function (c, r) {
-      var tr = document.createElement("tr");
-      var co = document.createElement("td"); co.className = "co"; co.textContent = c[0];
-      var nm = document.createElement("small"); nm.textContent = c[1]; co.appendChild(nm); tr.appendChild(co);
-      COLS.forEach(function (opts) {
-        var td = document.createElement("td"), sp = document.createElement("span");
-        td.appendChild(sp); tr.appendChild(td);
-        var cell = { td: td, sp: sp, opts: opts }; set(cell, any(opts), false); cells.push(cell);
-      });
-      tr.appendChild(document.createElement("td"));
-      body.appendChild(tr);
-    });
-    function set(cell, v, flash) { // pills encode direction only, never good or bad
-      cell.v = v;
-      cell.td.className = "v" + (v === null ? " null" : "");
-      cell.sp.textContent = "";
-      var kind = v === null ? "" : /%$/.test(v) ? "share" : UP[v] ? "up" : DOWN[v] ? "down" : "flat";
-      if (kind === "share") {
-        var bar = document.createElement("i"), fill = document.createElement("b");
-        fill.style.width = v; bar.appendChild(fill); cell.sp.appendChild(bar);
-      }
-      cell.sp.appendChild(document.createTextNode(v === null ? "—" : v));
-      cell.sp.className = kind + (flash ? " flash" : "");
-      if (flash) setTimeout(function () { cell.sp.classList.remove("flash"); }, 700);
+  /* ---------- The story: one feature answered for one company on one date, then the whole dataset.
+     Scroll position alone sets every frame, so it plays the same forwards and backwards. ---------- */
+  (function story() {
+    var sec = document.getElementById("how"), view = document.getElementById("view"), cv = document.getElementById("scene"), ctx = cv.getContext("2d");
+    var brief = document.getElementById("brief"), briefText = document.getElementById("brief-text"), ft = document.getElementById("ft"), hudEl = document.getElementById("hud");
+    var hud = {};
+    ["tl", "tr", "bl", "br"].forEach(function (k) { hud[k] = { el: document.getElementById("hud-" + k), html: "" }; });
+    var copies = [].slice.call(sec.querySelectorAll(".copy")), steps = [].slice.call(sec.querySelectorAll(".beats button"));
+    var BRIEF = "For each claim management made about demand this quarter, check what the company's customers, suppliers and distributors said. Report the share confirmed by at least two of them.";
+    var BEATS = [0, 0.13, 0.45, 0.62], JUMP = [0.07, 0.3, 0.56, 0.8];   // where each beat starts, and where its step button lands
+    var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    function clamp(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+    function seg(p, a, b) { return clamp((p - a) / (b - a)); }
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function ease(t) { return t * t * (3 - 2 * t); }
+    function rng(seed) {   // small seeded generator, so the illustration is the same on every load
+      return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
     }
-    var day = new Date(Date.UTC(2024, 7, 1));
-    function nextDay() {
-      do { day.setUTCDate(day.getUTCDate() + 1); } while (day.getUTCDay() === 0 || day.getUTCDay() === 6);
-      dateEl.textContent = day.toISOString().slice(0, 10);
-    }
-    function tick() {
-      nextDay();
-      var n = 1 + Math.floor(Math.random() * 3);   // most values hold from one day to the next
-      for (var k = 0; k < n; k++) {
-        var c = any(cells), v = any(c.opts), tries = 0;
-        while (v === c.v && tries++ < 6) v = any(c.opts);
-        if (v !== c.v) set(c, v, true);
-      }
-    }
-    if (reduce || !("IntersectionObserver" in window)) return;
-    var timer = null;
-    new IntersectionObserver(function (es) {
-      if (es[0].isIntersecting && !timer) timer = setInterval(tick, 1300);
-      if (!es[0].isIntersecting && timer) { clearInterval(timer); timer = null; }
-    }).observe(body);
-  })();
+    function fmt(n) { return Math.round(n).toLocaleString("en-US"); }
+    function setHud(k, html) { if (hud[k].html !== html) { hud[k].html = html; hud[k].el.innerHTML = html; } }
 
-  /* Compounding: agents grow one shared graph, each linking new work to what is there */
-  (function graphViz() {
-    var cv = document.getElementById("graph"), ctx = cv.getContext("2d");
-    var W = 0, H = 0, nodes = [], edges = [], agents = [], MAX = 0, col = {}, running = false;
-    var counts = { finding: document.getElementById("n-finding"), source: document.getElementById("n-source"), question: document.getElementById("n-question") };
-    function tone() {
-      var cs = getComputedStyle(root);
-      col = { fg: cs.getPropertyValue("--fg").trim(), bg: cs.getPropertyValue("--bg").trim(), accent: cs.getPropertyValue("--accent").trim() };
+    /* One company's reading: its own filings and calls, and those of 64 customers, suppliers and distributors */
+    var DAY = 864e5, T0 = Date.UTC(2022, 0, 1), CUT = (Date.UTC(2024, 7, 6) - T0) / DAY, TEND = (Date.UTC(2025, 5, 30) - T0) / DAY;
+    var R = rng(11), docs = [];
+    function cluster(n) {
+      var c = { docs: [], x: 0, y: 0, r: 0, a: 0, oi: 0, npre: 0 };
+      for (var i = 0; i < n; i++) { var d = { c: c, day: Math.floor(R() * TEND), st: R(), hit: 0, claim: -1 }; d.pre = d.day <= CUT; c.docs.push(d); docs.push(d); }
+      c.docs.sort(function (a, b) { return a.day - b.day; });
+      c.docs.forEach(function (d) { if (d.pre) d.pi = c.npre++; });
+      return c;
     }
-    function kind() { var r = Math.random(); return r < 0.56 ? "finding" : r < 0.82 ? "source" : r < 0.97 ? "question" : "entity"; }
-    function free(x, y, min) {
-      for (var i = 0; i < nodes.length; i++) { var dx = nodes[i].x - x, dy = nodes[i].y - y; if (dx * dx + dy * dy < min * min) return false; }
-      return true;
-    }
-    function spawn(near, t, type) {
-      for (var a = 0; a < 14; a++) {
-        var ang = Math.random() * Math.PI * 2, d = 22 + Math.random() * 30;
-        var x = near.x + Math.cos(ang) * d, y = near.y + Math.sin(ang) * d * 0.8;
-        if (x < 28 || x > W - 28 || y < 34 || y > H - 18 || !free(x, y, 17)) continue;
-        var n = { x: x, y: y, type: type || kind(), t: t, rev: -1e9 };
-        nodes.push(n);
-        edges.push({ a: near, b: n, t: t });
-        var best = null, bd = 95 * 95;            // also link to the nearest related record
-        nodes.forEach(function (m) { if (m === n || m === near) return; var dx = m.x - x, dy = m.y - y, dd = dx * dx + dy * dy; if (dd < bd) { bd = dd; best = m; } });
-        if (best && Math.random() < 0.65) edges.push({ a: best, b: n, t: t });
-        return n;
-      }
-      return null;
-    }
-    function seed(n) {
-      nodes = []; edges = [];
-      var hubs = W < 600 ? [[0.25, 0.4], [0.7, 0.35], [0.45, 0.7]] : [[0.12, 0.46], [0.31, 0.64], [0.5, 0.36], [0.69, 0.62], [0.88, 0.42]];
-      hubs.forEach(function (h) { nodes.push({ x: W * h[0], y: H * h[1], type: "entity", t: -1e9, rev: -1e9 }); });
-      nodes.slice().forEach(function (hub) { for (var c = 0; c < 4; c++) spawn(hub, -1e9); }); // every company starts with some work
-      for (var k = 0; nodes.length < n && k < n * 6; k++) spawn(nodes[Math.floor(Math.random() * nodes.length)], -1e9);
-    }
-    function pickTarget() { // agents mostly extend recent work
-      var pool = Math.random() < 0.6 ? nodes.slice(-24) : nodes;
-      return pool[Math.floor(Math.random() * pool.length)];
-    }
-    function build() {
-      var dpr = window.devicePixelRatio || 1;
-      W = cv.clientWidth; H = cv.clientHeight;
-      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      MAX = Math.min(280, Math.floor(W * H / 1500));
-      seed(Math.floor(MAX * (reduce ? 0.85 : 0.6)));
-      agents = [];
-      var na = W < 600 ? 3 : 4, now = performance.now();
-      for (var i = 0; i < na; i++) {
-        var at = pickTarget();
-        agents.push({ name: "agent " + (i + 1), x: at.x, y: at.y, fx: at.x, fy: at.y, to: at, t0: now + i * 350, dur: 1, phase: "work" });
-      }
-      count(); draw(now);
-    }
-    function count() {
-      var c = { finding: 0, source: 0, question: 0 };
-      nodes.forEach(function (n) { if (c[n.type] !== undefined) c[n.type]++; });
-      Object.keys(c).forEach(function (k) { counts[k].textContent = c[k]; });
-    }
-    function step(now) {
-      agents.forEach(function (g) {
-        var p = Math.min(1, Math.max(0, (now - g.t0) / g.dur));
-        if (g.phase === "move") {
-          var e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-          g.x = g.fx + (g.to.x - g.fx) * e; g.y = g.fy + (g.to.y - g.fy) * e;
-          if (p >= 1) {
-            g.phase = "work"; g.t0 = now; g.dur = 650;
-            if (nodes.length < MAX) { if (spawn(g.to, now)) count(); }
-            else g.to.rev = now;                     // the graph is full here: revise what is there
-          }
-        } else if (p >= 1) {
-          var next = pickTarget(), dx = next.x - g.x, dy = next.y - g.y;
-          g.fx = g.x; g.fy = g.y; g.to = next; g.phase = "move"; g.t0 = now;
-          g.dur = 600 + Math.min(900, Math.sqrt(dx * dx + dy * dy) * 3);
+    var self = cluster(60), others = [];
+    for (var i = 0; i < 64; i++) others.push(cluster(28 + Math.floor(R() * 30)));
+    var inner = others.slice(0, 26), outer = others.slice(26);
+    inner.forEach(function (c, i) { c.a = (i / inner.length + 0.02) * 2 * Math.PI; });
+    outer.forEach(function (c, i) { c.a = (i / outer.length + 0.03) * 2 * Math.PI; });
+    function fromTop(c) { return (c.a / Math.PI * 180 + 90) % 360; }   // clockwise from twelve o'clock
+    var order = [self].concat(others.slice().sort(function (a, b) { return fromTop(a) - fromTop(b); }));
+    order.forEach(function (c, i) { c.oi = i; });
+    var preDocs = docs.filter(function (d) { return d.pre; }), nPre = preDocs.length;
+
+    // Ten passages bear on the answer: three of eight claims reach two confirmations, one is contradicted, four stay unverified
+    var CLAIMS = 8, HITS = [[0, 1], [1, 1], [0, 1], [2, 1], [4, 1], [1, 1], [3, 2], [0, 1], [5, 1], [2, 1]];
+    HITS.forEach(function (h, i) {
+      var c = order[1 + Math.floor((i + 0.5) / HITS.length * (order.length - 1))], pool = c.docs.filter(function (d) { return d.pre && !d.hit; });
+      var d = pool[Math.floor(R() * pool.length)]; d.hit = h[1]; d.claim = h[0];
+    });
+
+    // The read documents collapse into one cell, each into a slot of a square grid
+    var CW = 150, slotG = Math.ceil(Math.sqrt(nPre));
+    preDocs.forEach(function (d, i) {
+      var inset = CW * 0.84;
+      d.sx = -inset / 2 + ((i % slotG) + 0.5) / slotG * inset;
+      d.sy = -inset / 2 + (Math.floor(i / slotG) + 0.5) / slotG * inset;
+    });
+
+    /* The dataset: 1,500 companies by every weekday from 2015 to 2024, one value per cell */
+    var COLS = 0, ROWS = 1500, R0W = 640, dates = [];
+    for (var t = Date.UTC(2015, 0, 1); t <= Date.UTC(2024, 11, 31); t += DAY) { var wd = new Date(t).getUTCDay(); if (wd > 0 && wd < 6) dates.push(t); }
+    COLS = dates.length;
+    var C0 = dates.indexOf(Date.UTC(2024, 7, 6)), Q0 = Math.round(0.38 * 254), vals = null, gridImg = null;
+    var LO = [26, 31, 44], HI = [118, 134, 224], PAL = [];
+    for (var q = 0; q < 255; q++) { var f = q / 254; PAL.push("rgb(" + Math.round(lerp(LO[0], HI[0], f)) + "," + Math.round(lerp(LO[1], HI[1], f)) + "," + Math.round(lerp(LO[2], HI[2], f)) + ")"); }
+    function buildGrid() {   // each company's value holds between readings and moves when new documents arrive
+      var G = rng(5);
+      vals = new Uint8Array(COLS * ROWS);
+      for (var r = 0; r < ROWS; r++) {
+        var near = Math.abs(r - R0W) <= 3, start = near || G() < 0.72 ? 0 : Math.floor(G() * COLS * 0.9), mean = 0.15 + 0.6 * G(), v = mean, next = start + Math.floor(G() * 63), o = r * COLS;
+        for (var c = 0; c < COLS; c++) {
+          if (c < start) { vals[o + c] = 255; continue; }
+          if (c >= next) { v = Math.min(0.98, Math.max(0.02, v + (mean - v) * 0.3 + (G() + G() + G() - 1.5) * 0.2)); next = c + (G() < 0.15 ? 5 + Math.floor(G() * 40) : 55 + Math.floor(G() * 16)); }
+          vals[o + c] = Math.round(v * 254);
         }
+      }
+      var o0 = R0W * COLS, old = vals[o0 + C0], end = C0, s;   // OSTV: a new reading on the day of its 10-Q
+      while (end < COLS && vals[o0 + end] === old) end++;
+      for (s = C0; s < end; s++) vals[o0 + s] = Q0;
+      var prev = vals[o0 + C0 - 1];
+      if (Math.abs(prev - Q0) < 30) for (s = C0 - 1; s >= 0 && vals[o0 + s] === prev; s--) vals[o0 + s] = 168;
+      gridImg = document.createElement("canvas"); gridImg.width = COLS; gridImg.height = ROWS;
+      var g = gridImg.getContext("2d"), im = g.createImageData(COLS, ROWS), px = im.data;
+      for (var i = 0; i < vals.length; i++) {
+        var qq = vals[i]; if (qq === 255) continue;
+        var ff = qq / 254, k4 = i * 4;
+        px[k4] = lerp(LO[0], HI[0], ff); px[k4 + 1] = lerp(LO[1], HI[1], ff); px[k4 + 2] = lerp(LO[2], HI[2], ff); px[k4 + 3] = 255;
+      }
+      g.putImageData(im, 0, 0);
+      buildTable();
+    }
+    function pile(g, keep, seed, alpha) {   // a cell seen up close: the documents its value was read from
+      var c = document.createElement("canvas"), N = 256, x = rng(seed), cell = N / g, p;
+      c.width = c.height = N; p = c.getContext("2d"); p.fillStyle = "rgba(255, 255, 255, " + alpha + ")";
+      for (var i = 0; i < g * g; i++) if (keep(i, x)) p.fillRect((i % g) * cell + cell * 0.2, Math.floor(i / g) * cell + cell * 0.15, cell * 0.6, cell * 0.7);
+      return c;
+    }
+    var P0 = pile(slotG, function (i) { return i < nPre; }, 1, 0.6);
+    var PILES = [0, 1, 2, 3, 4, 5].map(function (j) { var g = 30 + j * 4, f = 0.35 + 0.1 * j; return pile(g, function (i, x) { return x() < f; }, 20 + j, 0.32); });   // other cells: piles of other sizes
+    var NAMES = { "-3": "HLCN", "-2": "MRDF", "-1": "PLHM", "0": "OSTV", "1": "ALDR", "2": "BRKW", "3": "CRVN" };
+    function ticker(r) {
+      var n = NAMES[r - R0W]; if (n) return n;
+      var x = rng(r * 7919 + 13), s = "", len = x() < 0.7 ? 4 : 3;
+      for (var i = 0; i < len; i++) s += String.fromCharCode(65 + Math.floor(x() * 26));
+      return s;
+    }
+    function dateLabel(c, step) {
+      var d = new Date(dates[c]), m = MONTHS[d.getUTCMonth()];
+      return step < 21 ? m + " " + d.getUTCDate() : step < 261 ? m + " " + d.getUTCFullYear() : String(d.getUTCFullYear());
+    }
+    function buildTable() {   // the export: one row per company per day
+      var body = ft.querySelector("tbody"), subj = [[R0W - 2, "MRDF", "$0.84B"], [R0W, "OSTV", "$2.31B"], [R0W - 1, "PLHM", "$1.06B"]];
+      function row(cells, cls) { var tr = document.createElement("tr"); if (cls) tr.className = cls; cells.forEach(function (v, i) { var td = document.createElement("td"); td.textContent = v; if (i === 2 || i === 3) td.className = "n"; tr.appendChild(td); }); body.appendChild(tr); }
+      row(["…", "", "", "", ""], "more");
+      [C0 - 1, C0, C0 + 1].forEach(function (c) {
+        subj.forEach(function (s) {
+          var q = vals[s[0] * COLS + c];
+          row([new Date(dates[c]).toISOString().slice(0, 10), s[1], q === 255 ? "" : (q / 254).toFixed(2), s[2], "false"], s[0] === R0W && c === C0 ? "me" : "");
+        });
+      });
+      row(["…", "", "", "", ""], "more");
+      document.getElementById("ft-n").textContent = fmt(COLS * ROWS) + " rows";
+    }
+
+    /* Layout of the reading, in design units around the centre of the view */
+    var W = 0, H = 0, dpr = 1, k = 1, portrait = false, PITCH = 5.6, GW = 3.6, GH = 4.6, base = 0, tx0 = 0, tx1 = 0, claimPos = [], sectors = [];
+    function place(c, cx, cy, cols) {
+      var rows = Math.ceil(c.docs.length / cols);
+      c.x = cx; c.y = cy; c.r = Math.max(cols, rows) * PITCH * 0.6;
+      c.docs.forEach(function (d, i) { d.rx = cx + ((i % cols) - (cols - 1) / 2) * PITCH; d.ry = cy + (Math.floor(i / cols) - (rows - 1) / 2) * PITCH; });
+    }
+    function layout() {
+      portrait = H > W * 1.05;
+      var ax = portrait ? 0.74 : 1.34, ay = portrait ? 1.3 : 0.9;
+      k = Math.min(W / (portrait ? 700 : 1060), H / (portrait ? 1040 : 760));
+      place(self, 0, 0, 10);
+      inner.forEach(function (c) { place(c, Math.cos(c.a) * 185 * ax, Math.sin(c.a) * 185 * ay, 7); });
+      outer.forEach(function (c) { place(c, Math.cos(c.a) * 300 * ax, Math.sin(c.a) * 300 * ay, 7); });
+      claimPos = [];
+      for (var i = 0; i < CLAIMS; i++) { var a = i / CLAIMS * 2 * Math.PI - Math.PI / 2; claimPos.push([Math.cos(a) * 62, Math.sin(a) * 42]); }
+      sectors = [["Customers", 270], ["Distributors", 35], ["Suppliers", 145]].map(function (s) { var a = s[1] / 180 * Math.PI; return [s[0], Math.cos(a) * 375 * ax, Math.sin(a) * 372 * ay]; });
+      tx0 = portrait ? -320 : -470; tx1 = -tx0; base = portrait ? 330 : 250;
+      var bins = {};
+      docs.slice().sort(function (a, b) { return a.day - b.day; }).forEach(function (d) {   // a stacked timeline, one column per week
+        var b = Math.floor(d.day / 7), n = bins[b] = (bins[b] || 0) + 1;
+        d.tx = tx0 + (tx1 - tx0) * (b * 7 + 3.5) / TEND; d.ty = base - n * PITCH * 1.4;
       });
     }
-    function draw(now) {
-      ctx.clearRect(0, 0, W, H);
+    function size() {
+      dpr = Math.min(2, window.devicePixelRatio || 1); W = view.clientWidth; H = view.clientHeight;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      layout();
+    }
+    var C = {};
+    function tones() { var cs = getComputedStyle(sec); ["fg", "muted", "faint", "accent", "bg", "rule"].forEach(function (k) { C[k] = cs.getPropertyValue("--" + k).trim(); }); C.down = cs.getPropertyValue("--down-ink").trim(); }
+    function mono(px, weight) { return (weight || 400) + " " + px + "px \"JetBrains Mono\", ui-monospace, monospace"; }
+
+    /* Beats 2 to 4a: the reading, the cutoff and the collapse into one cell */
+    function drawReading(p, t4) {
+      var show = seg(p, 0.12, 0.17); if (!show) return 0;
+      var t2 = seg(p, 0.13, 0.44), t3 = seg(p, 0.46, 0.61), ta = seg(t4, 0, 0.25);
+      var appear = seg(t2, 0, 0.14), reading = seg(t2, 0.14, 0.9), settle = seg(t2, 0.9, 1);
+      var tw = ease(seg(t3, 0, 0.5)), cutIn = ease(seg(t3, 0.42, 0.62)), away = 1 - seg(ta, 0, 0.35);
+      var kf = reading * order.length, ci = reading >= 1 ? order.length : Math.floor(kf), fr = kf - ci;
+      var gw = Math.max(1.3, GW * k), gh = Math.max(1.7, GH * k), cx = W / 2, cy = H / 2, cell = CW * 0.84 / slotG, read = 0;
+      var conf = [], contra = [], hitsRead = [];
+      for (var i = 0; i < CLAIMS; i++) { conf.push(0); contra.push(0); }
+      function X(x) { return cx + x * k; }
+      function Y(y) { return cy + y * k; }
+      docs.forEach(function (d) {
+        var c = d.c, isRead = d.pre && (c.oi < ci || (c.oi === ci && d.pi < fr * c.npre));
+        if (isRead) { read++; if (d.hit) { if (d.hit === 1) conf[d.claim]++; else contra[d.claim]++; hitsRead.push(d); } }
+        var a = show * seg(appear, c.oi / order.length * 0.75, c.oi / order.length * 0.75 + 0.25);
+        var m = ease(seg(t3, d.st * 0.3, 0.7 + d.st * 0.3)), x = lerp(d.rx, d.tx, m), y = lerp(d.ry, d.ty, m), w = gw, h = gh;
+        if (!d.pre) { var f = ease(seg(t3, 0.62 + d.st * 0.2, 0.8 + d.st * 0.2)); y += f * 260; a *= 1 - f; if (ta > 0) a = 0; }
+        else if (ta > 0) { var q = ease(seg(ta, d.st * 0.3, 0.7 + d.st * 0.3)); x = lerp(x, d.sx, q); y = lerp(y, d.sy, q); w = lerp(gw, cell * 0.6 * k, q); h = lerp(gh, cell * 0.7 * k, q); }
+        d.X = X(x); d.Y = Y(y); d.w = w; d.h = h; d.a = a; d.read = isRead;
+      });
+      ctx.save();
+      if (ta > 0) { ctx.globalAlpha = ease(seg(ta, 0.3, 0.9)); ctx.fillStyle = PAL[Q0]; ctx.fillRect(X(-CW / 2), Y(-CW / 2), CW * k, CW * k); }
+      function drawSet(test, color, alpha, grow) {
+        ctx.fillStyle = color;
+        docs.forEach(function (d) { if (d.a <= 0 || !test(d)) return; ctx.globalAlpha = alpha * d.a; var w = d.w * grow, h = d.h * grow; ctx.fillRect(d.X - w / 2, d.Y - h / 2, w, h); });
+      }
+      var marked = ta < 0.6;
+      drawSet(function (d) { return !d.read; }, C.fg, 0.15, 1);
+      drawSet(function (d) { return d.read && !(d.hit && marked); }, C.fg, 0.55, 1);
+      drawSet(function (d) { return d.read && d.hit === 1 && marked; }, C.accent, 1, 1.5);
+      drawSet(function (d) { return d.read && d.hit === 2 && marked; }, C.down, 1, 1.5);
+
+      // Each passage that bears on the answer, linked to the claim it confirms or contradicts
+      var la = (1 - tw) * show;
       ctx.lineWidth = 1;
-      edges.forEach(function (e) {
-        var age = now - e.t;
-        ctx.globalAlpha = age < 1400 ? 0.9 - 0.7 * (age / 1400) : 0.16;
-        ctx.strokeStyle = age < 1400 ? col.accent : col.fg;
-        ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
+      if (la > 0) hitsRead.forEach(function (d) {
+        var cp = claimPos[d.claim];
+        ctx.globalAlpha = 0.45 * la; ctx.strokeStyle = d.hit === 1 ? C.accent : C.down;
+        ctx.beginPath(); ctx.moveTo(d.X, d.Y); ctx.lineTo(X(cp[0]), Y(cp[1])); ctx.stroke();
       });
-      nodes.forEach(function (n) {
-        var age = now - n.t, fresh = age < 1600, pop = fresh ? 1 + 0.6 * Math.max(0, 1 - age / 400) : 1;
-        ctx.globalAlpha = n.type === "source" ? 0.5 : 1;
-        if (fresh) ctx.globalAlpha = 1;
-        var c = fresh ? col.accent : col.fg;
-        ctx.fillStyle = c; ctx.strokeStyle = c;
-        if (n.type === "entity") { ctx.beginPath(); ctx.arc(n.x, n.y, 6.5 * pop, 0, 7); ctx.fill(); }
-        else if (n.type === "finding") { ctx.beginPath(); ctx.arc(n.x, n.y, 3.6 * pop, 0, 7); ctx.fill(); }
-        else if (n.type === "source") { var r = 3.4 * pop; ctx.fillRect(n.x - r, n.y - r, r * 2, r * 2); }
-        else { ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(n.x, n.y, 4 * pop, 0, 7); ctx.stroke(); ctx.lineWidth = 1; }
-        var ra = now - n.rev;
-        if (ra < 1200) { ctx.globalAlpha = 1 - ra / 1200; ctx.strokeStyle = col.accent; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(n.x, n.y, 7 + ra / 60, 0, 7); ctx.stroke(); ctx.lineWidth = 1; }
+      var cr = Math.max(2.5, 4.5 * k);
+      claimPos.forEach(function (cp, i) {
+        var state = contra[i] ? C.down : conf[i] >= 2 ? C.accent : reading >= 1 ? C.faint : null;
+        ctx.globalAlpha = la * appear; ctx.beginPath(); ctx.arc(X(cp[0]), Y(cp[1]), cr, 0, 2 * Math.PI);
+        if (state) { ctx.fillStyle = state; ctx.fill(); } else { ctx.strokeStyle = C.faint; ctx.stroke(); }
       });
-      ctx.globalAlpha = 1;
-      ctx.font = '500 11px "JetBrains Mono", ui-monospace, monospace'; ctx.textBaseline = "middle";
-      agents.forEach(function (g) {
-        var tw = ctx.measureText(g.name).width, bx = g.x + 9, by = g.y - 25;
-        if (bx + tw + 14 > W) bx = g.x - tw - 23;
-        ctx.fillStyle = col.fg;
-        ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, by, tw + 14, 20, 10); else ctx.rect(bx, by, tw + 14, 20); ctx.fill();
-        ctx.fillStyle = col.bg; ctx.fillText(g.name, bx + 7, by + 10.5);
-        ctx.fillStyle = col.fg; ctx.beginPath(); ctx.arc(g.x, g.y, 3, 0, 7); ctx.fill();
-      });
-    }
-    function frame(now) { if (!running) return; step(now); draw(now); requestAnimationFrame(frame); }
-    tone();
-    (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(function () {
-      build();
-      if (reduce || !("IntersectionObserver" in window)) return;
-      new IntersectionObserver(function (es) {
-        if (es[0].isIntersecting && !running) { running = true; requestAnimationFrame(frame); }
-        if (!es[0].isIntersecting) running = false;
-      }).observe(cv);
-    });
-    var gq = window.matchMedia("(prefers-color-scheme: dark)");
-    if (gq.addEventListener) gq.addEventListener("change", function () { tone(); draw(performance.now()); });
-    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(build, 200); });
-  })();
 
-  /* Backtests: the as-of date moves along the filings; a document comes into focus only once it is public */
-  (function pointInTime() {
-    var pit = document.getElementById("pit"), out = document.getElementById("pit-date");
-    var pill = pit.querySelector(".pit-pill"), later = pit.querySelector(".pit-later");
-    var docs = Array.prototype.slice.call(pit.querySelectorAll(".pit-doc"));
-    var DAY = 864e5, START = Date.UTC(2023, 0, 2), END = Date.UTC(2023, 7, 31);
-    var dates = docs.map(function (d) { return Date.parse(d.dataset.date); });
-    var vert = window.matchMedia("(max-width: 719px)");
-    var t = Date.UTC(2023, 4, 20), stops = [];   // resting state: the outlook withdrawn, not yet reinstated
-    function measure() {   // [date, position along the axis]: each document's dot sits where it becomes public
-      var v = vert.matches;
-      stops = [[START, v ? 76 : 0]];
-      docs.forEach(function (d, i) { stops.push([dates[i], v ? d.offsetTop + 9 : d.offsetLeft]); });
-      stops.push([END, v ? pit.clientHeight : pit.clientWidth]);
+      // The reader: one session working through the clusters, its recent path trailing behind it
+      if (reading > 0 && reading < 1) {
+        var cur = order[ci], m2 = ease(Math.min(1, fr * 3)), prev = order[Math.max(0, ci - 1)], px = lerp(prev.x, cur.x, m2), py = lerp(prev.y, cur.y, m2);
+        ctx.strokeStyle = C.accent; ctx.lineWidth = 1.25;
+        for (var j = Math.max(0, ci - 5); j < ci; j++) {
+          var a0 = order[j], a1 = j + 1 === ci ? { x: px, y: py } : order[j + 1];
+          ctx.globalAlpha = 0.55 * (1 - (ci - j) / 6) * show;
+          ctx.beginPath(); ctx.moveTo(X(a0.x), Y(a0.y)); ctx.lineTo(X(a1.x), Y(a1.y)); ctx.stroke();
+        }
+        ctx.globalAlpha = show; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(X(px), Y(py), lerp(prev.r, cur.r, m2) * k + 6, 0, 2 * Math.PI); ctx.stroke();
+      }
+
+      // Labels
+      var lab = appear * (1 - tw) * show;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      if (lab > 0) {
+        ctx.globalAlpha = lab; ctx.fillStyle = C.fg; ctx.font = mono(Math.max(10, 12 * k * 1.1), 500);
+        ctx.fillText("OSTV", X(0), Y(-34));
+        ctx.fillStyle = C.faint; ctx.font = "400 " + Math.max(10, Math.round(13 * k)) + "px " + getComputedStyle(sec).fontFamily;
+        sectors.forEach(function (s) { ctx.fillText(s[0], X(s[1]), Y(s[2])); });
+      }
+      var axa = seg(t3, 0.25, 0.5) * away;
+      if (axa > 0) {   // the time axis and the as-of date
+        ctx.globalAlpha = axa * 0.7; ctx.strokeStyle = C.faint; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(X(tx0), Y(base + 4)); ctx.lineTo(X(tx1), Y(base + 4)); ctx.stroke();
+        ctx.fillStyle = C.faint; ctx.font = mono(Math.max(10, Math.round(12 * k)));
+        [2022, 2023, 2024, 2025].forEach(function (yr) { var x = tx0 + (tx1 - tx0) * (Date.UTC(yr, 0, 1) - T0) / DAY / TEND; ctx.fillRect(X(x), Y(base + 4), 1, 5); ctx.fillText(String(yr), X(x) + 18, Y(base + 20)); });
+      }
+      var ca = cutIn * away;
+      if (ca > 0) {
+        var xc = X(tx0 + (tx1 - tx0) * CUT / TEND), top = lerp(base + 8, base - 250, cutIn);
+        ctx.globalAlpha = ca; ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(xc, Y(base + 8)); ctx.lineTo(xc, Y(top)); ctx.stroke();
+        ctx.fillStyle = C.accent; ctx.font = mono(Math.max(10, Math.round(12 * k)), 500);
+        ctx.fillText("As of 2024-08-06", xc, Y(top) - 12);
+      }
+
+      // The value: below the company once the reading is done, then above the timeline, then inside its cell
+      if (settle > 0) {
+        var vy = lerp(lerp(70, portrait ? -360 : -280, tw), 0, ease(ta)), vs = Math.max(18, 30 * k);
+        ctx.globalAlpha = settle; ctx.fillStyle = C.fg; ctx.font = mono(Math.round(vs), 500);
+        ctx.fillText("0.38", X(0), Y(vy));
+        if (tw < 1 && ta === 0) { ctx.globalAlpha = settle * (1 - tw); ctx.fillStyle = C.faint; ctx.font = mono(Math.max(10, Math.round(12 * k))); ctx.fillText("3 of 8 demand claims corroborated", X(0), Y(vy) + vs * 0.9); }
+      }
+      ctx.restore();
+      return read;
     }
-    function lerp(a, b, k) { return a + (b - a) * k; }
-    function posOf(time) {
-      for (var i = 1; i < stops.length; i++) if (time <= stops[i][0]) return lerp(stops[i - 1][1], stops[i][1], (time - stops[i - 1][0]) / (stops[i][0] - stops[i - 1][0]));
-      return stops[stops.length - 1][1];
+
+    /* Beats 4b and 5: the camera pulls back from the one cell to the whole table */
+    function drawGrid(t4, fade) {
+      if (!gridImg) buildGrid();
+      var aN = seg(t4, 0.22, 0.36) * fade, e = ease(seg(t4, 0.25, 1)), S0 = CW * k;
+      var Sfit = Math.min(W * 0.94 / COLS, H * 0.9 / ROWS), sz = Math.exp(lerp(Math.log(S0), Math.log(Sfit), e));
+      var w = ease(seg(e, 0.3, 1)), offX = (C0 + 0.5 - COLS / 2) * Sfit * w, offY = (R0W + 0.5 - ROWS / 2) * Sfit * w;   // our cell drifts to its true place in screen space
+      var left = C0 + 0.5 - (W / 2 + offX) / sz, top = R0W + 0.5 - (H / 2 + offY) / sz, gap = sz >= 16 ? 1 : 0;
+      var c0 = Math.max(0, Math.floor(left)), c1 = Math.min(COLS, Math.ceil(left + W / sz)), r0 = Math.max(0, Math.floor(top)), r1 = Math.min(ROWS, Math.ceil(top + H / sz));
+      ctx.save();
+      if (aN > 0) {
+        ctx.globalAlpha = aN;
+        if (sz >= 8) {
+          var pa = seg(sz, 16, 44);
+          for (var r = r0; r < r1; r++) for (var c = c0; c < c1; c++) {
+            var q = vals[r * COLS + c]; if (q === 255) continue;
+            ctx.fillStyle = PAL[q]; ctx.fillRect((c - left) * sz, (r - top) * sz, sz - gap, sz - gap);
+          }
+          if (pa > 0) {
+            ctx.globalAlpha = aN * pa;
+            for (r = r0; r < r1; r++) for (c = c0; c < c1; c++) {
+              if (vals[r * COLS + c] === 255) continue;
+              ctx.drawImage(PILES[(r * 31 + c * 17) % PILES.length], (c - left + 0.08) * sz, (r - top + 0.08) * sz, sz * 0.84, sz * 0.84);
+            }
+          }
+        } else {
+          ctx.imageSmoothingEnabled = sz < 1;
+          var sx0 = Math.max(0, left), sy0 = Math.max(0, top), sx1 = Math.min(COLS, left + W / sz), sy1 = Math.min(ROWS, top + H / sz);
+          ctx.drawImage(gridImg, sx0, sy0, sx1 - sx0, sy1 - sy0, (sx0 - left) * sz, (sy0 - top) * sz, (sx1 - sx0) * sz, (sy1 - sy0) * sz);
+        }
+      }
+      // Our cell, at full strength from the moment the documents settle into it
+      var X0 = (C0 - left) * sz, Y0 = (R0W - top) * sz;
+      if (t4 >= 0.25) {
+        ctx.globalAlpha = fade; ctx.fillStyle = PAL[Q0]; ctx.fillRect(X0, Y0, sz - gap, sz - gap);
+        var pa0 = seg(sz, 16, 44);
+        if (pa0 > 0) { ctx.globalAlpha = fade * pa0; ctx.drawImage(P0, X0 + sz * 0.08, Y0 + sz * 0.08, sz * 0.84, sz * 0.84); }
+        ctx.globalAlpha = fade; ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
+        if (sz >= 4) ctx.strokeRect(X0 - 3, Y0 - 3, sz + 6 - gap, sz + 6 - gap);
+        else { ctx.beginPath(); ctx.arc(X0 + sz / 2, Y0 + sz / 2, 7, 0, 2 * Math.PI); ctx.stroke(); }
+        var va = seg(sz, 40, 90);
+        if (va > 0) { ctx.globalAlpha = fade * va; ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = mono(Math.round(Math.max(18, 30 * k) * sz / S0), 500); ctx.fillText("0.38", X0 + sz / 2, Y0 + sz / 2); }
+      }
+      // Companies down the left edge, dates across the top
+      var tl = aN * seg(sz, 11, 18);
+      ctx.textBaseline = "middle";
+      if (tl > 0) {
+        var g = ctx.createLinearGradient(0, 0, 64, 0); g.addColorStop(0, C.bg); g.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.globalAlpha = tl; ctx.fillStyle = g; ctx.fillRect(0, 0, 64, H);
+        ctx.textAlign = "left"; ctx.font = mono(Math.round(Math.min(12, sz * 0.6)), 500);
+        for (r = r0; r < r1; r++) { ctx.fillStyle = r === R0W ? C.fg : C.faint; ctx.fillText(ticker(r), 6, (r + 0.5 - top) * sz); }
+      }
+      if (aN > 0) {
+        var STEPS = [1, 5, 21, 63, 261, 522], step = STEPS[STEPS.length - 1];
+        for (var s = 0; s < STEPS.length; s++) if (STEPS[s] * sz >= 76) { step = STEPS[s]; break; }
+        var ly = Math.max(12, -top * sz - 12);   // along the top edge, or just above the table once it all fits
+        var g2 = ctx.createLinearGradient(0, 0, 0, 30); g2.addColorStop(0, C.bg); g2.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.globalAlpha = aN; ctx.fillStyle = g2; ctx.fillRect(0, 0, W, 30);
+        ctx.fillStyle = C.faint; ctx.textAlign = step === 1 ? "center" : "left"; ctx.font = mono(11);
+        for (c = Math.ceil(c0 / step) * step; c < c1; c += step) ctx.fillText(dateLabel(c, step), (c - left + (step === 1 ? 0.5 : 0)) * sz + (step === 1 ? 0 : 3), ly);
+      }
+      ctx.restore();
+      var shown = Math.max(1, (Math.min(COLS, left + W / sz) - Math.max(0, left)) * (Math.min(ROWS, top + H / sz) - Math.max(0, top)));
+      return { e: e, values: sz > S0 * 0.6 ? 1 : Math.min(COLS * ROWS, shown) };
     }
-    function timeOf(pos) {
-      for (var i = 1; i < stops.length; i++) if (pos <= stops[i][1]) return lerp(stops[i - 1][0], stops[i][0], Math.max(0, (pos - stops[i - 1][1]) / (stops[i][1] - stops[i - 1][1])));
-      return END;
-    }
+
+    var cur = -1, raf = 0;
     function render() {
-      var x = posOf(t), seen = -1, day = new Date(t).toISOString().slice(0, 10);
-      docs.forEach(function (d, i) { var pub = dates[i] <= t; if (pub) seen = i; d.classList.toggle("later", !pub); d.classList.remove("now"); });
-      if (seen >= 0) docs[seen].classList.add("now");
-      pit.style.setProperty("--cut", x + "px");
-      out.textContent = day;
-      if (vert.matches) { pill.style.left = ""; }
-      else { var w = pill.offsetWidth; pill.style.left = Math.min(Math.max(x - w / 2, 0), pit.clientWidth - w) + "px"; }
-      later.style.visibility = t < END && pit.clientWidth - x > 130 ? "visible" : "hidden";
-      pit.setAttribute("aria-valuemin", 0); pit.setAttribute("aria-valuemax", Math.round((END - START) / DAY));
-      pit.setAttribute("aria-valuenow", Math.round((t - START) / DAY));
-      pit.setAttribute("aria-valuetext", "As of " + day + ": " + (seen >= 0 ? docs[seen].querySelector(".pit-val").textContent : "no reading yet"));
-    }
-    function set(time) { t = Math.max(START, Math.min(END, time)); render(); }
-    measure(); render();
-    var touched = false, raf = null, last = 0, held = 0;
-    function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
-    function fromPointer(e) { var r = pit.getBoundingClientRect(); set(timeOf(vert.matches ? e.clientY - r.top : e.clientX - r.left)); }
-    pit.addEventListener("pointerdown", function (e) { touched = true; stop(); pit.setPointerCapture(e.pointerId); fromPointer(e); });
-    pit.addEventListener("pointermove", function (e) { if (pit.hasPointerCapture && pit.hasPointerCapture(e.pointerId)) fromPointer(e); });
-    pit.addEventListener("keydown", function (e) {
-      var step = { ArrowRight: 7, ArrowUp: 7, ArrowLeft: -7, ArrowDown: -7 }[e.key];
-      if (e.key === "Home") set(START); else if (e.key === "End") set(END); else if (step) set(t + step * DAY); else return;
-      touched = true; stop(); e.preventDefault();
-    });
-    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { measure(); render(); }, 120); });
-    if (reduce || !("IntersectionObserver" in window)) return;
-    function frame(now) {   // sweep the as-of date forward, about 24 days a second, then hold at the end and start over
-      var dt = Math.min(now - (last || now), 50); last = now;
-      if (t >= END) { held += dt; if (held > 2400) { held = 0; set(START); } }
-      else set(t + dt * 24 * DAY / 1000);
-      raf = requestAnimationFrame(frame);
-    }
-    new IntersectionObserver(function (es) {
-      if (es[0].isIntersecting && !raf && !touched) { last = 0; if (t > dates[2]) set(START); raf = requestAnimationFrame(frame); }
-      if (!es[0].isIntersecting) stop();
-    }, { threshold: 0.4 }).observe(pit);
-  })();
-
-  /* Your own features: a definition is typed, agents read every document it needs, and the value lands */
-  (function features() {
-    var FEATURES = [
-      { key: "kpi_dropped", type: "Yes / no", val: "Yes", docs: 22, src: "10-Ks, 10-Qs and earnings calls",
-        text: "Did the company stop reporting a metric it disclosed in each of the previous four years? Compare this year's filings and calls with those of the last four." },
-      { key: "debt_due_2y", type: "Number, USD", val: "$2.31B", docs: 146, src: "Indentures, credit agreements and amendments",
-        text: "Total principal due within two years, rebuilt from every indenture, credit agreement and amendment, including maturities that spring earlier under their own terms." },
-      { key: "demand_corroborated", type: "Share, 0 to 1", val: "0.38", docs: 2418, src: "Calls and filings from 64 companies",
-        text: "For each claim management made about demand this quarter, check what the company's customers, suppliers and distributors said. Report the share confirmed by at least two of them." }
-    ];
-    var tabs = document.querySelector(".ff-tabs"), panel = document.getElementById("ff-panel");
-    var text = document.getElementById("ff-text"), type = document.getElementById("ff-type"), src = document.getElementById("ff-src");
-    var nEl = document.getElementById("ff-n"), valEl = document.getElementById("ff-val"), cv = document.getElementById("ff-docs"), ctx = cv.getContext("2d");
-    var MAX = 2418, w = 0, h = 0, pitch = 7, cols = 0, col = {}, state = new Uint8Array(MAX), order = [], cur = 2, timers = [], touched = false, raf = null;
-    var buttons = FEATURES.map(function (f, i) {
-      var b = document.createElement("button");
-      b.type = "button"; b.setAttribute("role", "tab"); b.id = "ff-tab-" + i; b.setAttribute("aria-controls", "ff-panel"); b.textContent = f.key;
-      b.addEventListener("click", function () { pick(i); });
-      tabs.appendChild(b); return b;
-    });
-    function rand(seed) { var x = Math.sin(seed * 9301 + 49297) * 233280; return x - Math.floor(x); }
-    function colors() { var cs = getComputedStyle(root); col = { rule: cs.getPropertyValue("--rule").trim(), fg: cs.getPropertyValue("--fg").trim(), accent: cs.getPropertyValue("--accent").trim() }; }
-    function resize() {   // one glyph size for every feature, so a short read looks short beside a long one
-      w = cv.clientWidth;
-      var dpr = window.devicePixelRatio || 1, room = w < 560 ? 220 : 300;
-      for (pitch = 9; pitch > 3; pitch--) if (Math.ceil(MAX / Math.floor(w / pitch)) * Math.round(pitch * 1.3) <= room) break;
-      cols = Math.floor(w / pitch);
-      h = Math.ceil(MAX / cols) * Math.round(pitch * 1.3); cv.style.height = h + "px";
-      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      draw();
-    }
-    function draw() {   // 0 not yet found, 1 found, 2 read, 3 read and bore on the answer
-      ctx.clearRect(0, 0, w, h);
-      var gw = pitch - 2, gh = Math.round(pitch * 1.3) - 2;
-      for (var i = 0; i < FEATURES[cur].docs; i++) {
-        var st = state[i]; if (!st) continue;
-        var x = (i % cols) * pitch, y = Math.floor(i / cols) * Math.round(pitch * 1.3);
-        ctx.globalAlpha = st === 2 ? 0.3 : 1;
-        ctx.fillStyle = st === 1 ? col.rule : st === 2 ? col.fg : col.accent;
-        ctx.fillRect(x, y, gw, gh);
+      raf = 0;
+      var span = sec.offsetHeight - window.innerHeight, p = clamp(-sec.getBoundingClientRect().top / span);
+      var beat = p < BEATS[1] ? 0 : p < BEATS[2] ? 1 : p < BEATS[3] ? 2 : 3;
+      if (beat !== cur) {
+        cur = beat;
+        copies.forEach(function (c, i) { c.classList.toggle("on", i === beat); });
+        steps.forEach(function (s, i) { if (i === beat) s.setAttribute("aria-current", "step"); else s.removeAttribute("aria-current"); });
       }
-      ctx.globalAlpha = 1;
-    }
-    function show(i) {
-      cur = i;
-      buttons.forEach(function (b, k) { b.setAttribute("aria-selected", k === i ? "true" : "false"); b.tabIndex = k === i ? 0 : -1; });
-      panel.setAttribute("aria-labelledby", "ff-tab-" + i);
-      type.textContent = FEATURES[i].type; src.textContent = FEATURES[i].src; valEl.textContent = FEATURES[i].val;
-    }
-    function finished(i) {   // the resting state: the definition written, every document read, the value recorded
-      show(i); text.textContent = FEATURES[i].text;
-      for (var k = 0; k < FEATURES[i].docs; k++) state[k] = rand(k + i * 31) < 0.09 ? 3 : 2;
-      nEl.textContent = FEATURES[i].docs.toLocaleString("en-US"); valEl.classList.add("on"); draw();
-    }
-    function stop() { timers.forEach(clearTimeout); timers = []; if (raf) { cancelAnimationFrame(raf); raf = null; } }
-    function pick(i) { touched = true; if (reduce) { stop(); finished(i); } else play(i); }
-    function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
-    function play(i) {
-      stop();
-      var f = FEATURES[i];
-      show(i); state.fill(0); draw(); nEl.textContent = "0"; valEl.classList.remove("on");
-      text.textContent = ""; var caret = document.createElement("span"); caret.className = "ff-caret";
-      var typed = document.createTextNode(""); text.appendChild(typed); text.appendChild(caret);
-      var n = 0;
-      (function type() { n += 2; typed.data = f.text.slice(0, n); if (n < f.text.length) later(type, 22); else later(read, 350); })();
-      function read() {
-        caret.remove();
-        order = []; for (var k = 0; k < f.docs; k++) { state[k] = 1; order.push(k); }
-        order.sort(function (a, b) { return rand(a * 13 + i) - rand(b * 13 + i); });   // many agents at once, not front to back
-        draw();
-        var t0 = performance.now(), dur = 900 + Math.min(2600, f.docs * 1.2);
-        (function step(now) {
-          var k = Math.min(1, (now - t0) / dur), done = Math.round(f.docs * k);
-          for (var j = 0; j < done; j++) { var d = order[j]; if (state[d] === 1) state[d] = rand(d + i * 31) < 0.09 ? 3 : 2; }
-          nEl.textContent = done.toLocaleString("en-US"); draw();
-          if (k < 1) raf = requestAnimationFrame(step);
-          else { raf = null; later(function () { valEl.classList.add("on"); }, 250); if (!touched) later(function () { play((i + 1) % FEATURES.length); }, 4200); }
-        })(t0);
+
+      // Beat 1: the brief is written, then steps aside for the reading
+      var n = Math.round(seg(p, 0.01, 0.1) * BRIEF.length), out = seg(p, 0.11, 0.15);
+      if (briefText.textContent.length !== n) briefText.textContent = BRIEF.slice(0, n);
+      brief.style.opacity = 1 - out; brief.style.transform = "translate(-50%, -50%) scale(" + (1 - 0.04 * out) + ")";
+      brief.style.visibility = out < 1 ? "visible" : "hidden";
+
+      ctx.clearRect(0, 0, W, H);
+      var t4 = seg(p, 0.62, 0.87), t5 = seg(p, 0.88, 0.98), fade = 1 - 0.85 * ease(seg(t5, 0, 0.5)), grid = null, read = 0;
+      if (t4 >= 0.22) grid = drawGrid(t4, fade);
+      if (t4 < 0.25) read = drawReading(p, t4);
+
+      // Beat 5: the export
+      var fa = seg(t5, 0.15, 0.35);
+      ft.style.opacity = fa; ft.style.visibility = fa > 0 ? "visible" : "hidden";
+      [].forEach.call(ft.querySelectorAll("tbody tr"), function (tr, i) { var v = ease(seg(t5, 0.2 + i * 0.05, 0.4 + i * 0.05)); tr.style.opacity = v; tr.style.transform = v < 1 ? "translateY(" + (1 - v) * 10 + "px)" : ""; });
+
+      // The readout around the edges of the view
+      hudEl.style.opacity = p < 0.13 ? 0 : 1 - seg(t5, 0.1, 0.3);
+      if (grid) {
+        setHud("tl", "<b>demand_corroborated</b>");
+        setHud("tr", grid.e < 0.5 ? "OSTV · 2024-08-06" : fmt(ROWS) + " companies · 2015–2024");
+        setHud("bl", "<b>" + fmt(grid.values) + "</b> " + (grid.values === 1 ? "value" : "values"));
+        setHud("br", "");
+      } else {
+        setHud("tl", W < 600 ? "<b>OSTV</b>" : "<b>OSTV</b> · Ostrava Semiconductor");
+        setHud("tr", "as of 2024-08-06");
+        setHud("bl", "<b>" + fmt(read) + "</b> documents read");
+        setHud("br", p < 0.46 ? "+ 64 counterparties" : "Later: not visible");
       }
     }
-    tabs.addEventListener("keydown", function (e) {
-      var d = { ArrowRight: 1, ArrowLeft: -1 }[e.key]; if (!d) return;
-      var i = (cur + d + FEATURES.length) % FEATURES.length; pick(i); buttons[i].focus(); e.preventDefault();
+    function schedule() { if (!raf) raf = requestAnimationFrame(render); }
+    steps.forEach(function (s, i) {
+      s.addEventListener("click", function () {
+        var span = sec.offsetHeight - window.innerHeight;
+        window.scrollTo({ top: sec.offsetTop + span * JUMP[i], behavior: reduce ? "auto" : "smooth" });
+      });
     });
-    colors(); resize(); finished(2);
-    var fq = window.matchMedia("(prefers-color-scheme: dark)");
-    (fq.addEventListener ? fq.addEventListener("change", function () { colors(); draw(); }) : null);
-    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(resize, 150); });
-    if (reduce || !("IntersectionObserver" in window)) return;
-    var started = false;
-    new IntersectionObserver(function (es) { if (es[0].isIntersecting && !started && !touched) { started = true; play(0); } }, { threshold: 0.35 }).observe(cv);
-  })();
-
-  if (reduce) return; // the resting state is the first excerpt, fully read
-
-  function renderDoc(d) {
-    docFile.textContent = d.file;
-    docCo.textContent = d.co;
-    docSrc.textContent = d.src + " · " + d.date;
-    docPage.textContent = d.pg;
-    docPublic.textContent = d.pub;
-    docText.textContent = "";
-    d.parts.forEach(function (p) {
-      if (typeof p === "string") { docText.appendChild(document.createTextNode(p)); return; }
-      var m = document.createElement("mark");
-      m.textContent = p.t; m.dataset.f = p.f; m.dataset.v = p.v;
-      docText.appendChild(m);
-    });
-    recId.textContent = d.tk;
-    recDate.textContent = "as of " + d.date;
-    FIELDS.forEach(function (f) { dd[f].className = "pending"; dd[f].textContent = ""; });
-  }
-  function hideWire() { wire.setAttribute("opacity", "0"); dot.setAttribute("opacity", "0"); }
-  function drawWire(m, target) {
-    if (!wide.matches) return false;
-    var s = stage.getBoundingClientRect();
-    var rects = m.getClientRects(), r = rects[rects.length - 1];
-    var dc = docWin.getBoundingClientRect(), vw = vals.getBoundingClientRect(), t = target.parentElement.getBoundingClientRect();
-    var x1 = dc.right - s.left, y1 = r.top + r.height / 2 - s.top;
-    var x2 = vw.left - s.left, y2 = t.top + t.height / 2 - s.top;
-    var dx = (x2 - x1) * 0.55;
-    wire.setAttribute("d", "M" + x1 + " " + y1 + " C " + (x1 + dx) + " " + y1 + ", " + (x2 - dx) + " " + y2 + ", " + x2 + " " + y2);
-    var len = wire.getTotalLength();
-    wire.style.transition = "none";
-    wire.style.strokeDasharray = len; wire.style.strokeDashoffset = len;
-    wire.setAttribute("opacity", "1");
-    dot.setAttribute("cx", x1); dot.setAttribute("cy", y1); dot.setAttribute("opacity", "1");
-    wire.getBoundingClientRect(); // commit the start state before animating
-    wire.style.transition = "";
-    wire.style.strokeDashoffset = 0;
-    return true;
-  }
-  async function type(el, text) {
-    el.className = "new"; el.textContent = "";
-    for (var i = 0; i < text.length; i++) { el.textContent += text[i]; await wait(38); }
-  }
-  async function play(d) {
-    docEl.classList.add("out"); rec.classList.add("out");
-    await wait(380);
-    renderDoc(d);
-    docEl.classList.remove("out"); rec.classList.remove("out");
-    await wait(900);
-    var marks = docText.querySelectorAll("mark");
-    for (var i = 0; i < marks.length; i++) {
-      var m = marks[i], target = dd[m.dataset.f];
-      m.classList.add("on");
-      await wait(560);
-      if (drawWire(m, target)) await wait(480);
-      target.parentElement.classList.add("lit");
-      await type(target, m.dataset.v);
-      await wait(260);
-      hideWire();
-      (function (el) { setTimeout(function () { el.className = ""; el.parentElement.classList.remove("lit"); }, 500); })(target);
-      await wait(380);
-    }
-    FIELDS.forEach(function (f) { if (dd[f].classList.contains("pending")) { dd[f].className = "null"; dd[f].textContent = "—"; } });
-    grid.commit();
-    await wait(2600);
-  }
-  (async function loop() {
-    await wait(2400);
-    var i = 1;
-    for (;;) { await play(docs[i]); i = (i + 1) % docs.length; }
+    tones(); size(); render();
+    (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(schedule);
+    window.addEventListener("scroll", schedule, { passive: true });
+    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { size(); schedule(); }, 100); });
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", function () { tones(); schedule(); });
+    setTimeout(function () { if (!gridImg) buildGrid(); }, 1500);   // build the dataset off the critical path
   })();
 })();
 </script>
