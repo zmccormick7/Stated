@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
 html, body { margin: 0; }
 [hidden] { display: none !important; }
@@ -28,10 +28,10 @@ html, body { margin: 0; }
   --win: #FFFFFF;
   --win-rule: #E6E7EB;
   --win-bar: #FAFAFB;
-  --hl: #E3E9FF;
-  --hl-strong: #CBD6FF;
-  --accent: #3452F0;
-  --up-bg: #E4EAFF; --up-ink: #2A3FB8;
+  --hl: #ECE5FF;
+  --hl-strong: #DACBFF;
+  --accent: #6D3DF2;
+  --up-bg: #EDE6FF; --up-ink: #5427D8;
   --down-bg: #FCEBD9; --down-ink: #94500F;
   --flat-bg: #F0F1F3; --flat-ink: #4B4E56;
   --media: #F2F3F6;
@@ -43,7 +43,7 @@ html, body { margin: 0; }
   --wall-ink: #0A0A0C;
   --wall-base: 0.075;
   --wall-lit: 0.72;
-  --wall-hl: #D3DCFF;
+  --wall-hl: #DCCFFF;
   --wall-hl-a: 1;
   --nav-bg: rgba(255, 255, 255, 0.72);
   --nav-ink: #0A0A0C;
@@ -55,17 +55,17 @@ html, body { margin: 0; }
   --btn2-ink: #0A0A0C;
   --btn2-rule: rgba(10, 10, 12, 0.1);
   --btn2-hover: #FFFFFF;
-  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Geist", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0A0A0C; --fg: #F2F2F4; --muted: #9C9DA4; --faint: #6E6F76; --rule: #1E1F24;
     --band: #111216; --win: #17181D; --win-rule: #26272E; --win-bar: #1B1C22;
-    --hl: rgba(110, 135, 255, 0.2); --hl-strong: rgba(110, 135, 255, 0.38); --accent: #8A9DFF; --up-bg: rgba(110, 135, 255, 0.18); --up-ink: #A9B8FF; --down-bg: rgba(240, 150, 70, 0.16); --down-ink: #F2B47E; --flat-bg: rgba(255, 255, 255, 0.06); --flat-ink: #B5B8BF;
+    --hl: rgba(160, 130, 255, 0.2); --hl-strong: rgba(160, 130, 255, 0.38); --accent: #A98BFF; --up-bg: rgba(160, 130, 255, 0.18); --up-ink: #CDBBFF; --down-bg: rgba(240, 150, 70, 0.16); --down-ink: #F2B47E; --flat-bg: rgba(255, 255, 255, 0.06); --flat-ink: #B5B8BF;
     --media: #0B0F16; --media-ink: #F5F7FA; --media-muted: rgba(245, 247, 250, 0.78);
     --veil-0: rgba(11, 15, 22, 0.96); --veil-1: rgba(11, 15, 22, 0.8); --veil-2: rgba(11, 15, 22, 0);
-    --wall-ink: #E8ECF4; --wall-base: 0.11; --wall-lit: 0.6; --wall-hl: #AFC0FF; --wall-hl-a: 0.14;
+    --wall-ink: #E8ECF4; --wall-base: 0.11; --wall-lit: 0.6; --wall-hl: #C4B2FF; --wall-hl-a: 0.14;
     --nav-bg: rgba(255, 255, 255, 0.07); --nav-ink: #F5F7FA; --nav-rule: rgba(255, 255, 255, 0.1);
     --btn-bg: #FFFFFF; --btn-ink: #0A0A0C; --btn-hover: #E9ECF2;
     --btn2-bg: rgba(255, 255, 255, 0.1); --btn2-ink: #F5F7FA; --btn2-rule: rgba(255, 255, 255, 0.14); --btn2-hover: rgba(255, 255, 255, 0.16);
@@ -75,10 +75,10 @@ html, body { margin: 0; }
 :root[data-theme="dark"] {
   --bg: #0A0A0C; --fg: #F2F2F4; --muted: #9C9DA4; --faint: #6E6F76; --rule: #1E1F24;
   --band: #111216; --win: #17181D; --win-rule: #26272E; --win-bar: #1B1C22;
-  --hl: rgba(110, 135, 255, 0.2); --hl-strong: rgba(110, 135, 255, 0.38); --accent: #8A9DFF; --up-bg: rgba(110, 135, 255, 0.18); --up-ink: #A9B8FF; --down-bg: rgba(240, 150, 70, 0.16); --down-ink: #F2B47E; --flat-bg: rgba(255, 255, 255, 0.06); --flat-ink: #B5B8BF;
+  --hl: rgba(160, 130, 255, 0.2); --hl-strong: rgba(160, 130, 255, 0.38); --accent: #A98BFF; --up-bg: rgba(160, 130, 255, 0.18); --up-ink: #CDBBFF; --down-bg: rgba(240, 150, 70, 0.16); --down-ink: #F2B47E; --flat-bg: rgba(255, 255, 255, 0.06); --flat-ink: #B5B8BF;
   --media: #0B0F16; --media-ink: #F5F7FA; --media-muted: rgba(245, 247, 250, 0.78);
     --veil-0: rgba(11, 15, 22, 0.96); --veil-1: rgba(11, 15, 22, 0.8); --veil-2: rgba(11, 15, 22, 0);
-    --wall-ink: #E8ECF4; --wall-base: 0.11; --wall-lit: 0.6; --wall-hl: #AFC0FF; --wall-hl-a: 0.14;
+    --wall-ink: #E8ECF4; --wall-base: 0.11; --wall-lit: 0.6; --wall-hl: #C4B2FF; --wall-hl-a: 0.14;
     --nav-bg: rgba(255, 255, 255, 0.07); --nav-ink: #F5F7FA; --nav-rule: rgba(255, 255, 255, 0.1);
     --btn-bg: #FFFFFF; --btn-ink: #0A0A0C; --btn-hover: #E9ECF2;
     --btn2-bg: rgba(255, 255, 255, 0.1); --btn2-ink: #F5F7FA; --btn2-rule: rgba(255, 255, 255, 0.14); --btn2-hover: rgba(255, 255, 255, 0.16);
@@ -158,8 +158,8 @@ h1 {
 /* ---------- The dark panel the story sits in ---------- */
 .on-dark {
   --bg: #0D1016; --fg: #F2F3F5; --muted: #A0A6B0; --faint: #6F7682; --rule: #232835;
-  --hl-strong: rgba(110, 135, 255, 0.38); --accent: #8A9DFF;
-  --up-bg: rgba(110, 135, 255, 0.2); --up-ink: #B4C1FF; --down-bg: rgba(240, 150, 70, 0.18); --down-ink: #F4BB87;
+  --hl-strong: rgba(160, 130, 255, 0.38); --accent: #A98BFF;
+  --up-bg: rgba(160, 130, 255, 0.2); --up-ink: #D0C0FF; --down-bg: rgba(240, 150, 70, 0.18); --down-ink: #F4BB87;
   --flat-bg: rgba(255, 255, 255, 0.07); --flat-ink: #BFC3CA;
   color-scheme: dark; background: var(--bg); color: var(--fg);
 }
@@ -248,7 +248,7 @@ mark.on { background-size: 100% 100%; }
 .lg-rows { list-style: none; margin: 0; padding: 0; }
 .lg-row { box-sizing: border-box; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; padding: 11px 8px; margin: 0 -8px; border-bottom: 1px solid var(--rule); border-radius: 8px; transition: background-color 400ms ease; }
 .lg-row:last-child { border-bottom: 0; }
-.lg-row.hot { background: rgba(138, 157, 255, 0.08); }
+.lg-row.hot { background: rgba(169, 139, 255, 0.08); }
 .lg-claim { grid-column: 1; margin: 0; font-size: 0.9375rem; line-height: 1.4; color: var(--muted); transition: color 400ms ease; }
 .lg-row.hot .lg-claim { color: var(--fg); }
 .lg-status { grid-column: 2; grid-row: 1 / span 2; align-self: center; min-width: 9.5em; padding: 4px 10px; border-radius: 999px; box-sizing: border-box; text-align: center; font: 500 11.5px var(--mono); }
@@ -279,7 +279,7 @@ mark.on { background-size: 100% 100%; }
 .ft .n { text-align: right; }
 .ft tbody tr:last-child td { border-bottom: 0; }
 .ft tr.more td { color: var(--faint); padding-block: 4px; }
-.ft tr.me td { background: rgba(138, 157, 255, 0.16); color: var(--fg); }
+.ft tr.me td { background: rgba(169, 139, 255, 0.16); color: var(--fg); }
 
 @media (max-width: 999px) {
   .story { height: 680vh; border-radius: 18px; }
@@ -528,7 +528,7 @@ mark.on { background-size: 100% 100%; }
     ];
     var ctx = cv.getContext("2d");
     var W = 0, H = 0, rows = [], lit = [], running = false, last = 0;
-    var LINE = 28, GAP = 34, FONT = '14px "Instrument Sans", system-ui, sans-serif';
+    var LINE = 28, GAP = 34, FONT = '14px "Geist", system-ui, sans-serif';
     var tone = {};
     function readTone() {
       var cs = getComputedStyle(root);
@@ -719,7 +719,7 @@ mark.on { background-size: 100% 100%; }
     for (var t = Date.UTC(2015, 0, 1); t <= Date.UTC(2024, 11, 31); t += DAY) { var wd = new Date(t).getUTCDay(); if (wd > 0 && wd < 6) dates.push(t); }
     COLS = dates.length;
     var C0 = dates.indexOf(Date.UTC(2024, 7, 6)), Q0 = Math.round(0.38 * 254), vals = null, gridImg = null;
-    var LO = [26, 31, 44], HI = [118, 134, 224], PAL = [];
+    var LO = [26, 31, 44], HI = [140, 112, 228], PAL = [];
     for (var q = 0; q < 255; q++) { var f = q / 254; PAL.push("rgb(" + Math.round(lerp(LO[0], HI[0], f)) + "," + Math.round(lerp(LO[1], HI[1], f)) + "," + Math.round(lerp(LO[2], HI[2], f)) + ")"); }
     var Q0RGB = PAL[Q0].slice(4, -1);
     function buildGrid() {   // each company's value holds between readings and moves when new documents arrive
@@ -796,7 +796,7 @@ mark.on { background-size: 100% 100%; }
     }
     var C = {};
     function tones() { var cs = getComputedStyle(sec); ["fg", "muted", "faint", "accent", "bg", "rule"].forEach(function (k) { C[k] = cs.getPropertyValue("--" + k).trim(); }); C.down = cs.getPropertyValue("--down-ink").trim(); }
-    function mono(px, weight) { return (weight || 400) + " " + px + "px \"JetBrains Mono\", ui-monospace, monospace"; }
+    function mono(px, weight) { return (weight || 400) + " " + px + "px \"Geist Mono\", ui-monospace, monospace"; }
 
     /* Beat 2 and the start of 3: the agent reads the call and finds the claims one at a time, then checks each against what
        customers, suppliers and distributors said; the ledger settles on its answer, then narrows into one cell */
