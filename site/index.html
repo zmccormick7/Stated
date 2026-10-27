@@ -250,7 +250,6 @@ mark.on { background-size: 100% 100%; }
 .table-label { display: flex; justify-content: space-between; gap: 12px; font-size: 0.75rem; color: var(--faint); margin-bottom: 10px; }
 #grid { display: block; width: 100%; height: 94px; }
 
-.caption { margin: 56px 0 0; text-align: center; font-size: 0.8125rem; color: var(--faint); }
 
 /* ---------- Thesis statements ---------- */
 .thesis { padding: clamp(72px, 9vw, 136px) clamp(4px, 3vw, 40px); border-top: 1px solid var(--rule); }
@@ -344,7 +343,7 @@ mark.on { background-size: 100% 100%; }
 .matrix td.v span.flash { box-shadow: 0 0 0 2px var(--accent); transition: none; }
 .matrix-note .legend { display: inline-flex; gap: 16px; align-items: center; }
 .matrix-note .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
-.matrix-note { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; margin-top: 4px; font-size: 0.8125rem; color: var(--faint); }
+.matrix-note { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 24px; margin-top: 4px; font-size: 0.8125rem; color: var(--faint); }
 
 @media (max-width: 600px) {
   .hero { border-radius: 18px; height: auto; min-height: 640px; }
@@ -420,7 +419,6 @@ mark.on { background-size: 100% 100%; }
 
       <svg class="wires" aria-hidden="true"><path id="wire" opacity="0"></path><circle id="wire-dot" r="3.5" opacity="0"></circle></svg>
     </div>
-    <p class="caption">Illustrative companies and excerpts. Every value is read only from what was public on its as-of date.</p>
   </div>
 </section>
 
@@ -454,7 +452,7 @@ mark.on { background-size: 100% 100%; }
         <tbody id="mx-body"></tbody>
       </table>
     </div>
-    <div class="matrix-note"><span>Illustrative companies and values. Outlined values changed on the date shown.</span><span class="legend"><span><i style="background: var(--up-bg)"></i>Up</span><span><i style="background: var(--down-bg)"></i>Down</span><span><i style="background: var(--flat-bg)"></i>Unchanged or no</span></span></div>
+    <div class="matrix-note"><span class="legend"><span><i style="background: var(--up-bg)"></i>Up</span><span><i style="background: var(--down-bg)"></i>Down</span><span><i style="background: var(--flat-bg)"></i>Unchanged or no</span></span></div>
   </div>
 </section>
 
