@@ -151,6 +151,34 @@ h1 {
 .btn-glass:hover { background: var(--btn2-hover); }
 .btn svg { width: 18px; height: 18px; fill: currentColor; }
 
+/* ---------- Section variations: each section gets its own shape ---------- */
+.on-dark {
+  --bg: #0D1016; --fg: #F2F3F5; --muted: #A0A6B0; --faint: #6F7682; --rule: #232835;
+  --hl-strong: rgba(110, 135, 255, 0.38); --accent: #8A9DFF;
+  --up-bg: rgba(110, 135, 255, 0.2); --up-ink: #B4C1FF; --down-bg: rgba(240, 150, 70, 0.18); --down-ink: #F4BB87;
+  --flat-bg: rgba(255, 255, 255, 0.07); --flat-ink: #BFC3CA;
+  color-scheme: dark; background: var(--bg); color: var(--fg);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .on-dark { --bg: #151924; } }
+:root[data-theme="dark"] .on-dark { --bg: #151924; }
+.scale.on-dark { border-top: 0; border-radius: 24px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
+.on-dark + .scale { border-top: 0; }
+.center-head { display: grid; justify-items: center; gap: 18px; text-align: center; margin-bottom: clamp(44px, 5vw, 72px); }
+.center-head .label { margin: 0; text-align: center; }
+.center-head h2 { margin: 0; max-width: 18ch; font-size: clamp(2rem, 4.4vw, 3.75rem); font-weight: 400; line-height: 1.06; letter-spacing: -0.035em; text-wrap: balance; }
+.center-head p { margin: 0; max-width: 34rem; color: var(--muted); font-size: 1.125rem; line-height: 1.6; text-wrap: balance; }
+
+.split { display: grid; gap: 36px 72px; align-items: center; }
+@media (min-width: 960px) { .split { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr); } }
+.split-copy { display: grid; gap: 20px; align-content: center; }
+.split-copy .label { margin: 0; }
+.split-copy h2 { margin: 0; font-size: clamp(1.75rem, 2.8vw, 2.5rem); font-weight: 400; line-height: 1.14; letter-spacing: -0.028em; text-wrap: balance; }
+.split-copy p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 30rem; }
+.split-copy .graph-key { display: grid; gap: 10px; margin-top: 8px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 0.875rem; }
+.split #graph { height: 520px; }
+@media (max-width: 600px) { .split #graph { height: 380px; } }
+
+
 /* ---------- Closing panel and footer ---------- */
 .closing { height: auto; min-height: 480px; }
 .closing .hero-copy { padding: 88px 20px; }
@@ -218,7 +246,6 @@ mark.on { background-size: 100% 100%; }
 .table-label { display: flex; justify-content: space-between; gap: 12px; font-size: 0.75rem; color: var(--faint); margin-bottom: 10px; }
 #grid { display: block; width: 100%; height: 94px; }
 
-.caption { margin: 56px 0 0; text-align: center; font-size: 0.8125rem; color: var(--faint); }
 
 /* ---------- Thesis statements ---------- */
 .thesis { padding: clamp(72px, 9vw, 136px) clamp(4px, 3vw, 40px); border-top: 1px solid var(--rule); }
@@ -263,7 +290,6 @@ mark.on { background-size: 100% 100%; }
 /* ---------- Compounding: a shared graph that agents grow together ---------- */
 #graph { display: block; width: 100%; height: 460px; }
 @media (max-width: 600px) { #graph { height: 380px; } }
-.graph-note { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 0.8125rem; color: var(--faint); }
 .graph-key { display: inline-flex; flex-wrap: wrap; gap: 6px 20px; align-items: center; color: var(--muted); }
 .graph-key b { font-family: var(--mono); font-weight: 500; color: var(--fg); margin-right: 4px; font-variant-numeric: tabular-nums; }
 .graph-key i { display: inline-block; width: 8px; height: 8px; margin-right: 8px; vertical-align: 0; background: var(--fg); }
@@ -271,37 +297,78 @@ mark.on { background-size: 100% 100%; }
 .graph-key .k-finding { border-radius: 50%; }
 .graph-key .k-source { opacity: 0.5; border-radius: 1px; }
 
-/* ---------- Backtests: a reading only ever reaches as far as the as-of date ---------- */
-#bt-svg { display: block; width: 100%; height: 312px; overflow: visible; touch-action: pan-y; cursor: ew-resize; user-select: none; -webkit-user-select: none; }
-.bt-grid { stroke: var(--rule); }
-.bt-lab { fill: var(--faint); font: 12px var(--sans); }
-.bt-mon { fill: var(--faint); font: 11px var(--mono); }
-.bt-doc { stroke: var(--fg); }
-.bt-doc-t { fill: var(--fg); font: 500 11px var(--mono); }
-.bt-later .bt-doc { stroke: var(--faint); stroke-dasharray: 2 3; }
-.bt-later .bt-doc-t { fill: var(--faint); font-weight: 400; }
-.bt-line { fill: none; stroke: var(--fg); stroke-width: 2; stroke-linejoin: round; }
-.bt-dot { fill: var(--fg); }
-.bt-chk { fill: var(--bg); stroke: var(--fg); stroke-width: 1.5; }
-.bt-hatch-l { stroke: var(--rule); stroke-width: 1; }
-.bt-future-t { fill: var(--muted); font: 500 13px var(--sans); text-anchor: middle; }
-.bt-future-s { fill: var(--faint); font: 12px var(--sans); text-anchor: middle; }
-.bt-cut { stroke: var(--accent); stroke-width: 1.5; }
-.bt-pill { fill: var(--accent); }
-.bt-pill-t { fill: var(--bg); font: 500 11px var(--mono); }
-.bt-now { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
-.bt-now-t { fill: var(--fg); font: 500 13px var(--sans); }
-.bt-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 0.8125rem; color: var(--faint); }
-.bt-controls label { color: var(--muted); font-weight: 500; }
-#bt-range { flex: 1 1 220px; accent-color: var(--accent); min-width: 0; }
-.bt-key { display: inline-flex; gap: 16px; align-items: center; }
-.bt-key i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--fg); }
-.bt-key i.chk { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg); }
-.bt-answer { display: grid; gap: 16px 64px; align-items: start; margin-top: clamp(48px, 6vw, 80px); }
-@media (min-width: 900px) { .bt-answer { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); } }
-.bt-answer h3 { margin: 0; font-size: clamp(1.5rem, 2.4vw, 2.125rem); font-weight: 400; line-height: 1.2; letter-spacing: -0.025em; }
-.bt-answer h3 mark { background-size: 100% 100%; border-radius: 6px; padding-block: 0; }
-.bt-answer p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 26rem; }
+/* ---------- Backtests: the as-of date moves along one bank's filings; anything published later stays out of focus ---------- */
+.pit-head { display: grid; gap: 28px 72px; margin-bottom: clamp(56px, 7vw, 96px); }
+@media (min-width: 960px) { .pit-head { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: end; } }
+.pit-head .label { grid-column: 1 / -1; margin: 0; text-align: left; }
+.pit-head h2 { margin: 0; font-size: clamp(3rem, 7vw, 6.25rem); font-weight: 400; line-height: 0.96; letter-spacing: -0.05em; }
+.pit-copy { display: grid; gap: 18px; }
+.pit-copy p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 31rem; }
+.pit-copy b { color: var(--fg); font-weight: 500; }
+
+.pit { position: relative; padding-top: 112px; touch-action: pan-y; cursor: ew-resize; user-select: none; -webkit-user-select: none; outline: none; }
+.pit:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 12px; }
+.pit-subject { position: absolute; top: 0; left: 0; display: flex; gap: 10px; align-items: baseline; font-size: 0.8125rem; color: var(--faint); }
+.pit-subject b { font: 500 13px var(--mono); color: var(--fg); }
+.pit-axis { position: absolute; left: 0; right: 0; top: 86px; border-top: 1px dashed var(--faint); opacity: 0.6; }
+.pit-past { position: absolute; left: 0; top: 85px; height: 2px; width: var(--cut, 0); background: var(--fg); }
+.pit-tick { position: absolute; top: 62px; left: var(--cut, 0); height: 30px; border-left: 1.5px solid var(--accent); }
+.pit-now { position: absolute; top: 86px; left: var(--cut, 0); width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--bg); }
+.pit-pill { position: absolute; top: 36px; left: 0; padding: 3px 10px; border-radius: 999px; background: var(--accent); color: var(--bg); font: 500 12px var(--mono); white-space: nowrap; }
+.pit-later { position: absolute; top: 66px; left: calc(var(--cut, 0) + 14px); font-size: 0.75rem; color: var(--faint); white-space: nowrap; }
+.pit-docs { list-style: none; margin: 0 0 0 56px; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.pit-doc { position: relative; display: flex; flex-direction: column; align-items: flex-start; padding-right: 28px; transition: filter 500ms ease, opacity 500ms ease; }
+.pit-doc::before { content: ""; position: absolute; left: 0; top: -26px; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--fg); }
+.pit-src { font: 12px var(--mono); color: var(--faint); }
+.pit-src b { font-weight: 500; color: var(--fg); }
+.pit-doc p { margin: 12px 0 20px; font-size: 1.0625rem; line-height: 1.5; letter-spacing: -0.01em; }
+.pit-doc mark { padding-block: 0; }
+.pit-val { margin-top: auto; padding: 4px 10px; border-radius: 999px; font: 500 12px var(--mono); transition: box-shadow 300ms ease; }
+.pit-val.up { background: var(--up-bg); color: var(--up-ink); }
+.pit-val.down { background: var(--down-bg); color: var(--down-ink); }
+.pit-val.flat { background: var(--flat-bg); color: var(--flat-ink); }
+.pit-doc.now .pit-val { box-shadow: 0 0 0 2px var(--accent); }
+.pit-doc.later { filter: blur(6px); opacity: 0.45; }
+.pit-doc.later::before { background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--faint); }
+@media (max-width: 719px) {
+  .pit { padding: 76px 0 0 32px; cursor: ns-resize; touch-action: pan-x pan-y; }
+  .pit-axis { left: 8px; right: auto; top: 76px; bottom: 0; border-top: 0; border-left: 1px dashed var(--faint); }
+  .pit-past { left: 7.5px; top: 76px; width: 2px; height: calc(var(--cut, 76px) - 76px); }
+  .pit-tick, .pit-later { display: none; }
+  .pit-now { left: 8px; top: var(--cut, 76px); }
+  .pit-pill { top: 30px; left: 32px; }
+  .pit-docs { margin: 0; grid-template-columns: 1fr; gap: 32px; }
+  .pit-doc { padding-right: 0; }
+  .pit-doc::before { left: -24px; top: 9px; }
+  .pit-doc p { margin: 8px 0 14px; }
+}
+
+/* ---------- Your own features: a definition is written, then agents read whatever it takes ---------- */
+.ff { border-top: 1px solid var(--fg); }
+.ff-tabs { display: flex; flex-wrap: wrap; gap: 8px; padding: 18px 0; border-bottom: 1px solid var(--rule); }
+.ff-tabs button { appearance: none; border: 0; cursor: pointer; padding: 7px 14px; border-radius: 999px; background: transparent; color: var(--muted); font: 500 13px var(--mono); box-shadow: inset 0 0 0 1px var(--rule); transition: background 200ms ease, color 200ms ease; }
+.ff-tabs button:hover { color: var(--fg); }
+.ff-tabs button[aria-selected="true"] { background: var(--fg); color: var(--bg); box-shadow: none; }
+.ff-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ff-body { display: grid; gap: 40px 64px; padding-top: 36px; }
+@media (min-width: 900px) { .ff-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .ff-work { border-left: 1px solid var(--rule); padding-left: 64px; } }
+.ff-k { display: block; font: 12px var(--mono); color: var(--faint); letter-spacing: 0.02em; }
+.ff-text { margin: 14px 0 32px; min-height: 7.2em; font-size: clamp(1.25rem, 1.9vw, 1.625rem); line-height: 1.4; letter-spacing: -0.02em; text-wrap: pretty; }
+.ff-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -0.15em; background: var(--accent); animation: ff-blink 1s steps(1) infinite; }
+@keyframes ff-blink { 50% { opacity: 0; } }
+.ff-meta { display: grid; grid-template-columns: auto 1fr; gap: 10px 24px; margin: 0; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 0.9375rem; }
+.ff-meta dt { font: 12px/1.9 var(--mono); color: var(--faint); }
+.ff-meta dd { margin: 0; }
+.ff-work-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.ff-work-top span:last-child { font-size: 0.8125rem; color: var(--faint); text-align: right; }
+#ff-docs { display: block; width: 100%; height: 300px; margin: 18px 0 24px; }
+.ff-out { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 24px; padding-top: 18px; border-top: 1px solid var(--rule); }
+.ff-count { font-size: 0.9375rem; color: var(--muted); }
+.ff-count b { font: 500 1.5rem var(--mono); color: var(--fg); letter-spacing: -0.02em; margin-right: 8px; font-variant-numeric: tabular-nums; }
+.ff-res { display: inline-flex; align-items: center; gap: 12px; font-size: 0.8125rem; color: var(--faint); }
+.ff-val { padding: 5px 12px; border-radius: 999px; background: var(--up-bg); color: var(--up-ink); font: 500 13px var(--mono); opacity: 0; transform: translateY(4px); transition: opacity 400ms ease, transform 400ms ease; }
+.ff-val.on { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .ff-caret { animation: none; } .ff-val { transition: none; } }
 .graph-key .k-question { border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg); }
 
 .matrix .up { background: var(--up-bg); color: var(--up-ink); }
@@ -313,8 +380,7 @@ mark.on { background-size: 100% 100%; }
 .matrix td.v span.flash { box-shadow: 0 0 0 2px var(--accent); transition: none; }
 .matrix-note .legend { display: inline-flex; gap: 16px; align-items: center; }
 .matrix-note .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
-.matrix-note { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; margin-top: 4px; font-size: 0.8125rem; color: var(--faint); }
-
+.matrix-note { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 24px; margin-top: 4px; font-size: 0.8125rem; color: var(--faint); }
 
 @media (max-width: 600px) {
   .hero { border-radius: 18px; height: auto; min-height: 640px; }
@@ -322,7 +388,7 @@ mark.on { background-size: 100% 100%; }
   .btn { padding: 16px 26px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  mark, .doc, .rec, .field dd, .field::before, .wires path, .btn { transition: none; }
+  mark, .doc, .rec, .field dd, .field::before, .wires path, .btn, .pit-doc, .pit-val { transition: none; }
   .field dd.pending::after { animation: none; }
 }
 </style>
@@ -390,7 +456,6 @@ mark.on { background-size: 100% 100%; }
 
       <svg class="wires" aria-hidden="true"><path id="wire" opacity="0"></path><circle id="wire-dot" r="3.5" opacity="0"></circle></svg>
     </div>
-    <p class="caption">Illustrative companies and excerpts. Every value is read only from what was public on its as-of date.</p>
   </div>
 </section>
 
@@ -401,10 +466,10 @@ mark.on { background-size: 100% 100%; }
   </div>
 </section>
 
-<section class="scale" aria-labelledby="scale-label">
+<section class="scale on-dark" aria-labelledby="scale-label">
   <div class="scale-inner">
-    <p class="label" id="scale-label">Now readable at scale</p>
-    <div class="scale-head">
+    <div class="center-head">
+      <p class="label" id="scale-label">Now readable at scale</p>
       <h2>LLMs can finally read like analysts, across every company, every day.</h2>
       <p>Define the signals you care about, and Implied measures them across your entire universe, turning the written record into data your models can use.</p>
     </div>
@@ -424,46 +489,83 @@ mark.on { background-size: 100% 100%; }
         <tbody id="mx-body"></tbody>
       </table>
     </div>
-    <div class="matrix-note"><span>Illustrative companies and values. Outlined values changed on the date shown.</span><span class="legend"><span><i style="background: var(--up-bg)"></i>Up</span><span><i style="background: var(--down-bg)"></i>Down</span><span><i style="background: var(--flat-bg)"></i>Unchanged or no</span></span></div>
+    <div class="matrix-note"><span class="legend"><span><i style="background: var(--up-bg)"></i>Up</span><span><i style="background: var(--down-bg)"></i>Down</span><span><i style="background: var(--flat-bg)"></i>Unchanged or no</span></span></div>
   </div>
 </section>
 
 <section class="scale" aria-labelledby="graph-label">
   <div class="scale-inner">
-    <p class="label" id="graph-label">Research that compounds</p>
-    <div class="scale-head">
-      <h2>Deep research doesn't scale when every agent starts from scratch.</h2>
-      <p>In Implied, agents share a knowledge graph, where each finding is recorded with its source, linked to related work, and revised as new evidence arrives. Many agents can work in parallel, and each one builds on everything the others have already learned.</p>
-    </div>
-    <canvas id="graph" role="img" aria-label="Several agents adding findings, sources and open questions to one shared graph, each linking new work to what is already there"></canvas>
-    <div class="graph-note">
-      <span class="graph-key">
-        <span><i class="k-entity"></i>Companies</span>
-        <span><i class="k-finding"></i><b id="n-finding">0</b>Findings</span>
-        <span><i class="k-source"></i><b id="n-source">0</b>Sources</span>
-        <span><i class="k-question"></i><b id="n-question">0</b>Open questions</span>
-      </span>
-      <span>Illustrative. New work is linked to what is already in the graph.</span>
+    <div class="split">
+      <div class="split-copy">
+        <p class="label" id="graph-label">Research that compounds</p>
+        <h2>Deep research doesn't scale when every agent starts from scratch.</h2>
+        <p>In Implied, agents share a knowledge graph, where each finding is recorded with its source, linked to related work, and revised as new evidence arrives. Many agents can work in parallel, and each one builds on everything the others have already learned.</p>
+        <span class="graph-key">
+          <span><i class="k-entity"></i>Companies</span>
+          <span><i class="k-finding"></i><b id="n-finding">0</b>Findings</span>
+          <span><i class="k-source"></i><b id="n-source">0</b>Sources</span>
+          <span><i class="k-question"></i><b id="n-question">0</b>Open questions</span>
+        </span>
+      </div>
+      <canvas id="graph" role="img" aria-label="Several agents adding findings, sources and open questions to one shared graph, each linking new work to what is already there; illustrative"></canvas>
     </div>
   </div>
 </section>
 
-<section class="scale" aria-labelledby="bt-label">
+<section class="scale" aria-labelledby="pit-label">
   <div class="scale-inner">
-    <p class="label" id="bt-label">Built for backtests</p>
-    <div class="scale-head">
-      <h2>LLMs know how history turned out.</h2>
-      <p>Ask one about a company in 2021 and it may remember what happened instead of reasoning about it. That looks like alpha in a backtest and disappears in live trading.</p>
+    <div class="pit-head">
+      <p class="label" id="pit-label">Built for backtests</p>
+      <h2>Describe, don't predict.</h2>
+      <div class="pit-copy">
+        <p><b>LLMs know how history turned out.</b> Ask one to predict a bank's prospects in March 2023 and it may simply remember what happened next. That lookahead bias looks like alpha in a backtest and disappears in live trading.</p>
+        <p><b>So our agents never predict anything.</b> They describe a company as it stood on a date: guidance withdrawn, prices raised, a disclosure dropped. The forecasting is left to your models. And because knowing the ending doesn't help describe the starting point, every description is point-in-time by construction.</p>
+      </div>
     </div>
-    <svg id="bt-svg" role="img" aria-label="Guidance stance for an illustrative bank, read only from documents public on or before the as-of date; nothing is drawn after it"></svg>
-    <div class="bt-controls">
-      <label for="bt-range">Move the as-of date</label>
-      <input type="range" id="bt-range" min="0" max="211" value="72" aria-label="As-of date">
-      <span class="bt-key"><span><i></i>Reading changed</span><span><i class="chk"></i>Checked, unchanged</span></span>
+    <div class="pit" id="pit" tabindex="0" role="slider" aria-label="As-of date for Halcyon Bancorp's guidance stance">
+      <span class="pit-subject"><b>HLCN</b>Halcyon Bancorp · Guidance stance</span>
+      <span class="pit-axis" aria-hidden="true"></span><span class="pit-past" aria-hidden="true"></span>
+      <span class="pit-tick" aria-hidden="true"></span><span class="pit-now" aria-hidden="true"></span>
+      <span class="pit-pill" aria-hidden="true">As of <span id="pit-date">2023-05-20</span></span>
+      <span class="pit-later" aria-hidden="true">Not yet public</span>
+      <ol class="pit-docs">
+        <li class="pit-doc" data-date="2023-01-26"><span class="pit-src"><b>Jan 26</b> · Q4 call</span><p>We are <mark class="on">reaffirming our full-year guidance</mark> for loan growth and net interest income.</p><span class="pit-val flat">Maintained</span></li>
+        <li class="pit-doc" data-date="2023-03-14"><span class="pit-src"><b>Mar 14</b> · 8-K</span><p>Deposit outflows since March 10 will bring net interest income <mark class="on">below our prior outlook</mark>.</p><span class="pit-val down">Lowered</span></li>
+        <li class="pit-doc" data-date="2023-04-27"><span class="pit-src"><b>Apr 27</b> · Q1 call</span><p>Given the uncertainty, <mark class="on">we are withdrawing our outlook</mark> for the remainder of the year.</p><span class="pit-val down">Withdrawn</span></li>
+        <li class="pit-doc" data-date="2023-06-14"><span class="pit-src"><b>Jun 14</b> · Investor day</span><p><mark class="on">We now expect net interest income to decline</mark> 8 to 10% for the full year.</p><span class="pit-val up">Reinstated</span></li>
+        <li class="pit-doc" data-date="2023-07-27"><span class="pit-src"><b>Jul 27</b> · Q2 call</span><p>We are <mark class="on">raising the low end of our range</mark> for net interest income.</p><span class="pit-val up">Raised</span></li>
+      </ol>
     </div>
-    <div class="bt-answer">
-      <h3>Our answer is to <mark>describe, not predict</mark>.</h3>
-      <p>Each signal records what a company looked like on a given date, using only what was public then, and your own models do the forecasting. Knowing the ending doesn't help an agent describe the starting point, so every signal stays point-in-time.</p>
+  </div>
+</section>
+
+<section class="scale" aria-labelledby="ff-label">
+  <div class="scale-inner">
+    <div class="center-head">
+      <p class="label" id="ff-label">Your own features</p>
+      <h2>If you can write it down, you can measure it.</h2>
+      <p>Write a feature the way you'd brief an analyst. Agents read whatever it takes, from one earnings call to everything a company's suppliers and customers have published, and record the answer for every company on every date.</p>
+    </div>
+    <div class="ff" id="ff">
+      <div class="ff-tabs" role="tablist" aria-label="Example features"></div>
+      <div class="ff-body" role="tabpanel" id="ff-panel">
+        <div class="ff-def">
+          <span class="ff-k">Instructions</span>
+          <p class="ff-text" id="ff-text"></p>
+          <dl class="ff-meta">
+            <dt>Value</dt><dd id="ff-type"></dd>
+            <dt>Runs on</dt><dd>Every company, every trading day</dd>
+          </dl>
+        </div>
+        <div class="ff-work">
+          <div class="ff-work-top"><span class="ff-k">Agents reading</span><span id="ff-src"></span></div>
+          <canvas id="ff-docs" aria-hidden="true"></canvas>
+          <div class="ff-out">
+            <span class="ff-count"><b id="ff-n">0</b>documents</span>
+            <span class="ff-res"><span>OSTV · as of 2024-08-06</span><span class="ff-val" id="ff-val"></span></span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -490,10 +592,6 @@ mark.on { background-size: 100% 100%; }
   </nav>
   <span>Open source · MIT License</span>
 </footer>
-
-
-
-
 
 <script>
 (function () {
@@ -917,94 +1015,161 @@ mark.on { background-size: 100% 100%; }
     var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(build, 200); });
   })();
 
-  /* Backtests: the reading is drawn only as far as the as-of date; what comes later is not yet public */
-  (function backtest() {
-    var svg = document.getElementById("bt-svg"), range = document.getElementById("bt-range");
-    var START = Date.UTC(2023, 0, 1), DAYS = 211;
-    var LEVELS = ["Raised", "Maintained", "Lowered", "Withdrawn"];
-    var DOCS = [["2023-01-26", "Q4 call", "Maintained"], ["2023-02-24", "10-K", "Maintained"], ["2023-03-09", "8-K", "Lowered"],
-      ["2023-04-27", "Q1 call", "Withdrawn"], ["2023-05-08", "10-Q", "Withdrawn"], ["2023-06-14", "Investor day", "Lowered"], ["2023-07-27", "Q2 call", "Maintained"]]
-      .map(function (d, i, all) { return { day: Math.round((Date.parse(d[0]) - START) / 864e5), kind: d[1], v: d[2], changed: i === 0 || all[i - 1][2] !== d[2] }; });
-    var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"];
-    function iso(n) { return new Date(START + n * 864e5).toISOString().slice(0, 10); }
-    function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
-    var cut = +range.value;
+  /* Backtests: the as-of date moves along the filings; a document comes into focus only once it is public */
+  (function pointInTime() {
+    var pit = document.getElementById("pit"), out = document.getElementById("pit-date");
+    var pill = pit.querySelector(".pit-pill"), later = pit.querySelector(".pit-later");
+    var docs = Array.prototype.slice.call(pit.querySelectorAll(".pit-doc"));
+    var DAY = 864e5, START = Date.UTC(2023, 0, 2), END = Date.UTC(2023, 7, 31);
+    var dates = docs.map(function (d) { return Date.parse(d.dataset.date); });
+    var vert = window.matchMedia("(max-width: 719px)");
+    var t = Date.UTC(2023, 4, 20), stops = [];   // resting state: the outlook withdrawn, not yet reinstated
+    function measure() {   // [date, position along the axis]: each document's dot sits where it becomes public
+      var v = vert.matches;
+      stops = [[START, v ? 76 : 0]];
+      docs.forEach(function (d, i) { stops.push([dates[i], v ? d.offsetTop + 9 : d.offsetLeft]); });
+      stops.push([END, v ? pit.clientHeight : pit.clientWidth]);
+    }
+    function lerp(a, b, k) { return a + (b - a) * k; }
+    function posOf(time) {
+      for (var i = 1; i < stops.length; i++) if (time <= stops[i][0]) return lerp(stops[i - 1][1], stops[i][1], (time - stops[i - 1][0]) / (stops[i][0] - stops[i - 1][0]));
+      return stops[stops.length - 1][1];
+    }
+    function timeOf(pos) {
+      for (var i = 1; i < stops.length; i++) if (pos <= stops[i][1]) return lerp(stops[i - 1][0], stops[i][0], Math.max(0, (pos - stops[i - 1][1]) / (stops[i][1] - stops[i - 1][1])));
+      return END;
+    }
     function render() {
-      var W = svg.clientWidth, narrow = W < 600, H = narrow ? 280 : 312;
-      svg.style.height = H + "px"; svg.setAttribute("viewBox", "0 0 " + W + " " + H);
-      var L = narrow ? 80 : 104, R = 8, T = 90, B = 28, ph = H - T - B;
-      function x(d) { return L + (W - L - R) * d / DAYS; }
-      function y(v) { return T + ph * (LEVELS.indexOf(v) + 0.5) / LEVELS.length; }
-      var o = [], cx = x(cut);
-      o.push('<defs><pattern id="bt-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="bt-hatch-l" x1="0" y1="0" x2="0" y2="8"></line></pattern></defs>');
-      LEVELS.forEach(function (v) { o.push('<line class="bt-grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '"></line><text class="bt-lab" x="0" y="' + (y(v) + 4) + '">' + v + '</text>'); });
-      for (var m = 0; m < 8; m++) {
-        var md = Math.round((Date.UTC(2023, m, 1) - START) / 864e5);
-        if (md > DAYS) break;
-        o.push('<text class="bt-mon" x="' + (x(md) + 2) + '" y="' + (H - 6) + '">' + MONTHS[m] + '</text><line class="bt-grid" x1="' + x(md) + '" x2="' + x(md) + '" y1="' + (H - B) + '" y2="' + (H - B + 6) + '"></line>');
-      }
-      if (cut < DAYS) {   // what a reader on the as-of date could not yet see
-        o.push('<rect x="' + cx + '" y="' + (T - 62) + '" width="' + (W - R - cx) + '" height="' + (H - B - T + 62) + '" fill="url(#bt-hatch)"></rect>');
-        var mid = (cx + W - R) / 2;
-        if (W - R - cx > (narrow ? 130 : 220)) {
-          o.push('<text class="bt-future-t" x="' + mid + '" y="' + (T + ph / 2 - 4) + '">Not yet public</text>');
-          o.push('<text class="bt-future-s" x="' + mid + '" y="' + (T + ph / 2 + 16) + '">' + (narrow ? "Nothing here is guessed" : "The agent can't see it, and doesn't guess") + '</text>');
-        }
-      }
-      var rowEnd = [-1e9, -1e9];   // place each label on the first of two rows where it fits, else show the tick alone
-      DOCS.forEach(function (d) {
-        var dx = x(d.day), later = d.day > cut, w = d.kind.length * 6.8 + 6, tx = Math.min(dx + 4, W - R - w), row = -1;
-        for (var k = 0; k < 2; k++) if (tx > rowEnd[k] + 8) { row = k; break; }
-        var ly = T - 30 - (row < 0 ? 0 : row) * 16;
-        o.push('<g class="' + (later ? "bt-later" : "") + '"><line class="bt-doc" x1="' + dx + '" x2="' + dx + '" y1="' + (row < 0 ? T - 24 : ly + 5) + '" y2="' + (T - 8) + '"></line>');
-        if (row >= 0) { rowEnd[row] = tx + w; o.push('<text class="bt-doc-t" x="' + tx + '" y="' + ly + '">' + esc(d.kind) + '</text>'); }
-        o.push('</g>');
-      });
-      var seen = DOCS.filter(function (d) { return d.day <= cut; });
-      if (seen.length) {
-        var path = "M" + x(seen[0].day) + " " + y(seen[0].v);
-        seen.forEach(function (d, i) {
-          var end = i + 1 < seen.length ? seen[i + 1].day : cut;
-          path += " H" + x(end);
-          if (i + 1 < seen.length) path += " V" + y(seen[i + 1].v);
-        });
-        o.push('<path class="bt-line" d="' + path + '"></path>');
-        seen.forEach(function (d) { o.push('<circle class="' + (d.changed ? "bt-dot" : "bt-chk") + '" cx="' + x(d.day) + '" cy="' + y(d.v) + '" r="4"></circle>'); });
-      }
-      o.push('<line class="bt-cut" x1="' + cx + '" x2="' + cx + '" y1="' + (T - 68) + '" y2="' + (H - B) + '"></line>');
-      var label = "As of " + iso(cut), pw = label.length * 6.8 + 16, px = Math.min(Math.max(cx - pw / 2, L - 4), W - R - pw);
-      o.push('<rect class="bt-pill" x="' + px + '" y="' + (T - 88) + '" width="' + pw + '" height="20" rx="10"></rect><text class="bt-pill-t" x="' + (px + 8) + '" y="' + (T - 74) + '">' + label + '</text>');
-      if (seen.length) {
-        var now = seen[seen.length - 1], ny = y(now.v), txt = now.v, right = cx + 14 + txt.length * 7.5 < W - R;
-        o.push('<circle class="bt-now" cx="' + cx + '" cy="' + ny + '" r="6"></circle>');
-        o.push('<text class="bt-now-t" x="' + (right ? cx + 12 : cx - 12) + '" y="' + (ny - 10) + '" text-anchor="' + (right ? "start" : "end") + '">' + txt + '</text>');
-      }
-      svg.innerHTML = o.join("");
+      var x = posOf(t), seen = -1, day = new Date(t).toISOString().slice(0, 10);
+      docs.forEach(function (d, i) { var pub = dates[i] <= t; if (pub) seen = i; d.classList.toggle("later", !pub); d.classList.remove("now"); });
+      if (seen >= 0) docs[seen].classList.add("now");
+      pit.style.setProperty("--cut", x + "px");
+      out.textContent = day;
+      if (vert.matches) { pill.style.left = ""; }
+      else { var w = pill.offsetWidth; pill.style.left = Math.min(Math.max(x - w / 2, 0), pit.clientWidth - w) + "px"; }
+      later.style.visibility = t < END && pit.clientWidth - x > 130 ? "visible" : "hidden";
+      pit.setAttribute("aria-valuemin", 0); pit.setAttribute("aria-valuemax", Math.round((END - START) / DAY));
+      pit.setAttribute("aria-valuenow", Math.round((t - START) / DAY));
+      pit.setAttribute("aria-valuetext", "As of " + day + ": " + (seen >= 0 ? docs[seen].querySelector(".pit-val").textContent : "no reading yet"));
     }
-    var timer = null, held = 0;
-    function stop() { if (timer) { clearInterval(timer); timer = null; } }
-    function set(v) { cut = Math.max(0, Math.min(DAYS, v)); range.value = cut; render(); }
-    range.addEventListener("input", function () { stop(); set(+range.value); });
-    function fromPointer(e) {
-      var r = svg.getBoundingClientRect(), L = r.width < 600 ? 80 : 104;
-      set(Math.round((e.clientX - r.left - L) / (r.width - L - 8) * DAYS));
-    }
-    svg.addEventListener("pointerdown", function (e) { stop(); svg.setPointerCapture(e.pointerId); fromPointer(e); });
-    svg.addEventListener("pointermove", function (e) { if (svg.hasPointerCapture && svg.hasPointerCapture(e.pointerId)) fromPointer(e); });
-    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(render, 120); });
-    render();
+    function set(time) { t = Math.max(START, Math.min(END, time)); render(); }
+    measure(); render();
+    var touched = false, raf = null, last = 0, held = 0;
+    function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
+    function fromPointer(e) { var r = pit.getBoundingClientRect(); set(timeOf(vert.matches ? e.clientY - r.top : e.clientX - r.left)); }
+    pit.addEventListener("pointerdown", function (e) { touched = true; stop(); pit.setPointerCapture(e.pointerId); fromPointer(e); });
+    pit.addEventListener("pointermove", function (e) { if (pit.hasPointerCapture && pit.hasPointerCapture(e.pointerId)) fromPointer(e); });
+    pit.addEventListener("keydown", function (e) {
+      var step = { ArrowRight: 7, ArrowUp: 7, ArrowLeft: -7, ArrowDown: -7 }[e.key];
+      if (e.key === "Home") set(START); else if (e.key === "End") set(END); else if (step) set(t + step * DAY); else return;
+      touched = true; stop(); e.preventDefault();
+    });
+    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { measure(); render(); }, 120); });
     if (reduce || !("IntersectionObserver" in window)) return;
-    var touched = false;
-    ["pointerdown", "keydown"].forEach(function (ev) { svg.addEventListener(ev, function () { touched = true; }); range.addEventListener(ev, function () { touched = true; }); });
+    function frame(now) {   // sweep the as-of date forward, about 24 days a second, then hold at the end and start over
+      var dt = Math.min(now - (last || now), 50); last = now;
+      if (t >= END) { held += dt; if (held > 2400) { held = 0; set(START); } }
+      else set(t + dt * 24 * DAY / 1000);
+      raf = requestAnimationFrame(frame);
+    }
     new IntersectionObserver(function (es) {
-      if (es[0].isIntersecting && !timer && !touched) {
-        timer = setInterval(function () {   // sweep the as-of date forward, pausing at the end
-          if (cut >= DAYS) { if (++held > 40) { held = 0; set(0); } return; }
-          set(cut + 1);
-        }, 55);
-      }
+      if (es[0].isIntersecting && !raf && !touched) { last = 0; if (t > dates[2]) set(START); raf = requestAnimationFrame(frame); }
       if (!es[0].isIntersecting) stop();
-    }).observe(svg);
+    }, { threshold: 0.4 }).observe(pit);
+  })();
+
+  /* Your own features: a definition is typed, agents read every document it needs, and the value lands */
+  (function features() {
+    var FEATURES = [
+      { key: "kpi_dropped", type: "Yes / no", val: "Yes", docs: 22, src: "10-Ks, 10-Qs and earnings calls",
+        text: "Did the company stop reporting a metric it disclosed in each of the previous four years? Compare this year's filings and calls with those of the last four." },
+      { key: "debt_due_2y", type: "Number, USD", val: "$2.31B", docs: 146, src: "Indentures, credit agreements and amendments",
+        text: "Total principal due within two years, rebuilt from every indenture, credit agreement and amendment, including maturities that spring earlier under their own terms." },
+      { key: "demand_corroborated", type: "Share, 0 to 1", val: "0.38", docs: 2418, src: "Calls and filings from 64 companies",
+        text: "For each claim management made about demand this quarter, check what the company's customers, suppliers and distributors said. Report the share confirmed by at least two of them." }
+    ];
+    var tabs = document.querySelector(".ff-tabs"), panel = document.getElementById("ff-panel");
+    var text = document.getElementById("ff-text"), type = document.getElementById("ff-type"), src = document.getElementById("ff-src");
+    var nEl = document.getElementById("ff-n"), valEl = document.getElementById("ff-val"), cv = document.getElementById("ff-docs"), ctx = cv.getContext("2d");
+    var MAX = 2418, w = 0, h = 0, pitch = 7, cols = 0, col = {}, state = new Uint8Array(MAX), order = [], cur = 2, timers = [], touched = false, raf = null;
+    var buttons = FEATURES.map(function (f, i) {
+      var b = document.createElement("button");
+      b.type = "button"; b.setAttribute("role", "tab"); b.id = "ff-tab-" + i; b.setAttribute("aria-controls", "ff-panel"); b.textContent = f.key;
+      b.addEventListener("click", function () { pick(i); });
+      tabs.appendChild(b); return b;
+    });
+    function rand(seed) { var x = Math.sin(seed * 9301 + 49297) * 233280; return x - Math.floor(x); }
+    function colors() { var cs = getComputedStyle(root); col = { rule: cs.getPropertyValue("--rule").trim(), fg: cs.getPropertyValue("--fg").trim(), accent: cs.getPropertyValue("--accent").trim() }; }
+    function resize() {   // one glyph size for every feature, so a short read looks short beside a long one
+      w = cv.clientWidth;
+      var dpr = window.devicePixelRatio || 1, room = w < 560 ? 220 : 300;
+      for (pitch = 9; pitch > 3; pitch--) if (Math.ceil(MAX / Math.floor(w / pitch)) * Math.round(pitch * 1.3) <= room) break;
+      cols = Math.floor(w / pitch);
+      h = Math.ceil(MAX / cols) * Math.round(pitch * 1.3); cv.style.height = h + "px";
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    }
+    function draw() {   // 0 not yet found, 1 found, 2 read, 3 read and bore on the answer
+      ctx.clearRect(0, 0, w, h);
+      var gw = pitch - 2, gh = Math.round(pitch * 1.3) - 2;
+      for (var i = 0; i < FEATURES[cur].docs; i++) {
+        var st = state[i]; if (!st) continue;
+        var x = (i % cols) * pitch, y = Math.floor(i / cols) * Math.round(pitch * 1.3);
+        ctx.globalAlpha = st === 2 ? 0.3 : 1;
+        ctx.fillStyle = st === 1 ? col.rule : st === 2 ? col.fg : col.accent;
+        ctx.fillRect(x, y, gw, gh);
+      }
+      ctx.globalAlpha = 1;
+    }
+    function show(i) {
+      cur = i;
+      buttons.forEach(function (b, k) { b.setAttribute("aria-selected", k === i ? "true" : "false"); b.tabIndex = k === i ? 0 : -1; });
+      panel.setAttribute("aria-labelledby", "ff-tab-" + i);
+      type.textContent = FEATURES[i].type; src.textContent = FEATURES[i].src; valEl.textContent = FEATURES[i].val;
+    }
+    function finished(i) {   // the resting state: the definition written, every document read, the value recorded
+      show(i); text.textContent = FEATURES[i].text;
+      for (var k = 0; k < FEATURES[i].docs; k++) state[k] = rand(k + i * 31) < 0.09 ? 3 : 2;
+      nEl.textContent = FEATURES[i].docs.toLocaleString("en-US"); valEl.classList.add("on"); draw();
+    }
+    function stop() { timers.forEach(clearTimeout); timers = []; if (raf) { cancelAnimationFrame(raf); raf = null; } }
+    function pick(i) { touched = true; if (reduce) { stop(); finished(i); } else play(i); }
+    function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+    function play(i) {
+      stop();
+      var f = FEATURES[i];
+      show(i); state.fill(0); draw(); nEl.textContent = "0"; valEl.classList.remove("on");
+      text.textContent = ""; var caret = document.createElement("span"); caret.className = "ff-caret";
+      var typed = document.createTextNode(""); text.appendChild(typed); text.appendChild(caret);
+      var n = 0;
+      (function type() { n += 2; typed.data = f.text.slice(0, n); if (n < f.text.length) later(type, 22); else later(read, 350); })();
+      function read() {
+        caret.remove();
+        order = []; for (var k = 0; k < f.docs; k++) { state[k] = 1; order.push(k); }
+        order.sort(function (a, b) { return rand(a * 13 + i) - rand(b * 13 + i); });   // many agents at once, not front to back
+        draw();
+        var t0 = performance.now(), dur = 900 + Math.min(2600, f.docs * 1.2);
+        (function step(now) {
+          var k = Math.min(1, (now - t0) / dur), done = Math.round(f.docs * k);
+          for (var j = 0; j < done; j++) { var d = order[j]; if (state[d] === 1) state[d] = rand(d + i * 31) < 0.09 ? 3 : 2; }
+          nEl.textContent = done.toLocaleString("en-US"); draw();
+          if (k < 1) raf = requestAnimationFrame(step);
+          else { raf = null; later(function () { valEl.classList.add("on"); }, 250); if (!touched) later(function () { play((i + 1) % FEATURES.length); }, 4200); }
+        })(t0);
+      }
+    }
+    tabs.addEventListener("keydown", function (e) {
+      var d = { ArrowRight: 1, ArrowLeft: -1 }[e.key]; if (!d) return;
+      var i = (cur + d + FEATURES.length) % FEATURES.length; pick(i); buttons[i].focus(); e.preventDefault();
+    });
+    colors(); resize(); finished(2);
+    var fq = window.matchMedia("(prefers-color-scheme: dark)");
+    (fq.addEventListener ? fq.addEventListener("change", function () { colors(); draw(); }) : null);
+    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(resize, 150); });
+    if (reduce || !("IntersectionObserver" in window)) return;
+    var started = false;
+    new IntersectionObserver(function (es) { if (es[0].isIntersecting && !started && !touched) { started = true; play(0); } }, { threshold: 0.35 }).observe(cv);
   })();
 
   if (reduce) return; // the resting state is the first excerpt, fully read
