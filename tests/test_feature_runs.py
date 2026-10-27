@@ -7,12 +7,12 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
 
-from premisedb import RecordStore
-from premisedb import feature_runs
-from premisedb.cli import main
-from premisedb.features import _latest
-from premisedb.feature_runs import run_features
-from premisedb.ui.harness import HarnessError, Reply, UsageLimit
+from stated import RecordStore
+from stated import feature_runs
+from stated.cli import main
+from stated.features import _latest
+from stated.feature_runs import run_features
+from stated.ui.harness import HarnessError, Reply, UsageLimit
 
 
 class FakeHarness:
@@ -27,8 +27,8 @@ class FakeHarness:
     def run(self, prompt, *, cwd, env, web, writable, timeout):
         subject = prompt.split("(Entity ")[1].split(")")[0]
         features = re.findall(r"^- (\w+) \(definition ([\w-]+)\)$", prompt, re.M)
-        day = env["PREMISEDB_AS_OF"]
-        self.calls.append((subject, day, tuple(key for key, _ in features), web, env["PREMISEDB_FETCH"],
+        day = env["STATED_AS_OF"]
+        self.calls.append((subject, day, tuple(key for key, _ in features), web, env["STATED_FETCH"],
                            Path(cwd).is_dir(), tuple(writable), prompt))
         action = self.script.get((subject, day), "value")
         if isinstance(action, Exception):
@@ -79,7 +79,7 @@ class FeatureRunTests(unittest.TestCase):
         subject, day, keys, web, fetch, folder, writable, prompt = harness.calls[0]
         self.assertEqual((keys, web, fetch, folder, writable),
                          (("runnable",), False, "0", True, (self.path.parent.resolve(),)))
-        self.assertIn("premisedb-state", prompt)
+        self.assertIn("stated-state", prompt)
         self.assertIn('author_id "feature-run/fake"', prompt)
         self.assertEqual((result.remaining, len(result.sessions), all(s.done and s.session for s in result.sessions)),
                          (0, 6, True))

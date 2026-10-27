@@ -2,11 +2,11 @@
 
 The document path scores only BM25 hits, applies dsRAG's provider-specific transforms, then selects evidence with RSE. Cohere uses beta CDF parameters `(0.4, 0.4)`; Voyage uses `(0.5, 1.8)`; Jev scores stay unchanged. The fitted sigmoid profiles and fitting procedure have been removed.
 
-RSE scoring defaults follow dsRAG's `balanced` preset: penalty 0.18, minimum segment value 0.5, rank decay 30 and length adjustment enabled. PremiseDB's token budgets and passage/excerpt caps remain adaptations. The reference is [dsRAG at commit 5215e97](https://github.com/D-Star-AI/dsRAG/tree/5215e9791133fc1ad383af043fb2fde0e7d4e4d4).
+RSE scoring defaults follow dsRAG's `balanced` preset: penalty 0.18, minimum segment value 0.5, rank decay 30 and length adjustment enabled. Stated's token budgets and passage/excerpt caps remain adaptations. The reference is [dsRAG at commit 5215e97](https://github.com/D-Star-AI/dsRAG/tree/5215e9791133fc1ad383af043fb2fde0e7d4e4d4).
 
 ## Numerical and behavioral checks
 
-The 39-line `premisedb/_beta.py` evaluates the regularized incomplete beta function with the [DLMF continued fraction and symmetry relation](https://dlmf.nist.gov/8.17.v). Runtime uses only the standard library. Against `scipy.stats.beta.cdf`, a dense grid, logarithmically spaced tails, adjacent floating-point values around the symmetry threshold, and exact endpoints give maximum absolute errors of 1.67e-15 for Cohere (10,335 inputs) and 1.45e-15 for Voyage (10,336 inputs). Separate power-law checks cover extremely small subnormal inputs. SciPy is an optional test reference, never a runtime import.
+The 39-line `stated/_beta.py` evaluates the regularized incomplete beta function with the [DLMF continued fraction and symmetry relation](https://dlmf.nist.gov/8.17.v). Runtime uses only the standard library. Against `scipy.stats.beta.cdf`, a dense grid, logarithmically spaced tails, adjacent floating-point values around the symmetry threshold, and exact endpoints give maximum absolute errors of 1.67e-15 for Cohere (10,335 inputs) and 1.45e-15 for Voyage (10,336 inputs). Separate power-law checks cover extremely small subnormal inputs. SciPy is an optional test reference, never a runtime import.
 
 All 74 tests pass with optional evaluation dependencies installed. Without them, 72 pass and the SciPy/BPE reference checks skip. Integration tests verify that only search hits are scored, each score is transformed once, raw scores remain inspectable, and intervening passages retain their negative penalty. They also cover source scope, stale anchors, context/rechunk changes, exact citation ranges and token budgets.
 

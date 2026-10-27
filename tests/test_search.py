@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from premisedb import RecordStore
+from stated import RecordStore
 
 
 class SearchTests(unittest.TestCase):

@@ -1,6 +1,6 @@
 """Publish a workspace's own layer as a database file, and attach published files to a workspace.
 
-A published file is an ordinary PremiseDB database holding one sealed (read-only) layer, so every
+A published file is an ordinary Stated database holding one sealed (read-only) layer, so every
 command that reads a workspace also reads a published layer. Its `layers` row is the manifest.
 """
 

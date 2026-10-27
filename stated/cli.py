@@ -29,12 +29,12 @@ def _where_item(text):
 
 
 def _parser():
-    parser = argparse.ArgumentParser(prog="premisedb", description=__doc__)
-    parser.add_argument("--db", default=os.environ.get("PREMISEDB_DB"),
-                        help="Database file (default: $PREMISEDB_DB, else research.sqlite; ui also looks in ~/PremiseDB)")
-    parser.add_argument("--as-of", default=os.environ.get("PREMISEDB_AS_OF") or None, metavar="DATE",
+    parser = argparse.ArgumentParser(prog="stated", description=__doc__)
+    parser.add_argument("--db", default=os.environ.get("STATED_DB"),
+                        help="Database file (default: $STATED_DB, else research.sqlite; ui also looks in ~/Stated)")
+    parser.add_argument("--as-of", default=os.environ.get("STATED_AS_OF") or None, metavar="DATE",
                         help="Read as a reader on this date could have: only sources published by then, and records "
-                             "whose evidence or stamp is by then; writes are stamped with it (default: $PREMISEDB_AS_OF).")
+                             "whose evidence or stamp is by then; writes are stamped with it (default: $STATED_AS_OF).")
     commands = parser.add_subparsers(dest="command", required=True)
 
     def command(name, method, description, *arguments, payload=None):
@@ -317,8 +317,8 @@ def _add_document_context(db, source, author_id):
     if not os.environ.get("OPENROUTER_API_KEY", "").strip():
         return
     try:
-        writer = OpenRouterContextWriter(os.environ.get("PREMISEDB_CONTEXT_MODEL", "openai/gpt-6-luna"),
-                                         reasoning_effort=os.environ.get("PREMISEDB_CONTEXT_REASONING", "low"))
+        writer = OpenRouterContextWriter(os.environ.get("STATED_CONTEXT_MODEL", "openai/gpt-6-luna"),
+                                         reasoning_effort=os.environ.get("STATED_CONTEXT_REASONING", "low"))
         write_document_context(db, source.id, writer=writer, author_id=author_id)
     except (ValueError, RuntimeError) as error:
         print(json.dumps({"warning": f"Source {source.id} was ingested without document context: {error}"}),
@@ -330,8 +330,8 @@ def _search_documents(db, options):
         import tiktoken
     except ImportError:
         raise RuntimeError("Document search requires tiktoken; install with: python -m pip install 'tiktoken>=0.12,<1'") from None
-    encoding = tiktoken.get_encoding(os.environ.get("PREMISEDB_TOKEN_ENCODING", "cl100k_base"))
-    reranker = OpenRouterReranker(os.environ.get("PREMISEDB_RERANKER_MODEL", "voyageai/rerank-2.5"))
+    encoding = tiktoken.get_encoding(os.environ.get("STATED_TOKEN_ENCODING", "cl100k_base"))
+    reranker = OpenRouterReranker(os.environ.get("STATED_RERANKER_MODEL", "voyageai/rerank-2.5"))
     result = retrieve(db, reranker=reranker,
                       count_tokens=lambda text: len(encoding.encode(text, disallowed_special=())), **options)
     return [{**asdict(excerpt.segment), "token_count": excerpt.token_count} for excerpt in result.excerpts]
@@ -446,7 +446,7 @@ def _recall(db, options):
 def main(argv=None):
     options = vars(_parser().parse_args(argv))
     given, as_of = options.pop("db"), options.pop("as_of")
-    fixed = os.environ.get("PREMISEDB_AS_OF") or None
+    fixed = os.environ.get("STATED_AS_OF") or None
     if options["method"] == "ui":
         from .ui.server import serve
         try:
@@ -468,7 +468,7 @@ def main(argv=None):
         if str(path) == ":memory:":
             raise ValueError("The CLI requires a persistent database file")
         if fixed and as_of != fixed:  # A session's cutoff is set by whoever started it, not chosen per command.
-            raise ValueError(f"the cutoff is fixed at {fixed} by PREMISEDB_AS_OF")
+            raise ValueError(f"the cutoff is fixed at {fixed} by STATED_AS_OF")
         if method is not None and not path.is_file():
             raise ValueError(f"Database does not exist: {path}. Use init to create it.")
         payload = {}

@@ -1,11 +1,11 @@
 ---
-name: premisedb-answer
-description: Answer a question from a PremiseDB research graph as a structured answer document (a one-line title, a body paragraph, cited sources and optional lever, flow, chart, quote or text blocks) that passes `premisedb check-answer`.
+name: stated-answer
+description: Answer a question from a Stated research graph as a structured answer document (a one-line title, a body paragraph, cited sources and optional lever, flow, chart, quote or text blocks) that passes `stated check-answer`.
 ---
 
-# Answer with PremiseDB
+# Answer with Stated
 
-Use this when the reply will be rendered as an answer: a headline, a paragraph, and at most a few supporting blocks. Do the research with the premisedb-research skill first (recall, read the evidence, check or evaluate models, and add to the graph what the answer needs). Then write the answer as one JSON object.
+Use this when the reply will be rendered as an answer: a headline, a paragraph, and at most a few supporting blocks. Do the research with the stated-research skill first (recall, read the evidence, check or evaluate models, and add to the graph what the answer needs). Then write the answer as one JSON object.
 
 ## The document
 
@@ -62,4 +62,4 @@ Every number a chart draws names the record it comes from, so a chart cannot sho
 
 ## Check, then return
 
-Write the document to a file and run `premisedb check-answer --input answer.json`. It returns `ok`, `problems` and, when ok, the resolved `answer`. Fix every problem and run it again. Your final message is the JSON document alone, with no prose around it.
+Write the document to a file and run `stated check-answer --input answer.json`. It returns `ok`, `problems` and, when ok, the resolved `answer`. Fix every problem and run it again. Your final message is the JSON document alone, with no prose around it.

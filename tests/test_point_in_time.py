@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import RecordStore
+from stated import RecordStore
 
 
 class PointInTimeTests(unittest.TestCase):
@@ -94,7 +94,7 @@ class PointInTimeTests(unittest.TestCase):
         self.assertEqual([s.document_context for s in then.search_documents("deposits")], [None])
 
     def test_a_record_is_retired_at_a_later_cutoff_by_a_supersedes_link(self):
-        from premisedb import recall
+        from stated import recall
         then = self.at("2023-02-24")
         first = then.create("Finding", text="Deposits were stable.", author_id="agent", attributes={"basis": "inference"})
         then.create_link(first.id, self.bank.id, "about", author_id="agent")

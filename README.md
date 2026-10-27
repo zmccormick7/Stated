@@ -1,6 +1,6 @@
-# PremiseDB
+# Stated
 
-**PremiseDB is a graph database designed for scaling fundamental investment research with agents.** Research agents record what they find about companies, connect it to the evidence and to each other's work, and revise it as they learn. Ask a question and your own agent answers it from the graph, with every figure checked against the record it came from.
+**Stated is a graph database designed for scaling fundamental investment research with agents.** Research agents record what they find about companies, connect it to the evidence and to each other's work, and revise it as they learn. Ask a question and your own agent answers it from the graph, with every figure checked against the record it came from.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
@@ -14,16 +14,16 @@ You need Python 3.12 or later built against SQLite 3.51.3 or later with FTS5 (`p
 ```bash
 git clone https://github.com/zmccormick7/PremiseDB.git
 pipx install "./PremiseDB[cli]"
-premisedb ui
+stated ui
 ```
 
-The first run creates a research folder at `~/PremiseDB`, installs the bundled skills for your agent, and opens the app in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `premisedb ui --base base-2026.10.01.sqlite`.
+The first run creates a research folder at `~/Stated`, installs the bundled skills for your agent, and opens the app in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `stated ui --base base-2026.10.01.sqlite`.
 
-To work on PremiseDB itself, clone the repository and install it in editable mode (`python -m pip install -e '.[cli]'` inside a virtual environment); `premisedb` then runs from your checkout.
+To work on Stated itself, clone the repository and install it in editable mode (`python -m pip install -e '.[cli]'` inside a virtual environment); `stated` then runs from your checkout.
 
 ## Ask a question
 
-`premisedb ui` runs a small local web app on your machine, next to your research folder: a Python server and a plain web page, with nothing hosted elsewhere. The page holds threads of questions and their answers, like a chat, in a sidebar on the left. The answers come from your own Claude Code or Codex, which the app runs in your research folder each time you ask.
+`stated ui` runs a small local web app on your machine, next to your research folder: a Python server and a plain web page, with nothing hosted elsewhere. The page holds threads of questions and their answers, like a chat, in a sidebar on the left. The answers come from your own Claude Code or Codex, which the app runs in your research folder each time you ask.
 
 Type a question and pick an effort beside the Ask button:
 
@@ -36,7 +36,7 @@ Type a question and pick an effort beside the Ask button:
 
 An answer is a one-line headline, a body as long as the question needs, numbered sources, and where they help a chart, a quote, a flow of who gets what, or a lever you can drag to move a model's input and watch its output. Every figure on the page is checked against the record it cites before the answer is shown.
 
-The agent runs headless in your research folder with your own login and settings. PremiseDB adds only what it needs: permission to run `premisedb`, to read and write files there, and, from 20 minutes up, to use the web. To let it fetch filings from SEC.gov, which requires a contact, run `premisedb ui --contact "Your Name you@example.com"` once; the contact is kept beside the database and sent nowhere else.
+The agent runs headless in your research folder with your own login and settings. Stated adds only what it needs: permission to run `stated`, to read and write files there, and, from 20 minutes up, to use the web. To let it fetch filings from SEC.gov, which requires a contact, run `stated ui --contact "Your Name you@example.com"` once; the contact is kept beside the database and sent nowhere else.
 
 ## Scaling research
 
@@ -54,18 +54,18 @@ What this has done so far: a run of 274 company coverage packs, two sessions per
 
 ## Use your own agent
 
-Five skills teach an agent the graph. `premisedb ui` installs them; for any other harness, copy the folders under `premisedb/skills/` into its skills directory.
+Five skills teach an agent the graph. `stated ui` installs them; for any other harness, copy the folders under `stated/skills/` into its skills directory.
 
-- **premisedb-research**: recall what the graph holds, contribute findings with exact citations, and revise understanding as evidence changes.
-- **premisedb-answer**: return an answer document that passes `premisedb check-answer`.
-- **premisedb-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
-- **premisedb-feature-design**: turn an idea for something to measure into feature definitions whose instructions describe state as of a date rather than forecast, and review existing definitions against the same tests.
-- **premisedb-state**: produce one feature's value for a subject as of a cutoff date, following the feature definition's instructions over everything a reader on that date could see, or computed by its formula from other features.
+- **stated-research**: recall what the graph holds, contribute findings with exact citations, and revise understanding as evidence changes.
+- **stated-answer**: return an answer document that passes `stated check-answer`.
+- **stated-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
+- **stated-feature-design**: turn an idea for something to measure into feature definitions whose instructions describe state as of a date rather than forecast, and review existing definitions against the same tests.
+- **stated-state**: produce one feature's value for a subject as of a cutoff date, following the feature definition's instructions over everything a reader on that date could see, or computed by its formula from other features.
 
-Point a session at the folder with `PREMISEDB_DB=/path/to/research.sqlite` and ask it to use the skill. The [CLI guide](docs/cli.md) covers every command, and the [Python API](docs/python-api.md) is there for agents and tools you write yourself:
+Point a session at the folder with `STATED_DB=/path/to/research.sqlite` and ask it to use the skill. The [CLI guide](docs/cli.md) covers every command, and the [Python API](docs/python-api.md) is there for agents and tools you write yourself:
 
 ```python
-from premisedb import RecordStore, recall
+from stated import RecordStore, recall
 
 with RecordStore("research.sqlite") as db:
     for found in recall(db, "customer concentration").records:
@@ -87,15 +87,15 @@ Six record types, connected by named links:
 | **Model** | A driver model of a business. |
 | **Variable** | A model input or output, or a feature value, with its value, units, periods and the evidence it rests on. |
 
-Links such as `about`, `supported_by`, `depends_on`, `contradicts` and `raises` carry the reasoning: a Variable depends on a Finding, which is supported by a Source and raises a Question. Models are checked with `premisedb check-model`, which recomputes every output's formula from the stored inputs, and evaluated with overrides for the levers on the answer page.
+Links such as `about`, `supported_by`, `depends_on`, `contradicts` and `raises` carry the reasoning: a Variable depends on a Finding, which is supported by a Source and raises a Question. Models are checked with `stated check-model`, which recomputes every output's formula from the stored inputs, and evaluated with overrides for the levers on the answer page.
 
 The graph is layered. A **base layer** is a published, read-only graph that any research folder can attach and later update; your own layer holds what your agents add on top, including corrections to base records. Knowledge belongs to the folder, not to any one conversation or harness: a fresh session, on either harness, picks up exactly where the last one left off.
 
-The graph can also be read **as of a date**. Every record carries the date its contents are as of, and a session opened at a cutoff sees only the sources published by then, the disclosed facts those sources support, and what earlier sessions wrote at or before that cutoff; what it writes is stamped with the cutoff in turn. That is what lets agents describe a company's state at a past date from the evidence that existed then, with their work checkable against the dated record rather than against hindsight. A **feature definition** (`premisedb define-feature`) holds the instructions agents follow to produce one such description, a feature of a subject as of a date, and the type of its values; definitions are kept beside the graph rather than in it, since they are procedures, not knowledge. The [feature guide](docs/features.md) shows how to build systematic features this way: definitions hold the instructions, agents write each value as of a date, and `premisedb feature-table` exports the result as a daily table.
+The graph can also be read **as of a date**. Every record carries the date its contents are as of, and a session opened at a cutoff sees only the sources published by then, the disclosed facts those sources support, and what earlier sessions wrote at or before that cutoff; what it writes is stamped with the cutoff in turn. That is what lets agents describe a company's state at a past date from the evidence that existed then, with their work checkable against the dated record rather than against hindsight. A **feature definition** (`stated define-feature`) holds the instructions agents follow to produce one such description, a feature of a subject as of a date, and the type of its values; definitions are kept beside the graph rather than in it, since they are procedures, not knowledge. The [feature guide](docs/features.md) shows how to build systematic features this way: definitions hold the instructions, agents write each value as of a date, and `stated feature-table` exports the result as a daily table.
 
 ## Status
 
-PremiseDB is early software. The database format changes without migrations; recreate a prototype database when it does.
+Stated is early software. The database format changes without migrations; recreate a prototype database when it does.
 
 What exists today:
 

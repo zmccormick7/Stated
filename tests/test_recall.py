@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import RecordStore, recall
+from stated import RecordStore, recall
 
 
 class RecallTests(unittest.TestCase):

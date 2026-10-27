@@ -73,7 +73,7 @@ def pdf_text(data: bytes) -> str:
         from pypdf import PdfReader
         from pypdf.errors import PyPdfError
     except ImportError:
-        raise ValueError('reading a PDF needs the pypdf package: pip install "premisedb[cli]"') from None
+        raise ValueError('reading a PDF needs the pypdf package: pip install "stated[cli]"') from None
     logging.getLogger("pypdf").setLevel(logging.ERROR)  # Its warnings about odd files are not ours to print.
     try:
         reader = PdfReader(io.BytesIO(data))
@@ -88,8 +88,8 @@ def pdf_text(data: bytes) -> str:
 
 
 def contact(db_path: str | Path | None = None) -> str | None:
-    """Who is asking, for sites that require it: $PREMISEDB_CONTACT, else contact.txt beside the database."""
-    value = os.environ.get("PREMISEDB_CONTACT", "").strip()
+    """Who is asking, for sites that require it: $STATED_CONTACT, else contact.txt beside the database."""
+    value = os.environ.get("STATED_CONTACT", "").strip()
     if not value and db_path is not None:
         file = Path(db_path).with_name("contact.txt")
         value = file.read_text(encoding="utf-8").strip() if file.is_file() else ""
@@ -99,17 +99,17 @@ def contact(db_path: str | Path | None = None) -> str | None:
 def fetch_page(url: str, *, contact: str | None = None, open_url=urlopen) -> Page:
     """Download an HTML or plain-text page or a PDF and return its text. SEC.gov refuses requests that do not say
     who is asking, so it needs `contact` (a name and email), which is sent to SEC.gov and nowhere else."""
-    if os.environ.get("PREMISEDB_FETCH", "").strip() == "0":
+    if os.environ.get("STATED_FETCH", "").strip() == "0":
         raise ValueError("fetching from the web is off for this question: it was asked at an effort that works "
                          "from the graph alone")
     parts = urlparse(url if isinstance(url, str) else "")
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise ValueError("url must be an http or https address")
-    agent = "PremiseDB/0.0.1"
+    agent = "Stated/0.0.1"
     if parts.hostname == "sec.gov" or parts.hostname.endswith(".sec.gov"):
         if not contact:
             raise ValueError('SEC.gov requires a contact name and email with each request. Set one once with: '
-                             'premisedb ui --contact "Your Name you@example.com" (or set PREMISEDB_CONTACT). '
+                             'stated ui --contact "Your Name you@example.com" (or set STATED_CONTACT). '
                              "It is sent to SEC.gov only.")
         agent = contact
     try:

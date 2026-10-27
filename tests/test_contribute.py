@@ -5,7 +5,7 @@ import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import Contribution, RecordStore
+from stated import Contribution, RecordStore
 
 
 class ContributeTests(unittest.TestCase):

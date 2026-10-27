@@ -21,6 +21,8 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 
 
 SKILLS = Path(__file__).resolve().parents[1] / "skills"
+# The skills' names before the product was renamed Stated; an install removes these copies so agents see one set
+RETIRED_SKILLS = ("premisedb-answer", "premisedb-feature-design", "premisedb-go-deeper", "premisedb-research", "premisedb-state")
 
 
 def install_skills(harness, source: Path = SKILLS) -> list[str]:
@@ -28,6 +30,9 @@ def install_skills(harness, source: Path = SKILLS) -> list[str]:
     skills that were written or updated. The same file copy the README describes, done by the program."""
     written = []
     for directory in harness.skills_directories():
+        for name in RETIRED_SKILLS:
+            if (directory / name / "SKILL.md").is_file():
+                shutil.rmtree(directory / name)
         for skill in sorted(source.glob("*/SKILL.md")):
             target = directory / skill.parent.name / "SKILL.md"
             if not target.is_file() or target.read_bytes() != skill.read_bytes():
@@ -54,7 +59,7 @@ class App:
                 threading.Thread(target=run_turn, args=(self.store, turn["id"]),
                                  kwargs={"db_path": self.db_path, "harness": self.harness}, daemon=True).start()
             else:
-                self.store.finish_turn(turn["id"], error="PremiseDB was stopped while this question was being answered.")
+                self.store.finish_turn(turn["id"], error="Stated was stopped while this question was being answered.")
 
     def evaluate(self, model_id: str, overrides) -> dict:
         """A model's values with some Variables held at other values; the lever block calls this as it moves."""
@@ -220,7 +225,7 @@ def make_server(db_path, *, harness, host="127.0.0.1", port=0) -> ThreadingHTTPS
     return ThreadingHTTPServer((host, port), partial(Handler, App(db_path, harness=harness)))
 
 
-DEFAULT_WORKSPACE = Path.home() / "PremiseDB"
+DEFAULT_WORKSPACE = Path.home() / "Stated"
 
 
 def prepare_workspace(db_path: Path | None, *, base: Path | None = None) -> tuple[Path, list[str]]:
@@ -276,11 +281,11 @@ def serve(db_path=None, *, harness_name="claude-code", port=8765, model=None, re
         server = make_server(db_path, harness=harness, port=port)
     except OSError as error:
         if error.errno in (48, 98):  # Address in use, on macOS and Linux.
-            raise ValueError(f"Port {port} is already in use, perhaps by another premisedb ui. "
+            raise ValueError(f"Port {port} is already in use, perhaps by another `stated ui`. "
                              f"Stop it, or run with --port {port + 1}.") from None
         raise
     url = f"http://127.0.0.1:{server.server_address[1]}"
-    print(f"PremiseDB at {url} for {db_path.parent}")
+    print(f"Stated at {url} for {db_path.parent}")
     if open_browser:
         threading.Timer(0.5, webbrowser.open, (url,)).start()
     try:

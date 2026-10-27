@@ -2,7 +2,7 @@ from dataclasses import replace
 from math import exp
 import unittest
 
-from premisedb import DocumentContext, RecordStore, SourceSegment, extract_segments
+from stated import DocumentContext, RecordStore, SourceSegment, extract_segments
 
 
 def select(*args, **kwargs):

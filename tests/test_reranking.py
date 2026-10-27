@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
-from premisedb import DocumentContext, OpenRouterReranker, RecordStore, Reranker, SourceSegment
+from stated import DocumentContext, OpenRouterReranker, RecordStore, Reranker, SourceSegment
 
 
 class SuppliedReranker(Reranker):
@@ -56,7 +56,7 @@ class RerankingTests(unittest.TestCase):
         self.assertEqual(SuppliedReranker([0, 1]).score("revenue", self.segments), (0.0, 1.0))
 
     def test_no_requests_for_empty_candidates_or_invalid_inputs(self):
-        with patch("premisedb.reranking.urlopen") as request:
+        with patch("stated.reranking.urlopen") as request:
             for model in OpenRouterReranker.MODELS:
                 provider = self.provider(model)
                 self.assertEqual(provider.rerank("revenue", ()), ())
@@ -71,7 +71,7 @@ class RerankingTests(unittest.TestCase):
         for model in ("cohere/rerank-4-pro", "voyageai/rerank-2.5"):
             response = {"results": [{"index": 1, "relevance_score": 0.9},
                                     {"index": 0, "relevance_score": 0.2}]}
-            with self.subTest(model=model), patch("premisedb.reranking.urlopen",
+            with self.subTest(model=model), patch("stated.reranking.urlopen",
                                                   return_value=self.response(response)) as request:
                 self.assertEqual(self.provider(model, timeout=7).score("revenue", self.segments), (0.2, 0.9))
                 request.assert_called_once()
@@ -104,7 +104,7 @@ class RerankingTests(unittest.TestCase):
                 second_finished.set()
             return self.response({"answers": {"relevance": {"type": "noul", "noul": score}}})
 
-        with patch("premisedb.reranking.urlopen", side_effect=respond) as request:
+        with patch("stated.reranking.urlopen", side_effect=respond) as request:
             scores = self.provider("typesafe/jev-1.13", max_workers=2).score("revenue", self.segments)
             self.assertEqual(scores, (0.2, 0.9))
             self.assertEqual(request.call_count, 2)
@@ -116,7 +116,7 @@ class RerankingTests(unittest.TestCase):
         invalid += [{"results": [row, {"index": index, "relevance_score": 0.9}]}
                     for index in (-1, 2, True, "1", 1.0)]
         for value in invalid:
-            with self.subTest(value=value), patch("premisedb.reranking.urlopen",
+            with self.subTest(value=value), patch("stated.reranking.urlopen",
                                                   return_value=self.response(value)):
                 with self.assertRaises(ValueError):
                     self.provider().rerank("revenue", self.segments)
@@ -124,7 +124,7 @@ class RerankingTests(unittest.TestCase):
     def test_jev_rejects_bad_answers_and_partial_failures(self):
         valid = {"answers": {"relevance": {"type": "noul", "noul": 0.9}}}
         for bad in ({}, {"type": "score", "noul": 0.9}, {"type": "noul", "noul": True}):
-            with patch("premisedb.reranking.urlopen", side_effect=[
+            with patch("stated.reranking.urlopen", side_effect=[
                 self.response(valid), self.response({"answers": {"relevance": bad}}),
             ]), self.assertRaises(ValueError):
                 self.provider("typesafe/jev-1.13", max_workers=1).rerank("revenue", self.segments)
@@ -133,12 +133,12 @@ class RerankingTests(unittest.TestCase):
         errors = [HTTPError("url", 429, "sensitive body", {}, BytesIO(b"sensitive body")),
                   URLError("sensitive body"), TimeoutError("sensitive body")]
         for error in errors:
-            with patch("premisedb.reranking.urlopen", side_effect=error) as request:
+            with patch("stated.reranking.urlopen", side_effect=error) as request:
                 with self.assertRaises(RuntimeError) as caught:
                     self.provider().rerank("revenue", self.segments)
                 self.assertNotIn("sensitive body", str(caught.exception))
                 request.assert_called_once()
-        with patch("premisedb.reranking.urlopen", return_value=BytesIO(b"not JSON")):
+        with patch("stated.reranking.urlopen", return_value=BytesIO(b"not JSON")):
             with self.assertRaisesRegex(ValueError, "invalid JSON"):
                 self.provider().rerank("revenue", self.segments)
 
@@ -152,7 +152,7 @@ class RerankingTests(unittest.TestCase):
             OpenRouterReranker("typesafe/jev-1.13")
         with patch.dict("os.environ", {"OPENROUTER_API_KEY": "env-key"}):
             provider = OpenRouterReranker("typesafe/jev-1.13")
-            with patch("premisedb.reranking.urlopen", return_value=self.response({
+            with patch("stated.reranking.urlopen", return_value=self.response({
                 "answers": {"relevance": {"type": "noul", "noul": 0.8}},
             })) as request:
                 provider.score("revenue", self.segments[:1])

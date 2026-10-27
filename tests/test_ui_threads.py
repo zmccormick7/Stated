@@ -10,11 +10,11 @@ from tempfile import TemporaryDirectory
 import unittest
 from zoneinfo import ZoneInfo
 
-from premisedb import RecordStore
-from premisedb.ui import ClaudeCode, Codex, HarnessError, Reply, ThreadStore, UsageLimit, run_turn
-from premisedb.ui import runs, threads
-from premisedb.ui.harness import _failure
-from premisedb.ui.threads import time_limit
+from stated import RecordStore
+from stated.ui import ClaudeCode, Codex, HarnessError, Reply, ThreadStore, UsageLimit, run_turn
+from stated.ui import runs, threads
+from stated.ui.harness import _failure
+from stated.ui.threads import time_limit
 
 
 class FakeHarness:
@@ -27,8 +27,8 @@ class FakeHarness:
         if prompt.startswith("Research on the brief below is under way"):  # A run's duplicate review, kept apart.
             self.reviews.append({"prompt": prompt, "timeout": timeout})
             return Reply('{"merged": 0}', "review", ())
-        self.calls.append({"prompt": prompt, "cwd": cwd, "db": env["PREMISEDB_DB"], "session_id": session_id,
-                           "web": web, "timeout": timeout, "fetch": env["PREMISEDB_FETCH"]})
+        self.calls.append({"prompt": prompt, "cwd": cwd, "db": env["STATED_DB"], "session_id": session_id,
+                           "web": web, "timeout": timeout, "fetch": env["STATED_FETCH"]})
         on_progress("Bash: Recall what the graph holds")
         if self.write:
             self.write()
@@ -72,7 +72,7 @@ class ThreadTests(unittest.TestCase):
         self.assertEqual(turn["written"], {"Question": 1})  # What the agent added during the turn.
         call = harness.calls[0]
         self.assertEqual((call["cwd"], call["db"], call["session_id"]), (self.directory, str(self.db_path), None))
-        self.assertIn("the premisedb-answer skill", call["prompt"])  # The first prompt names the installed skills.
+        self.assertIn("the stated-answer skill", call["prompt"])  # The first prompt names the installed skills.
         self.assertTrue(call["prompt"].endswith("Question: How concentrated\nare the customers?"))
 
         thread = self.ask(harness, "And a year earlier?", thread=thread["id"])
@@ -173,7 +173,7 @@ class ThreadTests(unittest.TestCase):
         # Duplicates are reviewed after every two finished pieces (one agent) and again before the report.
         self.assertEqual((len(harness.reviews), harness.reviews[0]["timeout"]), (2, 600))
         self.assertIn(f"since {turn['started_at']}", harness.reviews[0]["prompt"])
-        self.assertIn("premisedb merge KEEP_ID DUPLICATE_ID", harness.reviews[0]["prompt"])
+        self.assertIn("stated merge KEEP_ID DUPLICATE_ID", harness.reviews[0]["prompt"])
         self.assertEqual(turn["progress"].count("Checking the new records for duplicates"), 2)
         # A follow-up plans in the session that wrote the report.
         harness = FakeHarness(json.dumps({"items": ["More"]}), worked, HarnessError("usage limit"), HarnessError("usage limit"), self.good)
@@ -348,7 +348,7 @@ class ClaudeCodeTests(unittest.TestCase):
     def test_stream_events_become_progress_and_a_reply(self):
         tool = {"type": "assistant", "message": {"content": [
             {"type": "text", "text": "Looking."},
-            {"type": "tool_use", "name": "Bash", "input": {"command": "premisedb recall x", "description": "Recall  x"}},
+            {"type": "tool_use", "name": "Bash", "input": {"command": "stated recall x", "description": "Recall  x"}},
             {"type": "tool_use", "name": "Read", "input": {"file_path": "/tmp/" + "a" * 200}}]}}
         result = {"type": "result", "is_error": False, "result": "{}", "session_id": "s-2",
                   "permission_denials": [{"tool_name": "WebFetch"}, {"tool_name": "WebFetch"}]}
@@ -358,12 +358,12 @@ class ClaudeCodeTests(unittest.TestCase):
         self.assertEqual(reply, Reply("{}", "s-2", ("WebFetch",)))
         self.assertEqual(json.loads((self.directory / "argv.json").read_text()),
                          ["-p", "Why?", "--output-format", "stream-json", "--verbose",
-                          "--allowedTools", "Bash(premisedb:*)", "Read", "Write", "--resume", "s-1"])
+                          "--allowedTools", "Bash(stated:*)", "Read", "Write", "--resume", "s-1"])
         self.assertEqual(progress[0], "Bash: Recall x")
         self.assertEqual((len(progress[1]), progress[1][-1]), (160, "…"))
         ClaudeCode(self.executable(result)).run("Why?", cwd=self.directory, web=True)
         self.assertEqual(json.loads((self.directory / "argv.json").read_text())[5:],
-                         ["--allowedTools", "Bash(premisedb:*)", "Read", "Write", "WebSearch", "WebFetch"])
+                         ["--allowedTools", "Bash(stated:*)", "Read", "Write", "WebSearch", "WebFetch"])
 
     def test_an_agent_past_its_time_is_stopped(self):
         path = self.directory / "claude"
@@ -416,13 +416,13 @@ class CodexTests(unittest.TestCase):
 
     def test_events_become_progress_and_the_last_message_is_the_reply(self):
         events = [{"type": "thread.started", "thread_id": "t-1"}, {"type": "turn.started"},
-                  {"type": "item.started", "item": {"type": "command_execution", "command": "/bin/zsh -lc 'premisedb recall x'"}},
+                  {"type": "item.started", "item": {"type": "command_execution", "command": "/bin/zsh -lc 'stated recall x'"}},
                   {"type": "item.completed", "item": {"type": "agent_message", "text": "{}"}},
                   {"type": "turn.completed", "usage": {}}]
         progress = []
         harness = Codex(self.executable(*events, last='{"title": "x"}'), model="gpt-6.1-sol", reasoning_effort="high")
         reply = harness.run("Why?", cwd=self.directory, env=dict(os.environ), on_progress=progress.append)
-        self.assertEqual((reply, progress), (Reply('{"title": "x"}', "t-1", ()), ["Shell: premisedb recall x"]))
+        self.assertEqual((reply, progress), (Reply('{"title": "x"}', "t-1", ()), ["Shell: stated recall x"]))
         argv = json.loads((self.directory / "argv.json").read_text())
         self.assertEqual(argv[:10], ["exec", "--json", "--skip-git-repo-check", "-s", "workspace-write", "-m",
                                      "gpt-6.1-sol", "-c", 'model_reasoning_effort="high"', "-o"])

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- The mark cut for small sizes: two 7px blocks and a 2px gap on whole pixels, so the gap stays open at 16 and 32px.
+       The full-size mark keeps its original 7-unit gap. -->
+  <style>path { fill: #0A0A0C; } @media (prefers-color-scheme: dark) { path { fill: #F2F2F4; } }</style>
+  <path d="M0 1H4A3 3 0 0 1 7 4V12A3 3 0 0 1 4 15H0Z M16 1H12A3 3 0 0 0 9 4V12A3 3 0 0 0 12 15H16Z"/>
+</svg>

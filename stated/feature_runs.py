@@ -8,7 +8,7 @@ Subjects run in parallel, up to the number of workers; each subject's dates run 
 starts from the value the one before left. A session that ends without its date done stops that subject's
 run, because the dates after it would start from the wrong value. The pending list is the run's only state:
 a run that stops, for whatever reason, is picked up by running it again. Sessions run in an empty folder,
-with the web off and PremiseDB's own fetching off, so what they can read is what the cutoff shows them.
+with the web off and Stated's own fetching off, so what they can read is what the cutoff shows them.
 After a subject's sessions, its derived features are computed mechanically, date by date.
 """
 
@@ -192,7 +192,7 @@ def _session(db_path: Path, definitions, subject_id: str, subject: str, day: str
              minutes: float) -> SessionResult:
     """One fresh session at the date's cutoff for every feature due then, tried again after a usage limit;
     done when each has a value or a check for the subject on the date afterwards."""
-    env = os.environ | {"PREMISEDB_DB": str(db_path), "PREMISEDB_AS_OF": day, "PREMISEDB_FETCH": "0",
+    env = os.environ | {"STATED_DB": str(db_path), "STATED_AS_OF": day, "STATED_FETCH": "0",
                         "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"}
     while True:
         try:
@@ -217,8 +217,8 @@ def _session(db_path: Path, definitions, subject_id: str, subject: str, day: str
 
 def _prompt(definitions, subject_id: str, subject: str, day: str, author: str) -> str:
     listed = "\n".join(f"- {d.key} (definition {d.id})" for d in definitions)
-    return (f"Use the premisedb-state skill for each feature below, one at a time. This session is at the cutoff "
-            f"{day}: every premisedb command reads and writes as of that date. `premisedb feature ID` shows a "
+    return (f"Use the stated-state skill for each feature below, one at a time. This session is at the cutoff "
+            f"{day}: every `stated` command reads and writes as of that date. `stated feature ID` shows a "
             f"feature's instructions.\n\nSubject: {subject} (Entity {subject_id}).\nFeatures:\n{listed}\n\n"
             f"For each feature, write its value for this subject as of {day}, or, if its latest value still holds, "
             f"confirm it. Use author_id \"{author}\". Finish with one line per feature: its key, then the value's "

@@ -24,7 +24,7 @@ EFFORTS = {
         "and no outside sources.", False, False),
     5: ("You have about five minutes.", False, False),
     20: ("You have about twenty minutes. Where the graph falls short, go to outside sources on the web, ingest "
-         "what you rely on with `premisedb ingest --url` and add what you learn to your layer.", True, True),
+         "what you rely on with `stated ingest --url` and add what you learn to your layer.", True, True),
 }
 RUN_EFFORTS = (60, 180, 480)  # Longer than one session can hold: planned, worked an item at a time, then reported (runs.py).
 DEFAULT_EFFORT = 5
@@ -215,7 +215,7 @@ class Agent:
         self.denied: list[str] = []
         self.stop_at = time.monotonic() + seconds
         self._run = partial(harness.run, cwd=db_path.parent, web=web, on_progress=partial(store.add_progress, turn_id),
-                            env=os.environ | {"PREMISEDB_DB": str(db_path), "PREMISEDB_FETCH": "1" if web else "0",
+                            env=os.environ | {"STATED_DB": str(db_path), "STATED_FETCH": "1" if web else "0",
                                               "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"})
 
     def run(self, prompt: str, session_id: str | None = None, seconds: float | None = None, on_progress=None):
@@ -316,8 +316,8 @@ def _prompt(question: str, author: str, budget: str, *, first: bool) -> str:
     if not first:
         return (f"Answer this follow-up as an answer document in the same format, checked with check-answer. {budget}"
                 f"\n\n{question}")
-    return ("Use the premisedb-research skill for the research and the premisedb-answer skill for the reply. "
-            f"The research database is the one PREMISEDB_DB names; use the author ID {author} for anything you write. "
+    return ("Use the stated-research skill for the research and the stated-answer skill for the reply. "
+            f"The research database is the one STATED_DB names; use the author ID {author} for anything you write. "
             f"{budget}\n\nQuestion: {question}")
 
 

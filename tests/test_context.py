@@ -8,8 +8,8 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from premisedb import ContextWriter, OpenRouterContextWriter, RecordStore, write_document_context
-from premisedb.cli import main
+from stated import ContextWriter, OpenRouterContextWriter, RecordStore, write_document_context
+from stated.cli import main
 
 
 class ScriptedWriter(ContextWriter):
@@ -74,7 +74,7 @@ class DocumentContextTests(unittest.TestCase):
     def test_openrouter_writer_sends_model_and_reasoning_effort(self):
         writer = OpenRouterContextWriter(api_key="key")
         body = {"choices": [{"message": {"content": "Title"}}]}
-        with patch("premisedb.context.urlopen", return_value=BytesIO(json.dumps(body).encode())) as request:
+        with patch("stated.context.urlopen", return_value=BytesIO(json.dumps(body).encode())) as request:
             self.assertEqual(writer.complete("Prompt"), "Title")
         sent = request.call_args.args[0]
         self.assertEqual(sent.full_url, "https://openrouter.ai/api/v1/chat/completions")
@@ -86,7 +86,7 @@ class DocumentContextTests(unittest.TestCase):
                     ({"return_value": BytesIO(b"not JSON")}, ValueError),
                     ({"return_value": BytesIO(b'{"choices": []}')}, ValueError))
         for mock, error in failures:
-            with self.subTest(error=error), patch("premisedb.context.urlopen", **mock), self.assertRaises(error):
+            with self.subTest(error=error), patch("stated.context.urlopen", **mock), self.assertRaises(error):
                 writer.complete("Prompt")
         for options in ({"model": " "}, {"reasoning_effort": ""}, {"timeout": 0}):
             with self.subTest(options=options), self.assertRaises(ValueError):
@@ -97,12 +97,12 @@ class DocumentContextTests(unittest.TestCase):
     def test_cli_ingest_adds_context_without_being_asked(self):
         text_file = self.path.parent / "note.txt"
         text_file.write_text("PowerFrame Q2 2026 results. Backlog rose.", encoding="utf-8")
-        environment = {k: v for k, v in os.environ.items() if not k.startswith("PREMISEDB_CONTEXT_")}  # Defaults.
+        environment = {k: v for k, v in os.environ.items() if not k.startswith("STATED_CONTEXT_")}  # Defaults.
         def ingest(description, key, response):
             stdout, stderr = StringIO(), StringIO()
             with patch.dict(os.environ, {**environment, "OPENROUTER_API_KEY": key}, clear=True), \
                     patch("sys.stdin", StringIO(json.dumps({"description": description, "author_id": "agent"}))), \
-                    patch("premisedb.context.urlopen", **response) as request, \
+                    patch("stated.context.urlopen", **response) as request, \
                     redirect_stdout(stdout), redirect_stderr(stderr):
                 code = main(["--db", str(self.path), "ingest", str(text_file), "--input", "-"])
             return code, json.loads(stdout.getvalue()), stderr.getvalue(), request

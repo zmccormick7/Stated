@@ -1,5 +1,5 @@
-The Relevant Segment Extraction algorithm in premisedb/rse.py and the
-Cohere/Voyage score transforms in premisedb/reranking.py are adapted from
+The Relevant Segment Extraction algorithm in stated/rse.py and the
+Cohere/Voyage score transforms in stated/reranking.py are adapted from
 dsRAG (https://github.com/D-Star-AI/dsRAG), under the following license:
 
 MIT License

@@ -1,16 +1,16 @@
-# PremiseDB database: original v0 design
+# Stated database: original v0 design
 
-**Status: the original design record, kept for its reasoning.** Parts of it describe plans that changed (for example decimal-string values, `calculated_from` links and membership projections); the [README](../README.md), [CLI guide](cli.md), [Python API guide](python-api.md) and `premisedb/schema.sql` describe what is implemented. Records and links store current contents and one database-assigned UTC `updated_at` timestamp. Updates replace earlier values; there are no history tables, revision counters, endpoint pins, audit trails or historical reads. A store opened at a cutoff date filters current rows by publication date and write stamp (`as_of`), which the Python API guide describes; it does not reconstruct earlier contents. The implementation supports record/link operations, lexical record and document search, caller-supplied document-level CCH, bounded directional lookups and two-hop expansion, a reverse-citation index from source ranges to citing records, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. The richer retrieval interface below remains proposed. SQLite and Faiss remain selected, with no performance claims. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
+**Status: the original design record, kept for its reasoning.** Parts of it describe plans that changed (for example decimal-string values, `calculated_from` links and membership projections); the [README](../README.md), [CLI guide](cli.md), [Python API guide](python-api.md) and `stated/schema.sql` describe what is implemented. Records and links store current contents and one database-assigned UTC `updated_at` timestamp. Updates replace earlier values; there are no history tables, revision counters, endpoint pins, audit trails or historical reads. A store opened at a cutoff date filters current rows by publication date and write stamp (`as_of`), which the Python API guide describes; it does not reconstruct earlier contents. The implementation supports record/link operations, lexical record and document search, caller-supplied document-level CCH, bounded directional lookups and two-hop expansion, a reverse-citation index from source ranges to citing records, text-only source ingestion, exact source-text reads and ordered passage storage with a basic splitter. The richer retrieval interface below remains proposed. SQLite and Faiss remain selected, with no performance claims. The [dsRAG and minDB review](dsrag-mindb-review.md) explains the source ideas.
 
 ## 1. What the database owns
 
-PremiseDB stores current research and retrieves useful connected context. It owns record identity, current contents, evidence locators, relationships and the query engine that combines document search with graph exploration.
+Stated stores current research and retrieves useful connected context. It owns record identity, current contents, evidence locators, relationships and the query engine that combines document search with graph exploration.
 
-**Contextual Chunk Headers (CCH) and Relevant Segment Extraction (RSE) from dsRAG are required parts of document retrieval in v0.** Headers provide document and section context when ranking chunks; RSE turns scored chunks into variable-length evidence segments. The project author's experience with these techniques on financial documents, including FinanceBench, motivates starting with both. Graph retrieval builds on this document-retrieval foundation. PremiseDB's implementation and performance still need to be demonstrated.
+**Contextual Chunk Headers (CCH) and Relevant Segment Extraction (RSE) from dsRAG are required parts of document retrieval in v0.** Headers provide document and section context when ranking chunks; RSE turns scored chunks into variable-length evidence segments. The project author's experience with these techniques on financial documents, including FinanceBench, motivates starting with both. Graph retrieval builds on this document-retrieval foundation. Stated's implementation and performance still need to be demonstrated.
 
-Agents conduct investigations through their existing harnesses. PremiseDB owns the document-processing and retrieval pipeline and can call configured local or hosted models for semantic sectioning, contextual descriptions, embeddings and relevance scoring. Caller-supplied outputs remain supported for existing pipelines and testing. Financial calculations remain in Excel, Python or another modeling tool.
+Agents conduct investigations through their existing harnesses. Stated owns the document-processing and retrieval pipeline and can call configured local or hosted models for semantic sectioning, contextual descriptions, embeddings and relevance scoring. Caller-supplied outputs remain supported for existing pipelines and testing. Financial calculations remain in Excel, Python or another modeling tool.
 
-The standard document-retrieval profile uses contextualized embeddings, lexical retrieval, semantic reranking and RSE. Provider choice is configuration. A text query can be embedded and reranked by PremiseDB without requiring the caller to perform those steps. Lexical-only retrieval is an explicit alternative profile, not a restriction on the standard pipeline; exact reads and graph operations do not need to invoke a model.
+The standard document-retrieval profile uses contextualized embeddings, lexical retrieval, semantic reranking and RSE. Provider choice is configuration. A text query can be embedded and reranked by Stated without requiring the caller to perform those steps. Lexical-only retrieval is an explicit alternative profile, not a restriction on the standard pipeline; exact reads and graph operations do not need to invoke a model.
 
 The six research record types are **Entity, Source, Finding, Question, Model and Variable**. Feature definitions, the instructions for producing feature values, are procedures rather than knowledge and live in their own table. Relationships are addressable graph infrastructure. Document chunks, database transactions and index generations are storage infrastructure. There is no financial **Run** record in v0.
 
@@ -39,7 +39,7 @@ Proposed concurrency scenario: 100 active agents each retrieving once per 10 sec
 
 ## 3. Storage stack and external dependencies
 
-**One authoritative SQLite database, immutable source artifacts on disk, and derived Faiss indexes.** PremiseDB's custom layer supplies the graph operations and retrieval planner.
+**One authoritative SQLite database, immutable source artifacts on disk, and derived Faiss indexes.** Stated's custom layer supplies the graph operations and retrieval planner.
 
 The first ingestion slice stores caller-supplied canonical UTF-8 text and its SHA-256 in SQLite, atomically with the Source record. Original-file storage and the staged artifact pipeline below remain planned. Measure text-storage behavior at the representative workload before introducing a separate text store.
 
@@ -47,7 +47,7 @@ SQLite and Faiss are embedded libraries, not hosted services. They are the two c
 
 | Component | Contents and responsibility |
 | --- | --- |
-| `premisedb.sqlite` | Current records and links, source manifests, passages, embedding payloads, exact indexes and pending processing work. |
+| `stated.sqlite` | Current records and links, source manifests, passages, embedding payloads, exact indexes and pending processing work. |
 | SQLite FTS5 tables | Rebuildable lexical indexes for research records and passages; updated in the same transaction as their indexed content. |
 | `objects/` | Planned immutable, content-addressed original artifacts. Canonical extracted text currently stays in SQLite. |
 | `indexes/` | Faiss generations and their manifests, rebuilt from retained embedding payloads. Separate document and research-record candidate pools. |
@@ -56,7 +56,7 @@ Proposed per-workspace layout:
 
 ```text
 workspace/
-  premisedb.sqlite
+  stated.sqlite
   objects/<content-hash>
   indexes/<embedding-space>/<research-or-passages>/<generation>.faiss
 ```
@@ -69,8 +69,8 @@ SQLite manages its WAL/SHM sidecars. Temporary ingestion and index-build files a
 | Embeddings | Configurable embedding adapter, with explicit model/configuration identity and dimensions. |
 | Text reranking | Configurable relevance-scoring adapter, separate from Faiss vector refinement. |
 | Document parsing and tokenization | Ordinary libraries/adapters; concrete packages remain to be selected. OCR or multimodal providers can be added for documents needing them. |
-| Graph traversal, CCH assembly, RSE, query planning and context selection | PremiseDB code, incorporating dsRAG's CCH/RSE components and minDB's retrieval approach. |
-| Work queues, index manifests and invalidation tracking | SQLite tables plus PremiseDB workers in the same deployment. |
+| Graph traversal, CCH assembly, RSE, query planning and context selection | Stated code, incorporating dsRAG's CCH/RSE components and minDB's retrieval approach. |
+| Work queues, index manifests and invalidation tracking | SQLite tables plus Stated workers in the same deployment. |
 
 These are capability boundaries, not a requirement for a separate vendor per capability. The generative-model adapter can serve context generation and query rewriting. No additional graph database, vector database, search server, cache service or message broker is required by this design. Runtime libraries, model clients and parsers mean that SQLite and Faiss will not literally be the only software dependencies.
 
@@ -93,7 +93,7 @@ id, kind, title, text, attributes
 author_id, updated_at, status
 ```
 
-`updated_at` is assigned by PremiseDB on each successful create or update; `author_id` identifies the last editor. Publication dates and financial periods describe the subject matter and belong in source metadata or attributes. They do not reconstruct past database contents. Flexible attributes use validated JSON, with a small typed core:
+`updated_at` is assigned by Stated on each successful create or update; `author_id` identifies the last editor. Publication dates and financial periods describe the subject matter and belong in source metadata or attributes. They do not reconstruct past database contents. Flexible attributes use validated JSON, with a small typed core:
 
 | Kind | Core attributes |
 | --- | --- |
@@ -166,7 +166,7 @@ For example, a chunk containing a debt-maturity table can carry the issuer, fili
 
 Store current document title/summary and section title/summary with author, provenance and `updated_at`. Sections have ordered source ranges and may have parent sections. Each passage references its section and current context. Replacing context does not retain previous summaries. These are source-processing structures, not additional research record types.
 
-PremiseDB prepares descriptive titles and summaries during ingestion using its configured context model, or accepts them from an agent or another ingestion pipeline. Semantic sectioning can use a configured model when source structure is insufficient. Record the producer, input content hash and model/prompt configuration with generated context; PremiseDB renders the resulting header deterministically. A document can be ingested with only known titles while enrichment is pending; mark its context as incomplete rather than treating missing summaries as equivalent to a fully enriched document.
+Stated prepares descriptive titles and summaries during ingestion using its configured context model, or accepts them from an agent or another ingestion pipeline. Semantic sectioning can use a configured model when source structure is insufficient. Record the producer, input content hash and model/prompt configuration with generated context; Stated renders the resulting header deterministically. A document can be ingested with only known titles while enrichment is pending; mark its context as incomplete rather than treating missing summaries as equivalent to a fully enriched document.
 
 Embed **header plus chunk text**, and use the same contextual representation for text reranking. Lexical search indexes header and body separately so their weighting can be tuned. Identify generated inputs with a hash of the source range, rendered header and provider configuration. Changing a header refreshes affected search items without changing source text or citations. Reuse an embedding only when the exact input and configuration match; expose missing embeddings explicitly.
 
@@ -262,7 +262,7 @@ SQLite-backed workers claim jobs with a lease and claim token in a short transac
 
 Faiss maintenance processes pending item IDs and reads their current embedding payloads. A published base and bounded delta serve searches; exact eligibility checks reject obsolete IDs. During rebuilds, retain pending IDs changed during the build until the replacement incorporates their current payloads. Publish a verified replacement file atomically and keep the old file only until its readers finish. Restart from current SQLite state and pending work, without replaying research history.
 
-Use CPU Faiss initially. Share immutable serving generations among readers; synchronize writes to a mutable delta or replace that delta with immutable snapshots. Faiss supports concurrent CPU searches but does not itself make concurrent search/add or add/add safe. PremiseDB owns this coordination. [Faiss concurrency guidance](https://github.com/facebookresearch/faiss/wiki/FAQ#can-searches-and-additions-be-performed-concurrently-from-several-threads).
+Use CPU Faiss initially. Share immutable serving generations among readers; synchronize writes to a mutable delta or replace that delta with immutable snapshots. Faiss supports concurrent CPU searches but does not itself make concurrent search/add or add/add safe. Stated owns this coordination. [Faiss concurrency guidance](https://github.com/facebookresearch/faiss/wiki/FAQ#can-searches-and-additions-be-performed-concurrently-from-several-threads).
 
 Each retrieval uses a serving index file and checks candidates against current SQLite state. Capture required graph context in a short read transaction. Model calls run outside it; revalidate relevant input fingerprints afterward and retry within a bound or report changed/incomplete context. `updated_at` is a last-edit timestamp, not a global snapshot token. Historical queries are unsupported; a cutoff filters by evidence date and stamp.
 
@@ -335,7 +335,7 @@ Traversal follows current links and checks scope at each intermediate node. Futu
 
 A separate `connect` path-finding primitive can follow after these three operations prove useful. No general graph query language is required for v0.
 
-## 8. Query execution: the part PremiseDB should own
+## 8. Query execution: the part Stated should own
 
 At ingestion, the document path is **document/section context and graph background → Contextual Chunk Headers → contextualized embeddings and lexical index**. At query time, document search and graph exploration feed one another: graph paths can introduce evidence subqueries before RSE, and RSE-selected ranges can reveal prior research through reverse citations. Model providers and retrieval profiles are configurable.
 

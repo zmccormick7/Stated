@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from premisedb import RecordStore
+from stated import RecordStore
 
 
 class RecordStoreTests(unittest.TestCase):
@@ -63,7 +63,7 @@ class RecordStoreTests(unittest.TestCase):
     def test_resolve_id_accepts_exact_ids_and_unique_prefixes(self):
         ids = ["abcdef12-0000-4000-8000-000000000001", "abcdef12-9999-4000-8000-000000000002",
                "abcdef13-0000-4000-8000-000000000003", "a1111111-0000-4000-8000-000000000004"]
-        with patch("premisedb.store.uuid4", side_effect=ids):
+        with patch("stated.store.uuid4", side_effect=ids):
             first, second, third = [self.store.create("Finding", text=t, author_id="a") for t in "ABC"]
             link = self.store.create_link(first.id, third.id, "about", author_id="a")
         self.assertEqual(self.store.resolve_id(first.id), first.id)

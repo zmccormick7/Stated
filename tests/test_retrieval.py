@@ -2,7 +2,7 @@ from math import exp
 import unittest
 from unittest.mock import patch
 
-from premisedb import (DocumentContext, OpenRouterReranker, RecordStore, Reranker, SourceSegment,
+from stated import (DocumentContext, OpenRouterReranker, RecordStore, Reranker, SourceSegment,
                       extract_segments, retrieve)
 
 

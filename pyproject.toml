@@ -3,19 +3,19 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "premisedb"
+name = "stated"
 version = "0.0.1"
 description = "A research database for agents"
 requires-python = ">=3.12"
 
 [project.scripts]
-premisedb = "premisedb.cli:main"
+stated = "stated.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["premisedb*"]
+include = ["stated*"]
 
 [tool.setuptools.package-data]
-premisedb = ["schema.sql", "ui/schema.sql", "ui/static/*", "skills/*/SKILL.md"]
+stated = ["schema.sql", "ui/schema.sql", "ui/static/*", "skills/*/SKILL.md"]
 
 [project.optional-dependencies]
 cli = ["tiktoken>=0.12,<1", "pypdf>=5,<7"]
