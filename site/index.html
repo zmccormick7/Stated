@@ -786,7 +786,8 @@ mark.on { background-size: 100% 100%; }
     function size() {
       dpr = Math.min(2, window.devicePixelRatio || 1); W = cv.clientWidth; H = cv.clientHeight; VW = view.clientWidth; VH = view.clientHeight;
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      S0 = Math.round(Math.min(W, H) * 0.24); LBL = Math.min(30, Math.round(S0 * 0.22));   // the cell, and its value label, as the zoom starts LW = ledger.offsetWidth; LH = ledger.offsetHeight;
+      S0 = Math.round(Math.min(W, H) * 0.24); LBL = Math.min(30, Math.round(S0 * 0.22));   // the cell, and its value label, as the zoom starts
+      LW = ledger.offsetWidth; LH = ledger.offsetHeight;
     }
     var C = {};
     function tones() { var cs = getComputedStyle(sec); ["fg", "muted", "faint", "accent", "bg", "rule"].forEach(function (k) { C[k] = cs.getPropertyValue("--" + k).trim(); }); C.down = cs.getPropertyValue("--down-ink").trim(); }
