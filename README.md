@@ -1,6 +1,6 @@
 # Stated
 
-**Stated is a graph database designed for scaling fundamental investment research with agents.** Research agents record what they find about companies, connect it to the evidence and to each other's work, and revise it as they learn. Ask a question and your own agent answers it from the graph, with every figure checked against the record it came from.
+**Most of the information that moves markets is qualitative. Stated turns it into data a systematic strategy can use.** Agents read filings, calls and disclosures the way an analyst would and record typed, point-in-time values for every company and date you schedule, each tied to the evidence behind it. They work on a shared research graph, so what one investigation learns, the next starts from.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
