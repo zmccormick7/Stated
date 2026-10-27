@@ -30,7 +30,7 @@ Fresh scoring cost $0.058849176: 353 Jev requests and 20 batch requests each for
 
 ## Reproduce
 
-The collection and evaluation scripts for this check were removed from the repository. They remain at commit [`4930cfe`](https://github.com/Implied-Capital/PremiseDB/tree/4930cfe6aa6efaaef59af8b33efade0b9aec5dfb/experiments). They used the [pinned FinQA test.json](https://raw.githubusercontent.com/czyssrs/FinQA/0f16e2867befa6840783e58be38c9efb9229d742/dataset/test.json), SHA-256 `831dbfb2e785dbc227f895ce3f24046433467aec67b09db2bd6ac7692a8a30dc`, and made paid OpenRouter calls to collect scores. The numerical and behavioral checks above still run in the test suite:
+The collection and evaluation scripts for this check were removed from the repository. They remain at commit [`4930cfe`](https://github.com/zmccormick7/Stated/tree/4930cfe6aa6efaaef59af8b33efade0b9aec5dfb/experiments). They used the [pinned FinQA test.json](https://raw.githubusercontent.com/czyssrs/FinQA/0f16e2867befa6840783e58be38c9efb9229d742/dataset/test.json), SHA-256 `831dbfb2e785dbc227f895ce3f24046433467aec67b09db2bd6ac7692a8a30dc`, and made paid OpenRouter calls to collect scores. The numerical and behavioral checks above still run in the test suite:
 
 ```sh
 python -m pip install -e '.[evaluation]'
