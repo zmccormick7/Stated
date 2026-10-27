@@ -12,8 +12,8 @@
 You need Python 3.12 or later built against SQLite 3.51.3 or later with FTS5 (`python -c "import sqlite3; print(sqlite3.sqlite_version)"` shows the version), plus [Claude Code](https://code.claude.com) or [Codex](https://openai.com/codex) signed in to your own account.
 
 ```bash
-git clone https://github.com/zmccormick7/PremiseDB.git
-pipx install "./PremiseDB[cli]"
+git clone https://github.com/zmccormick7/Stated.git
+pipx install "./Stated[cli]"
 stated ui
 ```
 
