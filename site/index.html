@@ -237,6 +237,35 @@ mark.on { background-size: 100% 100%; }
 .brief-meta dt { font: 12px/1.8 var(--mono); color: var(--faint); }
 .brief-meta dd { margin: 0; }
 
+.ledger { position: absolute; left: 50%; top: 50%; width: min(720px, 100%); box-sizing: border-box; padding: 20px 24px 16px; border-radius: 18px; background: rgba(255, 255, 255, 0.03); box-shadow: inset 0 0 0 1px var(--rule); transform: translate(-50%, -50%); overflow: hidden; visibility: hidden; }
+.lg-head, .lg-foot { display: flex; justify-content: space-between; gap: 12px; font: 12px var(--mono); color: var(--faint); }
+.lg-head { padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.lg-foot { padding-top: 14px; border-top: 1px solid var(--rule); }
+.lg-foot b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+.lg-rows { list-style: none; margin: 0; padding: 0; }
+.lg-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; padding: 11px 8px; margin: 0 -8px; border-bottom: 1px solid var(--rule); border-radius: 8px; transition: background-color 400ms ease; }
+.lg-row:last-child { border-bottom: 0; }
+.lg-row.hot { background: rgba(138, 157, 255, 0.08); }
+.lg-claim { grid-column: 1; margin: 0; font-size: 0.9375rem; line-height: 1.4; color: var(--muted); transition: color 400ms ease; }
+.lg-row.hot .lg-claim { color: var(--fg); }
+.lg-status { grid-column: 2; grid-row: 1 / span 2; align-self: center; min-width: 9.5em; padding: 4px 10px; border-radius: 999px; box-sizing: border-box; text-align: center; font: 500 11.5px var(--mono); }
+.lg-status:empty { visibility: hidden; }
+.lg-status.ok { background: var(--up-bg); color: var(--up-ink); }
+.lg-status.no { background: var(--down-bg); color: var(--down-ink); }
+.lg-status.none { background: var(--flat-bg); color: var(--flat-ink); }
+.lg-tags { grid-column: 1; display: flex; align-items: center; gap: 6px; height: 18px; margin-top: 5px; overflow: hidden; white-space: nowrap; font: 11px var(--mono); color: var(--faint); }
+.lg-tag { display: none; align-items: center; gap: 7px; min-width: 0; }
+.lg-tag::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.lg-tag.no::before { background: var(--down-ink); }
+.lg-tag.on { display: inline-flex; }
+.lg-tag span { display: none; overflow: hidden; text-overflow: ellipsis; }
+.lg-tag.newest span { display: inline; animation: tag-in 450ms ease; }
+@keyframes tag-in { from { opacity: 0; transform: translateX(-4px); } }
+.lg-tint { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.lg-lines { position: absolute; inset: 8%; display: grid; grid-template-rows: repeat(8, 1fr); align-items: center; opacity: 0; pointer-events: none; }
+.lg-lines i { display: block; height: 36%; background: rgba(255, 255, 255, 0.55); }
+.answer { position: absolute; left: 0; top: 0; padding: 0 0.25em; border-radius: 6px; line-height: 1.2; font: 500 40px/1.2 var(--mono); letter-spacing: -0.02em; color: var(--fg); white-space: nowrap; pointer-events: none; visibility: hidden; }
+
 .ft { position: absolute; left: 50%; top: 50%; width: min(680px, 100%); transform: translate(-50%, -50%); }
 .ft-head { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 12px; font: 12px var(--mono); color: var(--faint); }
 .ft-head b { color: var(--fg); font-weight: 500; }
@@ -260,6 +289,12 @@ mark.on { background-size: 100% 100%; }
   .hud { font-size: 10.5px; }
   .brief { padding: 20px; }
   .brief-text { font-size: 1.0625rem; }
+  .ledger { padding: 14px 14px 12px; }
+  .lg-head, .lg-foot { font-size: 10.5px; }
+  .lg-row { padding: 8px 6px; margin: 0 -6px; column-gap: 10px; }
+  .lg-claim { grid-column: 1 / -1; font-size: 0.75rem; line-height: 1.35; }
+  .lg-tags { grid-row: 2; height: 16px; margin-top: 4px; font-size: 10px; }
+  .lg-status { grid-column: 2; grid-row: 2; align-self: end; min-width: 0; padding: 2px 7px; font-size: 10px; }
   .ft table { font-size: 11px; }
   .ft th, .ft td { padding: 8px 10px; }
 }
@@ -320,7 +355,8 @@ mark.on { background-size: 100% 100%; }
   .btn { padding: 16px 26px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  mark, .btn, .copy, .pit-doc, .pit-val { transition: none; }
+  mark, .btn, .copy, .pit-doc, .pit-val, .lg-row, .lg-claim { transition: none; }
+  .lg-tag.newest span { animation: none; }
   .caret { animation: none; }
 }
 </style>
@@ -398,6 +434,14 @@ mark.on { background-size: 100% 100%; }
           <dt>Runs on</dt><dd>Every company, every trading day</dd>
         </dl>
       </div>
+      <div class="ledger" id="ledger" aria-label="Illustrative: eight demand claims from Ostrava's Q2 call, each checked against what its customers, suppliers and distributors said by 2024-08-06">
+        <div class="lg-head"><span>Demand claims · Q2 earnings call</span><span>Status</span></div>
+        <ol class="lg-rows"></ol>
+        <div class="lg-foot"><span><b id="lg-read">0</b> documents read</span><span><b id="lg-ok">0</b> of 8 corroborated</span></div>
+        <div class="lg-tint" id="lg-tint"></div>
+        <div class="lg-lines" id="lg-lines" aria-hidden="true"></div>
+      </div>
+      <div class="answer" id="answer">0.38</div>
       <div class="ft" id="ft" aria-label="The feature table: one row per company per day">
         <div class="ft-head"><span><b>feature_table.csv</b></span><span id="ft-n"></span></div>
         <div class="ft-scroll">
@@ -625,36 +669,46 @@ mark.on { background-size: 100% 100%; }
     function fmt(n) { return Math.round(n).toLocaleString("en-US"); }
     function setHud(k, html) { if (hud[k].html !== html) { hud[k].html = html; hud[k].el.innerHTML = html; } }
 
-    /* One company's reading: its own filings and calls, and those of 64 customers, suppliers and distributors */
-    var R = rng(11), docs = [];
-    function cluster(n) {   // every document here was public by the as-of date
-      var c = { docs: [], x: 0, y: 0, r: 0, a: 0, oi: 0, npre: 0 };
-      for (var i = 0; i < n; i++) { var d = { c: c, st: R(), hit: 0, claim: -1, pre: true }; d.pi = c.npre++; c.docs.push(d); docs.push(d); }
-      return c;
-    }
-    var self = cluster(60), others = [];
-    for (var i = 0; i < 64; i++) others.push(cluster(28 + Math.floor(R() * 30)));
-    var inner = others.slice(0, 26), outer = others.slice(26);
-    inner.forEach(function (c, i) { c.a = (i / inner.length + 0.02) * 2 * Math.PI; });
-    outer.forEach(function (c, i) { c.a = (i / outer.length + 0.03) * 2 * Math.PI; });
-    function fromTop(c) { return (c.a / Math.PI * 180 + 90) % 360; }   // clockwise from twelve o'clock
-    var order = [self].concat(others.slice().sort(function (a, b) { return fromTop(a) - fromTop(b); }));
-    order.forEach(function (c, i) { c.oi = i; });
-    var preDocs = docs.filter(function (d) { return d.pre; }), nPre = preDocs.length;
-
-    // Ten passages bear on the answer: three of eight claims reach two confirmations, one is contradicted, four stay unverified
-    var CLAIMS = 8, HITS = [[0, 1], [1, 1], [0, 1], [2, 1], [4, 1], [1, 1], [3, 2], [0, 1], [5, 1], [2, 1]];
-    HITS.forEach(function (h, i) {
-      var c = order[1 + Math.floor((i + 0.5) / HITS.length * (order.length - 1))], pool = c.docs.filter(function (d) { return d.pre && !d.hit; });
-      var d = pool[Math.floor(R() * pool.length)]; d.hit = h[1]; d.claim = h[0];
+    /* The reading: eight demand claims from the Q2 call, checked against what customers, suppliers and distributors said.
+       Sources arrive in the order they are read, so rows resolve out of order; every one was public by 2024-08-06. */
+    var CLAIMS = [
+      "Demand from our largest customer remained strong through the quarter.",
+      "Bookings for automotive power devices grew sequentially.",
+      "Industrial customers have finished working down inventory.",
+      "We see early signs of recovery in consumer demand.",
+      "Data center orders are booked through the first half of 2025.",
+      "Our share at the three largest handset makers is stable.",
+      "Lead times on legacy nodes are extending again.",
+      "Channel partners are reordering at normal rates."
+    ];
+    var EVIDENCE = [   // [claim, when it is read (share of the reading), source, confirms]
+      [4, 0.08, "Customer · Northgate Systems · Q2 call · Jul 23", true],
+      [0, 0.17, "Customer · Kestrel Motors · Q2 call · Jul 24", true],
+      [3, 0.27, "Customer · Pellucid Devices · Q2 call · Jul 25", true],
+      [1, 0.38, "Customer · Brightway Auto · Q2 call · Jul 30", true],
+      [2, 0.48, "Distributor · Corrin Electronics · Q2 call · Jul 31", false],
+      [1, 0.58, "Supplier · Halden Substrates · Q2 call · Aug 1", true],
+      [0, 0.67, "Distributor · Arlen Supply · 10-Q · Aug 2", true],
+      [6, 0.74, "Distributor · Arlen Supply · 10-Q · Aug 2", true],
+      [4, 0.86, "Supplier · Vantor Packaging · 10-Q · Aug 5", true]
+    ];
+    var READ = 2418;
+    var ledger = document.getElementById("ledger"), answer = document.getElementById("answer"), lgRead = document.getElementById("lg-read"), lgOk = document.getElementById("lg-ok");
+    var lgBody = ledger.querySelector(".lg-rows"), lgText = [].slice.call(ledger.querySelectorAll(".lg-head, .lg-rows, .lg-foot"));
+    var lgLines = document.getElementById("lg-lines"), lgTint = document.getElementById("lg-tint");
+    var rows = CLAIMS.map(function (text) {
+      var li = document.createElement("li"), q = document.createElement("p"), st = document.createElement("span"), tags = document.createElement("div"), bar = document.createElement("i");
+      li.className = "lg-row"; q.className = "lg-claim"; st.className = "lg-status"; tags.className = "lg-tags";
+      q.textContent = "“" + text + "”";
+      li.appendChild(q); li.appendChild(st); li.appendChild(tags); lgBody.appendChild(li);
+      var w = Math.max(0.3, Math.min(0.95, 0.4 + 0.55 * (text.length - 45) / 30));   // in the cell, a line per claim, as long as its quote
+      bar.style.width = (w * 100) + "%"; lgLines.appendChild(bar);
+      return { li: li, st: st, tags: tags, w: w, state: "" };
     });
-
-    // The read documents collapse into one cell, each into a slot of a square grid
-    var CW = 150, slotG = Math.ceil(Math.sqrt(nPre));
-    preDocs.forEach(function (d, i) {
-      var inset = CW * 0.84;
-      d.sx = -inset / 2 + ((i % slotG) + 0.5) / slotG * inset;
-      d.sy = -inset / 2 + (Math.floor(i / slotG) + 0.5) / slotG * inset;
+    EVIDENCE.forEach(function (ev) {
+      var t = document.createElement("span"), s = document.createElement("span");
+      t.className = "lg-tag " + (ev[3] ? "ok" : "no"); s.textContent = ev[2] + " · " + (ev[3] ? "confirms" : "contradicts");
+      t.appendChild(s); rows[ev[0]].tags.appendChild(t); ev.push(t);
     });
 
     /* The dataset: 1,500 companies by every weekday from 2015 to 2024, one value per cell */
@@ -664,6 +718,7 @@ mark.on { background-size: 100% 100%; }
     var C0 = dates.indexOf(Date.UTC(2024, 7, 6)), Q0 = Math.round(0.38 * 254), vals = null, gridImg = null;
     var LO = [26, 31, 44], HI = [118, 134, 224], PAL = [];
     for (var q = 0; q < 255; q++) { var f = q / 254; PAL.push("rgb(" + Math.round(lerp(LO[0], HI[0], f)) + "," + Math.round(lerp(LO[1], HI[1], f)) + "," + Math.round(lerp(LO[2], HI[2], f)) + ")"); }
+    var Q0RGB = PAL[Q0].slice(4, -1);
     function buildGrid() {   // each company's value holds between readings and moves when new documents arrive
       var G = rng(5);
       vals = new Uint8Array(COLS * ROWS);
@@ -690,14 +745,18 @@ mark.on { background-size: 100% 100%; }
       g.putImageData(im, 0, 0);
       buildTable();
     }
-    function pile(g, keep, seed, alpha) {   // a cell seen up close: the documents its value was read from
-      var c = document.createElement("canvas"), N = 256, x = rng(seed), cell = N / g, p;
+    function ledgerTex(widths, alpha) {   // a cell seen up close: a ledger like this one, a line per claim
+      var c = document.createElement("canvas"), N = 256, inset = N * 0.08, rowH = N * 0.84 / widths.length, h = rowH * 0.36, p;
       c.width = c.height = N; p = c.getContext("2d"); p.fillStyle = "rgba(255, 255, 255, " + alpha + ")";
-      for (var i = 0; i < g * g; i++) if (keep(i, x)) p.fillRect((i % g) * cell + cell * 0.2, Math.floor(i / g) * cell + cell * 0.15, cell * 0.6, cell * 0.7);
+      widths.forEach(function (w, i) { p.fillRect(inset, inset + (i + 0.5) * rowH - h / 2, N * 0.84 * w, h); });
       return c;
     }
-    var P0 = pile(slotG, function (i) { return i < nPre; }, 1, 0.6);
-    var PILES = [0, 1, 2, 3, 4, 5].map(function (j) { var g = 30 + j * 4, f = 0.35 + 0.1 * j; return pile(g, function (i, x) { return x() < f; }, 20 + j, 0.32); });   // other cells: piles of other sizes
+    var P0 = ledgerTex(rows.map(function (r) { return r.w; }), 0.55);
+    var PILES = [0, 1, 2, 3, 4, 5].map(function (j) {   // other companies: ledgers of other lengths
+      var x = rng(20 + j), n = 5 + Math.floor(x() * 7), ws = [];
+      for (var i = 0; i < n; i++) ws.push(0.3 + 0.65 * x());
+      return ledgerTex(ws, 0.3);
+    });
     var NAMES = { "-3": "HLCN", "-2": "MRDF", "-1": "PLHM", "0": "OSTV", "1": "ALDR", "2": "BRKW", "3": "CRVN" };
     function ticker(r) {
       var n = NAMES[r - R0W]; if (n) return n;
@@ -723,118 +782,63 @@ mark.on { background-size: 100% 100%; }
       document.getElementById("ft-n").textContent = fmt(COLS * ROWS) + " rows";
     }
 
-    /* Layout of the reading, in design units around the centre of the view */
-    var W = 0, H = 0, dpr = 1, k = 1, portrait = false, PITCH = 5.6, GW = 3.6, GH = 4.6, claimPos = [], sectors = [];
-    function place(c, cx, cy, cols) {
-      var rows = Math.ceil(c.docs.length / cols);
-      c.x = cx; c.y = cy; c.r = Math.max(cols, rows) * PITCH * 0.6;
-      c.docs.forEach(function (d, i) { d.rx = cx + ((i % cols) - (cols - 1) / 2) * PITCH; d.ry = cy + (Math.floor(i / cols) - (rows - 1) / 2) * PITCH; });
-    }
-    function layout() {
-      portrait = H > W * 1.05;
-      var ax = portrait ? 0.74 : 1.34, ay = portrait ? 1.3 : 0.9;
-      k = Math.min(W / (portrait ? 700 : 1060), H / (portrait ? 1040 : 760));
-      place(self, 0, 0, 10);
-      inner.forEach(function (c) { place(c, Math.cos(c.a) * 185 * ax, Math.sin(c.a) * 185 * ay, 7); });
-      outer.forEach(function (c) { place(c, Math.cos(c.a) * 300 * ax, Math.sin(c.a) * 300 * ay, 7); });
-      claimPos = [];
-      for (var i = 0; i < CLAIMS; i++) { var a = i / CLAIMS * 2 * Math.PI - Math.PI / 2; claimPos.push([Math.cos(a) * 62, Math.sin(a) * 42]); }
-      sectors = [["Customers", 270], ["Distributors", 35], ["Suppliers", 145]].map(function (s) { var a = s[1] / 180 * Math.PI; return [s[0], Math.cos(a) * 375 * ax, Math.sin(a) * 372 * ay]; });
-    }
+    var W = 0, H = 0, dpr = 1, S0 = 160, LBL = 30, VW = 0, VH = 0, LW = 0, LH = 0;
     function size() {
-      dpr = Math.min(2, window.devicePixelRatio || 1); W = view.clientWidth; H = view.clientHeight;
+      dpr = Math.min(2, window.devicePixelRatio || 1); W = cv.clientWidth; H = cv.clientHeight; VW = view.clientWidth; VH = view.clientHeight;
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      layout();
+      S0 = Math.round(Math.min(W, H) * 0.24); LBL = Math.min(30, Math.round(S0 * 0.22));   // the cell, and its value label, as the zoom starts LW = ledger.offsetWidth; LH = ledger.offsetHeight;
     }
     var C = {};
     function tones() { var cs = getComputedStyle(sec); ["fg", "muted", "faint", "accent", "bg", "rule"].forEach(function (k) { C[k] = cs.getPropertyValue("--" + k).trim(); }); C.down = cs.getPropertyValue("--down-ink").trim(); }
     function mono(px, weight) { return (weight || 400) + " " + px + "px \"JetBrains Mono\", ui-monospace, monospace"; }
 
-    /* Beats 2 to 4a: the reading, the cutoff and the collapse into one cell */
-    function drawReading(p, t4) {
-      var show = seg(p, 0.14, 0.19); if (!show) return 0;
-      var t2 = seg(p, 0.15, 0.54), ta = seg(t4, 0, 0.25);
-      var appear = seg(t2, 0, 0.14), reading = seg(t2, 0.14, 0.9), settle = seg(t2, 0.9, 1);
-      var tw = ease(seg(ta, 0, 0.3));   // links and labels clear as the documents gather into their cell
-      var kf = reading * order.length, ci = reading >= 1 ? order.length : Math.floor(kf), fr = kf - ci;
-      var gw = Math.max(1.3, GW * k), gh = Math.max(1.7, GH * k), cx = W / 2, cy = H / 2, cell = CW * 0.84 / slotG, read = 0;
-      var conf = [], contra = [], hitsRead = [];
-      for (var i = 0; i < CLAIMS; i++) { conf.push(0); contra.push(0); }
-      function X(x) { return cx + x * k; }
-      function Y(y) { return cy + y * k; }
-      docs.forEach(function (d) {
-        var c = d.c, isRead = d.pre && (c.oi < ci || (c.oi === ci && d.pi < fr * c.npre));
-        if (isRead) { read++; if (d.hit) { if (d.hit === 1) conf[d.claim]++; else contra[d.claim]++; hitsRead.push(d); } }
-        var a = show * seg(appear, c.oi / order.length * 0.75, c.oi / order.length * 0.75 + 0.25);
-        var x = d.rx, y = d.ry, w = gw, h = gh;
-        if (ta > 0) { var q = ease(seg(ta, d.st * 0.3, 0.7 + d.st * 0.3)); x = lerp(x, d.sx, q); y = lerp(y, d.sy, q); w = lerp(gw, cell * 0.6 * k, q); h = lerp(gh, cell * 0.7 * k, q); }
-        d.X = X(x); d.Y = Y(y); d.w = w; d.h = h; d.a = a; d.read = isRead;
+    /* Beat 2 and the start of 3: the ledger fills in, settles on its answer, then narrows into one cell */
+    function drawLedger(p, t4) {
+      var show = seg(p, 0.14, 0.18), t2 = seg(p, 0.15, 0.54), ta = seg(t4, 0, 0.25), e = ease(ta);
+      var r = seg(t2, 0.12, 0.88), settle = seg(t2, 0.9, 1);
+      ledger.style.visibility = show > 0 && ta < 1 ? "visible" : "hidden";
+      answer.style.visibility = settle > 0 && ta < 1 ? "visible" : "hidden";
+      if (!show || ta >= 1) return;
+      ledger.style.opacity = show;
+      var conf = [], no = [], newest = [], hot = -1, ok = 0;
+      rows.forEach(function (row, i) { conf.push(0); no.push(false); row.li.style.opacity = seg(t2, i * 0.012, 0.05 + i * 0.012); });
+      EVIDENCE.forEach(function (ev) {
+        var on = r >= ev[1];
+        ev[4].classList.toggle("on", on);
+        if (!on) return;
+        if (ev[3]) conf[ev[0]]++; else no[ev[0]] = true;
+        newest[ev[0]] = ev[4];
+        if (r - ev[1] < 0.07 && r < 1) hot = ev[0];
       });
-      ctx.save();
-      if (ta > 0) { ctx.globalAlpha = ease(seg(ta, 0.3, 0.9)); ctx.fillStyle = PAL[Q0]; ctx.fillRect(X(-CW / 2), Y(-CW / 2), CW * k, CW * k); }
-      function drawSet(test, color, alpha, grow) {
-        ctx.fillStyle = color;
-        docs.forEach(function (d) { if (d.a <= 0 || !test(d)) return; ctx.globalAlpha = alpha * d.a; var w = d.w * grow, h = d.h * grow; ctx.fillRect(d.X - w / 2, d.Y - h / 2, w, h); });
-      }
-      var marked = ta < 0.6;
-      drawSet(function (d) { return !d.read; }, C.fg, 0.15, 1);
-      drawSet(function (d) { return d.read && !(d.hit && marked); }, C.fg, 0.55, 1);
-      drawSet(function (d) { return d.read && d.hit === 1 && marked; }, C.accent, 1, 1.5);
-      drawSet(function (d) { return d.read && d.hit === 2 && marked; }, C.down, 1, 1.5);
-
-      // Each passage that bears on the answer, linked to the claim it confirms or contradicts
-      var la = (1 - tw) * show;
-      ctx.lineWidth = 1;
-      if (la > 0) hitsRead.forEach(function (d) {
-        var cp = claimPos[d.claim];
-        ctx.globalAlpha = 0.45 * la; ctx.strokeStyle = d.hit === 1 ? C.accent : C.down;
-        ctx.beginPath(); ctx.moveTo(d.X, d.Y); ctx.lineTo(X(cp[0]), Y(cp[1])); ctx.stroke();
+      rows.forEach(function (row, i) {
+        var state = no[i] ? "no" : conf[i] >= 2 ? "ok" : settle > 0 ? "none" : "";
+        if (state === "ok") ok++;
+        if (state !== row.state) { row.state = state; row.st.className = "lg-status " + state; row.st.textContent = { ok: "Corroborated", no: "Contradicted", none: "Unverified" }[state] || ""; }
+        row.li.classList.toggle("hot", i === hot);
+        [].forEach.call(row.tags.children, function (t) { t.classList.toggle("newest", t === newest[i]); });
       });
-      var cr = Math.max(2.5, 4.5 * k);
-      claimPos.forEach(function (cp, i) {
-        var state = contra[i] ? C.down : conf[i] >= 2 ? C.accent : reading >= 1 ? C.faint : null;
-        ctx.globalAlpha = la * appear; ctx.beginPath(); ctx.arc(X(cp[0]), Y(cp[1]), cr, 0, 2 * Math.PI);
-        if (state) { ctx.fillStyle = state; ctx.fill(); } else { ctx.strokeStyle = C.faint; ctx.stroke(); }
-      });
+      lgRead.textContent = fmt(r * READ); lgOk.textContent = ok;
 
-      // The reader: one session working through the clusters, its recent path trailing behind it
-      if (reading > 0 && reading < 1) {
-        var cur = order[ci], m2 = ease(Math.min(1, fr * 3)), prev = order[Math.max(0, ci - 1)], px = lerp(prev.x, cur.x, m2), py = lerp(prev.y, cur.y, m2);
-        ctx.strokeStyle = C.accent; ctx.lineWidth = 1.25;
-        for (var j = Math.max(0, ci - 5); j < ci; j++) {
-          var a0 = order[j], a1 = j + 1 === ci ? { x: px, y: py } : order[j + 1];
-          ctx.globalAlpha = 0.55 * (1 - (ci - j) / 6) * show;
-          ctx.beginPath(); ctx.moveTo(X(a0.x), Y(a0.y)); ctx.lineTo(X(a1.x), Y(a1.y)); ctx.stroke();
-        }
-        ctx.globalAlpha = show; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(X(px), Y(py), lerp(prev.r, cur.r, m2) * k + 6, 0, 2 * Math.PI); ctx.stroke();
-      }
+      // Into the cell: the window narrows to a square at the centre and its rows become lines
+      var b = Math.min(1, (VH - 80) / (LH + 60), VW / LW), lift = lerp(-28, 0, e);
+      ledger.style.transform = "translate(-50%, -50%) translateY(" + lift + "px) scale(" + lerp(b, S0 / LW, e) + ", " + lerp(b, S0 / LH, e) + ")";
+      lgText.forEach(function (el) { el.style.opacity = 1 - seg(ta, 0, 0.45); });
+      lgLines.style.opacity = seg(ta, 0.25, 0.7);
+      lgTint.style.opacity = seg(ta, 0.3, 0.9);
 
-      // Labels
-      var lab = appear * (1 - tw) * show;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      if (lab > 0) {
-        ctx.globalAlpha = lab; ctx.fillStyle = C.fg; ctx.font = mono(Math.max(10, 12 * k * 1.1), 500);
-        ctx.fillText("OSTV", X(0), Y(-34));
-        ctx.fillStyle = C.faint; ctx.font = "400 " + Math.max(10, Math.round(13 * k)) + "px " + getComputedStyle(sec).fontFamily;
-        sectors.forEach(function (s) { ctx.fillText(s[0], X(s[1]), Y(s[2])); });
-      }
-
-      // The value: below the company once the reading is done, then inside its cell
-      if (settle > 0) {
-        var vy = lerp(70, 0, ease(ta)), vs = Math.max(18, 30 * k);
-        ctx.globalAlpha = settle; ctx.fillStyle = C.fg; ctx.font = mono(Math.round(vs), 500);
-        ctx.fillText("0.38", X(0), Y(vy));
-        if (ta === 0) { ctx.globalAlpha = settle; ctx.fillStyle = C.faint; ctx.font = mono(Math.max(10, Math.round(12 * k))); ctx.fillText("3 of 8 demand claims corroborated", X(0), Y(vy) + vs * 0.9); }
-      }
-      ctx.restore();
-      return read;
+      // The answer: right-aligned under the window, then at the centre of its cell
+      var x0 = VW / 2 + LW * b / 2, y0 = VH / 2 - 28 + LH * b / 2 + 12;
+      answer.style.opacity = settle;
+      answer.style.left = lerp(x0, VW / 2, e) + "px"; answer.style.top = lerp(y0, VH / 2, e) + "px";
+      answer.style.fontSize = lerp(40, LBL, e) + "px";
+      answer.style.backgroundColor = "rgba(" + Q0RGB + ", " + seg(ta, 0.3, 0.9) + ")";   // in the cell, the value sits on a patch of the cell's colour
+      answer.style.transform = "translate(" + lerp(-100, -50, e) + "%, " + lerp(0, -50, e) + "%)";
     }
 
     /* Beats 4b and 5: the camera pulls back from the one cell to the whole table */
     function drawGrid(t4, fade) {
       if (!gridImg) buildGrid();
-      var aN = seg(t4, 0.22, 0.36) * fade, e = ease(seg(t4, 0.25, 1)), S0 = CW * k;
+      var aN = seg(t4, 0.22, 0.36) * fade, e = ease(seg(t4, 0.25, 1));
       var Sfit = Math.min(W * 0.94 / COLS, H * 0.9 / ROWS), sz = Math.exp(lerp(Math.log(S0), Math.log(Sfit), e));
       var w = ease(seg(e, 0.3, 1)), offX = (C0 + 0.5 - COLS / 2) * Sfit * w, offY = (R0W + 0.5 - ROWS / 2) * Sfit * w;   // our cell drifts to its true place in screen space
       var left = C0 + 0.5 - (W / 2 + offX) / sz, top = R0W + 0.5 - (H / 2 + offY) / sz, gap = sz >= 16 ? 1 : 0;
@@ -871,7 +875,12 @@ mark.on { background-size: 100% 100%; }
         if (sz >= 4) ctx.strokeRect(X0 - 3, Y0 - 3, sz + 6 - gap, sz + 6 - gap);
         else { ctx.beginPath(); ctx.arc(X0 + sz / 2, Y0 + sz / 2, 7, 0, 2 * Math.PI); ctx.stroke(); }
         var va = seg(sz, 40, 90);
-        if (va > 0) { ctx.globalAlpha = fade * va; ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = mono(Math.round(Math.max(18, 30 * k) * sz / S0), 500); ctx.fillText("0.38", X0 + sz / 2, Y0 + sz / 2); }
+        if (va > 0) {
+          var fs = LBL * sz / S0, tw = 0;
+          ctx.globalAlpha = fade * va; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = mono(Math.round(fs), 500); tw = ctx.measureText("0.38").width;
+          ctx.fillStyle = PAL[Q0]; ctx.fillRect(X0 + sz / 2 - tw / 2 - fs * 0.25, Y0 + sz / 2 - fs * 0.6, tw + fs * 0.5, fs * 1.2);
+          ctx.fillStyle = C.fg; ctx.fillText("0.38", X0 + sz / 2, Y0 + sz / 2);
+        }
       }
       // Companies down the left edge, dates across the top
       var tl = aN * seg(sz, 11, 18);
@@ -910,13 +919,13 @@ mark.on { background-size: 100% 100%; }
       // Beat 1: the brief is written, then steps aside for the reading
       var n = Math.round(seg(p, 0.01, 0.11) * BRIEF.length), out = seg(p, 0.12, 0.16);
       if (briefText.textContent.length !== n) briefText.textContent = BRIEF.slice(0, n);
-      brief.style.opacity = 1 - out; brief.style.transform = "translate(-50%, -50%) scale(" + (1 - 0.04 * out) + ")";
+      brief.style.opacity = 1 - out; brief.style.transform = "translate(-50%, -50%) translateY(" + (-40 * out) + "px) scale(" + (1 - 0.08 * out) + ")";
       brief.style.visibility = out < 1 ? "visible" : "hidden";
 
       ctx.clearRect(0, 0, W, H);
-      var t4 = seg(p, 0.57, 0.86), t5 = seg(p, 0.88, 0.98), fade = 1 - 0.85 * ease(seg(t5, 0, 0.5)), grid = null, read = 0;
+      var t4 = seg(p, 0.57, 0.86), t5 = seg(p, 0.88, 0.98), fade = 1 - 0.85 * ease(seg(t5, 0, 0.5)), grid = null;
       if (t4 >= 0.22) grid = drawGrid(t4, fade);
-      if (t4 < 0.25) read = drawReading(p, t4);
+      drawLedger(p, t4);
 
       // Beat 5: the export
       var fa = seg(t5, 0.15, 0.35);
@@ -924,17 +933,17 @@ mark.on { background-size: 100% 100%; }
       [].forEach.call(ft.querySelectorAll("tbody tr"), function (tr, i) { var v = ease(seg(t5, 0.2 + i * 0.05, 0.4 + i * 0.05)); tr.style.opacity = v; tr.style.transform = v < 1 ? "translateY(" + (1 - v) * 10 + "px)" : ""; });
 
       // The readout around the edges of the view
-      hudEl.style.opacity = p < 0.15 ? 0 : 1 - seg(t5, 0.1, 0.3);
+      hudEl.style.opacity = seg(p, 0.13, 0.17) * (1 - seg(t5, 0.1, 0.3));
       if (grid) {
         setHud("tl", "<b>demand_corroborated</b>");
         setHud("tr", grid.e < 0.5 ? "OSTV · 2024-08-06" : fmt(ROWS) + " companies · 2015–2024");
         setHud("bl", "<b>" + fmt(grid.values) + "</b> " + (grid.values === 1 ? "value" : "values"));
         setHud("br", "");
       } else {
-        setHud("tl", W < 600 ? "<b>OSTV</b>" : "<b>OSTV</b> · Ostrava Semiconductor");
+        setHud("tl", W < 600 ? "<b>demand_corroborated</b>" : "<b>demand_corroborated</b> · OSTV");
         setHud("tr", "as of 2024-08-06");
-        setHud("bl", "<b>" + fmt(read) + "</b> documents read");
-        setHud("br", "+ 64 counterparties");
+        setHud("bl", "");
+        setHud("br", "");
       }
     }
     function schedule() { if (!raf) raf = requestAnimationFrame(render); }
@@ -944,14 +953,16 @@ mark.on { background-size: 100% 100%; }
         window.scrollTo({ top: sec.offsetTop + span * JUMP[i], behavior: reduce ? "auto" : "smooth" });
       });
     });
+    lgTint.style.background = PAL[Q0];
     tones(); size(); render();
-    (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(schedule);
+    (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(function () { size(); schedule(); });
     window.addEventListener("scroll", schedule, { passive: true });
     var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { size(); schedule(); }, 100); });
     var mq = window.matchMedia("(prefers-color-scheme: dark)");
     if (mq.addEventListener) mq.addEventListener("change", function () { tones(); schedule(); });
     setTimeout(function () { if (!gridImg) buildGrid(); }, 1500);   // build the dataset off the critical path
   })();
+
 
   /* Backtests: the as-of date moves along the filings; a document comes into focus only once it is public */
   (function pointInTime() {
