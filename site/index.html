@@ -243,7 +243,7 @@ mark.on { background-size: 100% 100%; }
 .lg-foot { padding-top: 14px; border-top: 1px solid var(--rule); }
 .lg-foot b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
 .lg-rows { list-style: none; margin: 0; padding: 0; }
-.lg-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; padding: 11px 8px; margin: 0 -8px; border-bottom: 1px solid var(--rule); border-radius: 8px; transition: background-color 400ms ease; }
+.lg-row { box-sizing: border-box; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; padding: 11px 8px; margin: 0 -8px; border-bottom: 1px solid var(--rule); border-radius: 8px; transition: background-color 400ms ease; }
 .lg-row:last-child { border-bottom: 0; }
 .lg-row.hot { background: rgba(138, 157, 255, 0.08); }
 .lg-claim { grid-column: 1; margin: 0; font-size: 0.9375rem; line-height: 1.4; color: var(--muted); transition: color 400ms ease; }
@@ -437,7 +437,7 @@ mark.on { background-size: 100% 100%; }
       <div class="ledger" id="ledger" aria-label="Illustrative: eight demand claims from Ostrava's Q2 call, each checked against what its customers, suppliers and distributors said by 2024-08-06">
         <div class="lg-head"><span>Demand claims · Q2 earnings call</span><span>Status</span></div>
         <ol class="lg-rows"></ol>
-        <div class="lg-foot"><span><b id="lg-read">0</b> documents read</span><span><b id="lg-ok">0</b> of 8 corroborated</span></div>
+        <div class="lg-foot"><span><b id="lg-read">0</b> <span id="lg-read-k">documents read</span></span><span><b id="lg-ok">0</b> of <span id="lg-n">0</span> corroborated</span></div>
         <div class="lg-tint" id="lg-tint"></div>
         <div class="lg-lines" id="lg-lines" aria-hidden="true"></div>
       </div>
@@ -693,7 +693,7 @@ mark.on { background-size: 100% 100%; }
       [4, 0.86, "Supplier · Vantor Packaging · 10-Q · Aug 5", true]
     ];
     var READ = 2418;
-    var ledger = document.getElementById("ledger"), answer = document.getElementById("answer"), lgRead = document.getElementById("lg-read"), lgOk = document.getElementById("lg-ok");
+    var ledger = document.getElementById("ledger"), answer = document.getElementById("answer"), lgRead = document.getElementById("lg-read"), lgReadK = document.getElementById("lg-read-k"), lgOk = document.getElementById("lg-ok"), lgN = document.getElementById("lg-n");
     var lgBody = ledger.querySelector(".lg-rows"), lgText = [].slice.call(ledger.querySelectorAll(".lg-head, .lg-rows, .lg-foot"));
     var lgLines = document.getElementById("lg-lines"), lgTint = document.getElementById("lg-tint");
     var rows = CLAIMS.map(function (text) {
@@ -787,22 +787,30 @@ mark.on { background-size: 100% 100%; }
       dpr = Math.min(2, window.devicePixelRatio || 1); W = cv.clientWidth; H = cv.clientHeight; VW = view.clientWidth; VH = view.clientHeight;
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       S0 = Math.round(Math.min(W, H) * 0.24); LBL = Math.min(30, Math.round(S0 * 0.22));   // the cell, and its value label, as the zoom starts
+      rows.forEach(function (row) { row.li.style.display = ""; row.li.style.maxHeight = "none"; });   // measured whole; each frame then shows the rows found so far
       LW = ledger.offsetWidth; LH = ledger.offsetHeight;
+      rows.forEach(function (row) { row.h = row.li.offsetHeight; });
     }
     var C = {};
     function tones() { var cs = getComputedStyle(sec); ["fg", "muted", "faint", "accent", "bg", "rule"].forEach(function (k) { C[k] = cs.getPropertyValue("--" + k).trim(); }); C.down = cs.getPropertyValue("--down-ink").trim(); }
     function mono(px, weight) { return (weight || 400) + " " + px + "px \"JetBrains Mono\", ui-monospace, monospace"; }
 
-    /* Beat 2 and the start of 3: the ledger fills in, settles on its answer, then narrows into one cell */
+    /* Beat 2 and the start of 3: the agent reads the call and finds the claims one at a time, then checks each against what
+       customers, suppliers and distributors said; the ledger settles on its answer, then narrows into one cell */
     function drawLedger(p, t4) {
       var show = seg(p, 0.14, 0.18), t2 = seg(p, 0.15, 0.54), ta = seg(t4, 0, 0.25), e = ease(ta);
-      var r = seg(t2, 0.12, 0.88), settle = seg(t2, 0.9, 1);
+      var r = seg(t2, 0.38, 0.9), settle = seg(t2, 0.92, 1), found = 0;
       ledger.style.visibility = show > 0 && ta < 1 ? "visible" : "hidden";
       answer.style.visibility = settle > 0 && ta < 1 ? "visible" : "hidden";
       if (!show || ta >= 1) return;
       ledger.style.opacity = show;
       var conf = [], no = [], newest = [], hot = -1, ok = 0;
-      rows.forEach(function (row, i) { conf.push(0); no.push(false); row.li.style.opacity = seg(t2, i * 0.012, 0.05 + i * 0.012); });
+      rows.forEach(function (row, i) {
+        var at = 0.04 + i * 0.035, g = seg(t2, at, at + 0.03);
+        conf.push(0); no.push(false);
+        if (g > 0) { found++; if (r === 0 && t2 - at < 0.05) hot = i; }
+        row.li.style.display = g > 0 ? "" : "none"; row.li.style.maxHeight = (ease(g) * row.h) + "px"; row.li.style.opacity = ease(g);
+      });
       EVIDENCE.forEach(function (ev) {
         var on = r >= ev[1];
         ev[4].classList.toggle("on", on);
@@ -818,11 +826,13 @@ mark.on { background-size: 100% 100%; }
         row.li.classList.toggle("hot", i === hot);
         [].forEach.call(row.tags.children, function (t) { t.classList.toggle("newest", t === newest[i]); });
       });
-      lgRead.textContent = fmt(r * READ); lgOk.textContent = ok;
+      var n = found ? Math.max(1, Math.round(r * READ)) : 0;   // the call itself, then everything else
+      lgRead.textContent = fmt(n); lgReadK.textContent = n === 1 ? "document read" : "documents read";
+      lgOk.textContent = ok; lgN.textContent = found;
 
       // Into the cell: the window narrows to a square at the centre and its rows become lines
-      var b = Math.min(1, (VH - 80) / (LH + 60), VW / LW), lift = lerp(-28, 0, e);
-      ledger.style.transform = "translate(-50%, -50%) translateY(" + lift + "px) scale(" + lerp(b, S0 / LW, e) + ", " + lerp(b, S0 / LH, e) + ")";
+      var b = Math.min(1, (VH - 80) / (LH + 60), VW / LW), lift = lerp(-28, 0, e), grow = (ledger.offsetHeight - LH) * b / 2;   // the top edge stays put while rows are added
+      ledger.style.transform = "translate(-50%, -50%) translateY(" + (lift + grow) + "px) scale(" + lerp(b, S0 / LW, e) + ", " + lerp(b, S0 / LH, e) + ")";
       lgText.forEach(function (el) { el.style.opacity = 1 - seg(ta, 0, 0.45); });
       lgLines.style.opacity = seg(ta, 0.25, 0.7);
       lgTint.style.opacity = seg(ta, 0.3, 0.9);
