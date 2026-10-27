@@ -21,6 +21,8 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=
 
 
 SKILLS = Path(__file__).resolve().parents[1] / "skills"
+# The skills' names before the product was renamed Stated; an install removes these copies so agents see one set
+RETIRED_SKILLS = ("premisedb-answer", "premisedb-feature-design", "premisedb-go-deeper", "premisedb-research", "premisedb-state")
 
 
 def install_skills(harness, source: Path = SKILLS) -> list[str]:
@@ -28,6 +30,9 @@ def install_skills(harness, source: Path = SKILLS) -> list[str]:
     skills that were written or updated. The same file copy the README describes, done by the program."""
     written = []
     for directory in harness.skills_directories():
+        for name in RETIRED_SKILLS:
+            if (directory / name / "SKILL.md").is_file():
+                shutil.rmtree(directory / name)
         for skill in sorted(source.glob("*/SKILL.md")):
             target = directory / skill.parent.name / "SKILL.md"
             if not target.is_file() or target.read_bytes() != skill.read_bytes():

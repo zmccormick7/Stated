@@ -206,5 +206,18 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(install_skills(self.harness, source), ["stated-answer"])
             self.assertEqual((target / "stated-answer" / "SKILL.md").read_text(), "v2")
 
+    def test_skills_from_before_the_rename_are_removed(self):
+        with TemporaryDirectory() as directory:
+            source, target = Path(directory) / "skills", Path(directory) / "harness-skills"
+            (source / "stated-answer").mkdir(parents=True)
+            (source / "stated-answer" / "SKILL.md").write_text("v1")
+            for name in ("premisedb-answer", "someone-elses-skill"):
+                (target / name).mkdir(parents=True)
+                (target / name / "SKILL.md").write_text("old")
+            self.harness.skills_directory = target
+            install_skills(self.harness, source)
+            self.assertEqual(sorted(p.name for p in target.iterdir()), ["someone-elses-skill", "stated-answer"])
+
+
 if __name__ == "__main__":
     unittest.main()
