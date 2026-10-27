@@ -2,8 +2,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import RecordStore, evaluate
-from premisedb.formulas import check_model, matches, parse
+from stated import RecordStore, evaluate
+from stated.formulas import check_model, matches, parse
 
 
 class FormulaLanguageTests(unittest.TestCase):

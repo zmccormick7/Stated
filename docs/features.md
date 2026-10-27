@@ -1,6 +1,6 @@
 # Building point-in-time features
 
-PremiseDB can turn a research graph into features for systematic models: numbers, counts, yes/no answers and categories that describe a company, a market or anything else as of a date, built by agents reading what was knowable on that date. This guide explains the approach, how it maps onto the graph, how to write a feature, and what PremiseDB does and does not do about lookahead bias.
+Stated can turn a research graph into features for systematic models: numbers, counts, yes/no answers and categories that describe a company, a market or anything else as of a date, built by agents reading what was knowable on that date. This guide explains the approach, how it maps onto the graph, how to write a feature, and what Stated does and does not do about lookahead bias.
 
 ## Describe, don't predict
 
@@ -17,21 +17,21 @@ This works because in a description task, knowledge of the future can only show 
 
 ## How features live in the graph
 
-| What | In PremiseDB |
+| What | In Stated |
 | --- | --- |
-| A feature | A **feature definition**, kept beside the graph (`premisedb define-feature`): the instructions an agent follows, the `key` its values carry and their `type`: `number` (optionally within `min` and `max`), `count`, `boolean`, or `category` with its `categories`; optionally `units`, and a `formula` for a derived feature. |
+| A feature | A **feature definition**, kept beside the graph (`stated define-feature`): the instructions an agent follows, the `key` its values carry and their `type`: `number` (optionally within `min` and `max`), `count`, `boolean`, or `category` with its `categories`; optionally `units`, and a `formula` for a derived feature. |
 | A subject | An **Entity**: a company, a market, a sector, a deal, whatever the instructions describe. |
-| A value | A **Variable** whose `feature` attribute is the definition's ID, linked `about` its subject, carrying the feature's `key` and a `value` of its type, linked `depends_on` the Findings and Sources it was read from. PremiseDB refuses a value outside the type; nothing else about the value is checked. |
-| The date | The session's cutoff. A session opened with `PREMISEDB_AS_OF=2023-02-24` sees only Sources published by then and what earlier sessions wrote at or before then, and stamps everything it writes with that date. |
+| A value | A **Variable** whose `feature` attribute is the definition's ID, linked `about` its subject, carrying the feature's `key` and a `value` of its type, linked `depends_on` the Findings and Sources it was read from. Stated refuses a value outside the type; nothing else about the value is checked. |
+| The date | The session's cutoff. A session opened with `STATED_AS_OF=2023-02-24` sees only Sources published by then and what earlier sessions wrote at or before then, and stamps everything it writes with that date. |
 | A change | A new Variable linked `updates` the previous value, which keeps its own value and date. |
-| No change | A check, `premisedb confirm VALUE_ID`, recording that the latest value still held on the date, instead of writing it again. |
-| A schedule | The dates a value is due for each subject: every day, weekday, week, month or quarter from a start date (`premisedb schedule-feature`). `premisedb pending FEATURE --subjects-file FILE` lists the scheduled dates on which a subject has neither a value nor a check: the sessions still to run. |
-| A derived feature | A definition with a `formula` over other features' keys. PremiseDB computes it, never an agent: at every date an input changed, from the latest value of each input about the subject as of that date (`premisedb derive-features`, which `run-features` does after each subject's sessions). |
-| The feature table | `premisedb feature-table --from DATE --out FILE.csv` writes one row per subject and day (or weekday): each feature's latest value, the date it last changed and the date it was last read. `premisedb state` gives the same values as change points. |
+| No change | A check, `stated confirm VALUE_ID`, recording that the latest value still held on the date, instead of writing it again. |
+| A schedule | The dates a value is due for each subject: every day, weekday, week, month or quarter from a start date (`stated schedule-feature`). `stated pending FEATURE --subjects-file FILE` lists the scheduled dates on which a subject has neither a value nor a check: the sessions still to run. |
+| A derived feature | A definition with a `formula` over other features' keys. Stated computes it, never an agent: at every date an input changed, from the latest value of each input about the subject as of that date (`stated derive-features`, which `run-features` does after each subject's sessions). |
+| The feature table | `stated feature-table --from DATE --out FILE.csv` writes one row per subject and day (or weekday): each feature's latest value, the date it last changed and the date it was last read. `stated state` gives the same values as change points. |
 
 Definitions are procedures, not knowledge, so they live beside the graph rather than in it: every cutoff reads them alike, they never turn up in search, and each records `written_at`, when its instructions were fixed. A definition can be edited until a value names it. After that, new instructions for its key are a new definition that `replaces` it, so every value stays tied to the instructions it was made under.
 
-The [premisedb-state skill](../premisedb/skills/premisedb-state/SKILL.md) teaches an agent to produce one value: given a feature, a subject and a cutoff, read what is visible, write the value or leave the previous one standing, and leave derived features to PremiseDB.
+The [stated-state skill](../stated/skills/stated-state/SKILL.md) teaches an agent to produce one value: given a feature, a subject and a cutoff, read what is visible, write the value or leave the previous one standing, and leave derived features to Stated.
 
 ## Writing a feature
 
@@ -61,11 +61,11 @@ Agents add the most where the state exists in no single document and has to be a
 
 Write the instructions as you would brief an analyst who will run them on every subject: what to measure, where it is usually disclosed, how to handle the common variations, the units and period, and when the answer is `null` because nothing visible bears on it. Do not name a subject, an event or an outcome the instructions were inspired by.
 
-## Lookahead: what PremiseDB handles and what it doesn't
+## Lookahead: what Stated handles and what it doesn't
 
 The danger is a feature that is point-in-time in form but predictive in substance, or a process that lets the future in around the edges. The leaks, and where each is handled:
 
-| Leak | What PremiseDB does | What is left to you |
+| Leak | What Stated does | What is left to you |
 | --- | --- | --- |
 | **Outcome-defined judgments**: "material", "key risk", scores | Definitions restrict values to numbers, counts, yes/no and fixed categories. | Writing instructions that ask for ingredients. |
 | **Environment**: live search, current pages, restated data, today's ticker lists | A session at a cutoff sees no Source published later, no record written later and no model-written document summary; it cannot ingest from the web or link to anything hidden. | Running sessions with web access off; ingesting documents as filed, with their publication dates, not restated data; including subjects that later failed or were delisted. |
@@ -86,13 +86,13 @@ Leakage cannot be proven zero. The case is structural, backed by audits:
 1. **Collect documents as filed.** Ingest each filing, transcript or release as a Source with `published` set to the date it became public, and ideally `document_type`. A Source without a publication date is never seen at any cutoff.
 2. **Create the subjects.** One Entity per subject, including those that later failed, merged or were delisted.
 3. **Define the features**, without a cutoff, before any values. Each definition's `written_at` records when its instructions were fixed.
-4. **Schedule and run sessions at cutoffs.** Give each feature a schedule, and link each Source `about` its company's Entity. `premisedb run-features FEATURE ... --subjects-file FILE --workers N` then works through what `pending` lists: at each (subject, date), features with no new document about the subject since they were last read are confirmed without an agent, and the rest share one fresh agent session with `PREMISEDB_AS_OF` set to the date, the web off, and the premisedb-state skill. Sessions therefore follow the flow of documents, not the calendar. Sessions for the same feature and subject run in date order, since each starts from the previous value; different subjects run in parallel. A run that stops is resumed by running it again. After each subject's sessions, its derived features are computed date by date.
-5. **Export** the daily table with `premisedb feature-table`. A value dated a day rests on what was published by the end of that day, so use it for decisions after that day.
+4. **Schedule and run sessions at cutoffs.** Give each feature a schedule, and link each Source `about` its company's Entity. `stated run-features FEATURE ... --subjects-file FILE --workers N` then works through what `pending` lists: at each (subject, date), features with no new document about the subject since they were last read are confirmed without an agent, and the rest share one fresh agent session with `STATED_AS_OF` set to the date, the web off, and the stated-state skill. Sessions therefore follow the flow of documents, not the calendar. Sessions for the same feature and subject run in date order, since each starts from the previous value; different subjects run in parallel. A run that stops is resumed by running it again. After each subject's sessions, its derived features are computed date by date.
+5. **Export** the daily table with `stated feature-table`. A value dated a day rests on what was published by the end of that day, so use it for decisions after that day.
 
 For example, a feature defined once:
 
 ```bash
-premisedb define-feature --input - <<'JSON'
+stated define-feature --input - <<'JSON'
 {"author_id": "researcher", "key": "uninsured_share", "type": "number", "min": 0, "max": 1,
  "units": "fraction of total deposits",
  "instructions": "Share of the bank's total deposits not covered by deposit insurance, as of the latest balance sheet the bank has reported. Add estimated uninsured domestic deposits to foreign deposits, which are uninsured, when they are disclosed separately; divide by total deposits. Use the bank's own estimates. Null when the bank has not disclosed an uninsured estimate."}
@@ -102,7 +102,7 @@ JSON
 and a value written by a session at February 24, 2023:
 
 ```bash
-PREMISEDB_AS_OF=2023-02-24 premisedb contribute --input - <<'JSON'
+STATED_AS_OF=2023-02-24 stated contribute --input - <<'JSON'
 {"author_id": "feature-run/claude-opus-5-5",
  "records": [{"ref": "v", "kind": "Variable",
               "text": "Uninsured US deposits of $151.5B plus foreign deposits of $13.9B, of $173.1B total, at December 31, 2022.",
@@ -112,10 +112,10 @@ PREMISEDB_AS_OF=2023-02-24 premisedb contribute --input - <<'JSON'
 JSON
 ```
 
-`premisedb state --feature uninsured_share --from 2021-01-01 --to 2023-12-31` then gives each bank's values at the start of the range and at every date one changed, from its first value on.
+`stated state --feature uninsured_share --from 2021-01-01 --to 2023-12-31` then gives each bank's values at the start of the range and at every date one changed, from its first value on.
 
 ## Not built yet
 
 Measuring residual lookahead, how a feature and the agents producing it behave before and after the agent model's training cutoff, is still being designed; the audits above are, for now, work you do on the exported table.
 
-Training the predictive model is outside PremiseDB: the feature table is where it starts.
+Training the predictive model is outside Stated: the feature table is where it starts.

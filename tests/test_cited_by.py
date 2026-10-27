@@ -4,7 +4,7 @@ import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import RecordStore
+from stated import RecordStore
 
 
 class CitedByTests(unittest.TestCase):

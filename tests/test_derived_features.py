@@ -2,8 +2,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import RecordStore
-from premisedb.feature_runs import derive_features
+from stated import RecordStore
+from stated.feature_runs import derive_features
 
 
 class DerivedFeatureTests(unittest.TestCase):

@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import RecordStore
+from stated import RecordStore
 
 
 class ExpandTests(unittest.TestCase):

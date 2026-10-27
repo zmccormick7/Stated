@@ -18,7 +18,7 @@ class CLITests(unittest.TestCase):
         self.call("init")
 
     def run_cli(self, *arguments, stdin=None):
-        return subprocess.run([sys.executable, "-m", "premisedb", "--db", str(self.path), *arguments],
+        return subprocess.run([sys.executable, "-m", "stated", "--db", str(self.path), *arguments],
                               input=stdin, text=True, capture_output=True,
                               cwd=self.directory, env=self.env)
 
@@ -331,17 +331,17 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("--as-of", "2023-02-24", "list", "--kind", "Source"), {"records": [], "has_more": False})
         self.assertEqual(self.call("--as-of", "24/02/2023", "list", status=1),
                          {"error": "as_of must be a date, like 2023-02-24, or None"})
-        self.env["PREMISEDB_AS_OF"] = "2023-02-24"
+        self.env["STATED_AS_OF"] = "2023-02-24"
         finding = self.create("Finding", "Written at the cutoff.")
         self.assertEqual(finding["as_of"], "2023-02-24")
         self.assertEqual(self.call("search", "Release"), {"records": []})
         self.assertEqual(self.call("--as-of", "2023-03-10", "search", "Release", status=1),
-                         {"error": "the cutoff is fixed at 2023-02-24 by PREMISEDB_AS_OF"})
+                         {"error": "the cutoff is fixed at 2023-02-24 by STATED_AS_OF"})
         self.assertEqual(self.call("ingest", "--url", "https://example.com/page", "--input", "-", status=1,
                                    payload={"description": "Page", "author_id": "agent-a"}),
                          {"error": "ingest --url is off at a cutoff: a fetched page carries today's date; "
                                    "ingest a file with its publication date in attributes.published"})
-        self.env["PREMISEDB_AS_OF"] = ""  # Empty means no cutoff, as an unset variable does.
+        self.env["STATED_AS_OF"] = ""  # Empty means no cutoff, as an unset variable does.
         self.assertEqual(self.call("search", "Release", "--full"), {"records": [source]})
 
     def test_fill_model_and_state_export(self):
@@ -370,8 +370,8 @@ class CLITests(unittest.TestCase):
     def test_environment_selects_the_default_database(self):
         shared = self.directory / "shared.sqlite"
         run = lambda *arguments, path=str(shared): subprocess.run(
-            [sys.executable, "-m", "premisedb", *arguments], text=True, capture_output=True,
-            cwd=self.directory, env={**self.env, "PREMISEDB_DB": path})
+            [sys.executable, "-m", "stated", *arguments], text=True, capture_output=True,
+            cwd=self.directory, env={**self.env, "STATED_DB": path})
         self.assertEqual(json.loads(run("init").stdout), {"database": str(shared.resolve())})
         self.assertEqual(json.loads(run("search", "anything").stdout), {"records": []})
         self.assertIn("does not exist", run("--db", "other.sqlite", "search", "x").stderr)

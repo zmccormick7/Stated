@@ -1,7 +1,7 @@
 from math import exp, isclose, lgamma, nextafter
 import unittest
 
-from premisedb import OpenRouterReranker, Reranker
+from stated import OpenRouterReranker, Reranker
 
 
 class TransformTests(unittest.TestCase):

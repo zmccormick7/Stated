@@ -4,8 +4,8 @@ import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import RecordStore
-from premisedb.chunking import split_ranges
+from stated import RecordStore
+from stated.chunking import split_ranges
 
 
 class ChunkingTests(unittest.TestCase):

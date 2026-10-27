@@ -57,7 +57,7 @@ class Reply:
     denied: tuple[str, ...]  # Tools refused under the workspace's permission settings.
 
 
-ALLOWED_TOOLS = ("Bash(premisedb:*)", "Read", "Write")
+ALLOWED_TOOLS = ("Bash(stated:*)", "Read", "Write")
 WEB_TOOLS = ("WebSearch", "WebFetch")
 
 

@@ -10,8 +10,8 @@ import threading
 import unittest
 from unittest import mock
 
-from premisedb import RecordStore
-from premisedb.fetch import contact, fetch_page, html_text, pdf_text
+from stated import RecordStore
+from stated.fetch import contact, fetch_page, html_text, pdf_text
 
 
 def make_pdf(*pages):
@@ -107,7 +107,7 @@ class FetchTests(unittest.TestCase):
                              ("https://www.sec.gov/Archives/x.htm", "SEC.gov requires a contact name and email")):
             with self.subTest(url=url), self.assertRaisesRegex(ValueError, message):
                 fetch_page(url)
-        with mock.patch.dict(os.environ, {"PREMISEDB_FETCH": "0"}), self.assertRaisesRegex(ValueError, "fetching from the web is off"):
+        with mock.patch.dict(os.environ, {"STATED_FETCH": "0"}), self.assertRaisesRegex(ValueError, "fetching from the web is off"):
             fetch_page(self.base + "/filing.htm")
 
     def test_sec_gets_the_contact_as_its_user_agent(self):
@@ -127,11 +127,11 @@ class FetchTests(unittest.TestCase):
             with RecordStore(path):
                 pass
             env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1]), "OPENROUTER_API_KEY": "",
-                   "PREMISEDB_CONTACT": ""}
+                   "STATED_CONTACT": ""}
 
             def call(*arguments, attributes=None):
                 payload = {"description": "PowerFrame 10-Q", "author_id": "a"} | ({"attributes": attributes} if attributes else {})
-                result = subprocess.run([sys.executable, "-m", "premisedb", "--db", str(path), "ingest", *arguments, "--input", "-"],
+                result = subprocess.run([sys.executable, "-m", "stated", "--db", str(path), "ingest", *arguments, "--input", "-"],
                                         input=json.dumps(payload), text=True, capture_output=True, env=env)
                 return json.loads(result.stdout or result.stderr)
 
@@ -151,7 +151,7 @@ class FetchTests(unittest.TestCase):
             self.assertIsNone(contact(path))
             (Path(directory) / "contact.txt").write_text("Ada ada@example.com\n")
             self.assertEqual(contact(path), "Ada ada@example.com")
-            with mock.patch.dict(os.environ, {"PREMISEDB_CONTACT": "Bo bo@example.com"}):
+            with mock.patch.dict(os.environ, {"STATED_CONTACT": "Bo bo@example.com"}):
                 self.assertEqual(contact(path), "Bo bo@example.com")
 
 

@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from premisedb import RecordStore, SourceSegment
+from stated import RecordStore, SourceSegment
 
 
 class DocumentSearchTests(unittest.TestCase):

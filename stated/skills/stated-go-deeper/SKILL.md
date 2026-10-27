@@ -1,11 +1,11 @@
 ---
-name: premisedb-go-deeper
-description: Deepen a PremiseDB research graph's understanding of one company past its standard coverage: build or extend a driver model, turn its unsourced inputs and the answerable open Questions into a research list, and work that list from filings, releases and transcripts until the model's inputs are sourced.
+name: stated-go-deeper
+description: Deepen a Stated research graph's understanding of one company past its standard coverage: build or extend a driver model, turn its unsourced inputs and the answerable open Questions into a research list, and work that list from filings, releases and transcripts until the model's inputs are sourced.
 ---
 
 # Go deeper on a company
 
-Use this when the graph already holds a company's standard coverage (its business, segments, key figures, relationships, risks and open Questions) and the task is to understand it better. Use the premisedb-research skill for every command; this skill says what to do with them and in what order.
+Use this when the graph already holds a company's standard coverage (its business, segments, key figures, relationships, risks and open Questions) and the task is to understand it better. Use the stated-research skill for every command; this skill says what to do with them and in what order.
 
 Depth has a definition here. A company is understood when the graph holds a driver model whose inputs are sourced from documents, with their recent history, and when the open Questions that bear on those inputs have been worked. More Findings of the kind the coverage already has do not add depth.
 

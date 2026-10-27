@@ -7,9 +7,9 @@ import threading
 import time
 import unittest
 
-from premisedb import RecordStore
-from premisedb.ui import Reply, ThreadStore
-from premisedb.ui.server import App, install_skills, make_server, prepare_workspace
+from stated import RecordStore
+from stated.ui import Reply, ThreadStore
+from stated.ui.server import App, install_skills, make_server, prepare_workspace
 
 
 class SlowHarness:
@@ -22,7 +22,7 @@ class SlowHarness:
 
     def run(self, prompt, *, cwd, env, session_id, web, timeout, on_progress):
         self.web = web
-        on_progress("Bash: premisedb recall")
+        on_progress("Bash: stated recall")
         self.release.wait(5)
         return Reply(self.answer, "session-1", ())
 
@@ -147,7 +147,7 @@ class ServerTests(unittest.TestCase):
         store.next_item(run_id)
         self.harness.release.set()
         App(self.server.RequestHandlerClass.args[0].db_path, harness=self.harness)  # As on the next start.
-        self.assertEqual(self.wait_done(question)["turns"][0]["error"], "PremiseDB was stopped while this question was being answered.")
+        self.assertEqual(self.wait_done(question)["turns"][0]["error"], "Stated was stopped while this question was being answered.")
         turn = self.wait_done(research)["turns"][0]
         self.assertEqual((turn["status"], turn["items"][0]["status"], turn["progress"][0]),
                          ("done", "done", "Picking the research up again after a restart, with 1 piece of work put back in the queue"))
@@ -196,16 +196,15 @@ class ServerTests(unittest.TestCase):
     def test_skills_are_installed_and_updated(self):
         with TemporaryDirectory() as directory:
             source, target = Path(directory) / "skills", Path(directory) / "harness-skills"
-            (source / "premisedb-answer").mkdir(parents=True)
-            (source / "premisedb-answer" / "SKILL.md").write_text("v1")
+            (source / "stated-answer").mkdir(parents=True)
+            (source / "stated-answer" / "SKILL.md").write_text("v1")
             self.harness.skills_directory = target
-            self.assertEqual(install_skills(self.harness, source), ["premisedb-answer"])
-            self.assertEqual((target / "premisedb-answer" / "SKILL.md").read_text(), "v1")
+            self.assertEqual(install_skills(self.harness, source), ["stated-answer"])
+            self.assertEqual((target / "stated-answer" / "SKILL.md").read_text(), "v1")
             self.assertEqual(install_skills(self.harness, source), [])  # Up to date: nothing written.
-            (source / "premisedb-answer" / "SKILL.md").write_text("v2")
-            self.assertEqual(install_skills(self.harness, source), ["premisedb-answer"])
-            self.assertEqual((target / "premisedb-answer" / "SKILL.md").read_text(), "v2")
-
+            (source / "stated-answer" / "SKILL.md").write_text("v2")
+            self.assertEqual(install_skills(self.harness, source), ["stated-answer"])
+            self.assertEqual((target / "stated-answer" / "SKILL.md").read_text(), "v2")
 
 if __name__ == "__main__":
     unittest.main()

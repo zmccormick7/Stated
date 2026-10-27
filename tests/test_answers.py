@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import RecordStore, check_answer
+from stated import RecordStore, check_answer
 
 
 class AnswerCheckTests(unittest.TestCase):

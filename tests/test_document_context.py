@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from premisedb import DocumentContext, RecordStore
+from stated import DocumentContext, RecordStore
 
 
 class DocumentContextTests(unittest.TestCase):

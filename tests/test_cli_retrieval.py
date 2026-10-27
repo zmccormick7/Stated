@@ -10,8 +10,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from premisedb import OpenRouterReranker, RecordStore
-from premisedb.cli import main
+from stated import OpenRouterReranker, RecordStore
+from stated.cli import main
 
 
 class CLIRetrievalTests(unittest.TestCase):
@@ -35,7 +35,7 @@ class CLIRetrievalTests(unittest.TestCase):
             self.other = db.ingest_source(description="Other", document_text="Grid elsewhere.", author_id="agent")
             db.chunk_source(self.other.id)
         self.enterContext(patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-only"}))
-        for key in ("PREMISEDB_RERANKER_MODEL", "PREMISEDB_TOKEN_ENCODING"):
+        for key in ("STATED_RERANKER_MODEL", "STATED_TOKEN_ENCODING"):
             os.environ.pop(key, None)
         # A deterministic tokenizer stub; production uses BPE, not byte estimates.
         self.encoding = SimpleNamespace(encode=lambda text, **kwargs: text.encode())
@@ -71,7 +71,7 @@ class CLIRetrievalTests(unittest.TestCase):
         for model in (None, *OpenRouterReranker.MODELS):
             with self.subTest(model=model), patch.dict(os.environ):
                 if model is not None:
-                    os.environ["PREMISEDB_RERANKER_MODEL"] = model
+                    os.environ["STATED_RERANKER_MODEL"] = model
                 seen = []
 
                 def post(reranker, endpoint, payload):
@@ -101,7 +101,7 @@ class CLIRetrievalTests(unittest.TestCase):
         with patch.object(OpenRouterReranker, "_post", return_value=response):
             self.assertEqual(len(self.call("Grid")), 2)
             self.assertEqual(len(self.call("Grid", "--limit", "1")), 1)
-            os.environ["PREMISEDB_TOKEN_ENCODING"] = "deployment_encoding"
+            os.environ["STATED_TOKEN_ENCODING"] = "deployment_encoding"
             self.call("Grid", "--source-id", self.source.id, "--source-id", self.other.id)
         self.get_encoding.assert_called_with("deployment_encoding")
 
@@ -113,7 +113,7 @@ class CLIRetrievalTests(unittest.TestCase):
                 self.assertTrue(self.call(*args, status=1)["error"])
             with patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
                 self.assertIn("OPENROUTER_API_KEY", self.call("Grid", status=1)["error"])
-            with patch.dict(os.environ, {"PREMISEDB_RERANKER_MODEL": "unknown"}):
+            with patch.dict(os.environ, {"STATED_RERANKER_MODEL": "unknown"}):
                 self.assertIn("model", self.call("Grid", status=1)["error"])
             self.get_encoding.side_effect = ValueError("Unknown encoding")
             self.assertIn("encoding", self.call("Grid", status=1)["error"])

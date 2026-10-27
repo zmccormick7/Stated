@@ -54,7 +54,7 @@ class App:
                 threading.Thread(target=run_turn, args=(self.store, turn["id"]),
                                  kwargs={"db_path": self.db_path, "harness": self.harness}, daemon=True).start()
             else:
-                self.store.finish_turn(turn["id"], error="PremiseDB was stopped while this question was being answered.")
+                self.store.finish_turn(turn["id"], error="Stated was stopped while this question was being answered.")
 
     def evaluate(self, model_id: str, overrides) -> dict:
         """A model's values with some Variables held at other values; the lever block calls this as it moves."""
@@ -220,7 +220,7 @@ def make_server(db_path, *, harness, host="127.0.0.1", port=0) -> ThreadingHTTPS
     return ThreadingHTTPServer((host, port), partial(Handler, App(db_path, harness=harness)))
 
 
-DEFAULT_WORKSPACE = Path.home() / "PremiseDB"
+DEFAULT_WORKSPACE = Path.home() / "Stated"
 
 
 def prepare_workspace(db_path: Path | None, *, base: Path | None = None) -> tuple[Path, list[str]]:
@@ -276,11 +276,11 @@ def serve(db_path=None, *, harness_name="claude-code", port=8765, model=None, re
         server = make_server(db_path, harness=harness, port=port)
     except OSError as error:
         if error.errno in (48, 98):  # Address in use, on macOS and Linux.
-            raise ValueError(f"Port {port} is already in use, perhaps by another premisedb ui. "
+            raise ValueError(f"Port {port} is already in use, perhaps by another `stated ui`. "
                              f"Stop it, or run with --port {port + 1}.") from None
         raise
     url = f"http://127.0.0.1:{server.server_address[1]}"
-    print(f"PremiseDB at {url} for {db_path.parent}")
+    print(f"Stated at {url} for {db_path.parent}")
     if open_browser:
         threading.Timer(0.5, webbrowser.open, (url,)).start()
     try:

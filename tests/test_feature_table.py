@@ -6,8 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import RecordStore
-from premisedb.cli import main
+from stated import RecordStore
+from stated.cli import main
 
 
 class FeatureTableTests(unittest.TestCase):

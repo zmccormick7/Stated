@@ -5,9 +5,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import RecordStore
-from premisedb.cli import main
-from premisedb.features import scheduled_dates
+from stated import RecordStore
+from stated.cli import main
+from stated.features import scheduled_dates
 
 
 class ScheduleTests(unittest.TestCase):

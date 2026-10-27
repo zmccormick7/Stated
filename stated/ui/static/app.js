@@ -348,7 +348,7 @@ function renderStatus() {
   const base = (status.layers || []).filter((layer) => !layer.writable).map((layer) => `${layer.name} ${layer.version}`);
   const agent = status.harness === "codex" ? "Codex" : "Claude Code";
   $("status").textContent = [home, ...base, agent].join(" · ");
-  if (!base.length) $("problem").textContent = "No base layer is attached. Run premisedb ui --base FILE once.";
+  if (!base.length) $("problem").textContent = "No base layer is attached. Run stated ui --base FILE once.";
   else if (!status.harness_found) $("problem").textContent = `${agent} was not found. Install it and sign in, then ask.`;
 }
 

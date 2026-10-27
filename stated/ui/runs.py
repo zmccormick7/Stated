@@ -178,8 +178,8 @@ def _pause(limit: UsageLimit) -> float:
 
 
 def _plan(brief: str, effort: int, agents: int) -> str:
-    return ("Plan research for the brief below. Do not do the research yet: with the premisedb-research skill, look "
-            "only at what the graph (the database PREMISEDB_DB names) already holds on it, so the plan starts from "
+    return ("Plan research for the brief below. Do not do the research yet: with the stated-research skill, look "
+            "only at what the graph (the database STATED_DB names) already holds on it, so the plan starts from "
             f"there. The work will take about {effort} minutes and be done by workers that each start fresh, take "
             f"one item and spend about {ITEM_MINUTES} minutes on it, "
             f"{'one after another' if agents == 1 else f'{agents} at a time, so items must not overlap'}. Write each item so a worker "
@@ -217,7 +217,7 @@ def _notes(notes: list[str]) -> str:
 
 def _replan(brief: str, items: list[dict], minutes: int, notes: list[str] = ()) -> str:
     return (f"Research on the brief below has done the work listed, and about {minutes} minutes of working time "
-            "remain. With the premisedb-research skill, look at what the graph now holds and decide what further "
+            "remain. With the stated-research skill, look at what the graph now holds and decide what further "
             "pieces of work would most improve the answer to the brief: a thin or single-sourced claim, a figure not "
             "checked against a primary source, a counterparty or period not yet covered, an open Question that "
             f"bears on it. Each will be done by a fresh worker in about {ITEM_MINUTES} minutes. Reply with JSON "
@@ -228,10 +228,10 @@ def _replan(brief: str, items: list[dict], minutes: int, notes: list[str] = ()) 
 
 def _work(brief: str, item: dict, items: list[dict], author: str, notes: list[str] = ()) -> str:
     return ("You are one worker in a longer piece of research. Other workers take the other items, each starting "
-            "fresh like you, so only what you put in the graph carries forward. Use the premisedb-research skill; the "
-            f"research database is the one PREMISEDB_DB names; use the author ID {author} for anything you write. "
+            "fresh like you, so only what you put in the graph carries forward. Use the stated-research skill; the "
+            f"research database is the one STATED_DB names; use the author ID {author} for anything you write. "
             f"Spend about {ITEM_MINUTES} minutes on your item. Recall what the graph already holds before going "
-            "outside it. Ingest the sources you rely on with `premisedb ingest --url`, record Findings with "
+            "outside it. Ingest the sources you rely on with `stated ingest --url`, record Findings with "
             "citations, link them to the Entities they are about, and open a Question for anything material you "
             'could not settle. Then reply with JSON alone: {"summary": "two or three sentences on what you found '
             'and added", "new_items": [{"title": "one line", "detail": "what to do and where to look"}]} with at most '
@@ -243,11 +243,11 @@ def _work(brief: str, item: dict, items: list[dict], author: str, notes: list[st
 
 def _review(brief: str, since: str, author: str) -> str:
     return ("Research on the brief below is under way, and its workers have been adding records to the graph (the "
-            f"database PREMISEDB_DB names) since {since}. Review what they added for duplicates, with the "
-            f"premisedb-research skill: `premisedb list --since {since} --kind Entity` lists the new Entities; check "
+            f"database STATED_DB names) since {since}. Review what they added for duplicates, with the "
+            f"stated-research skill: `stated list --since {since} --kind Entity` lists the new Entities; check "
             "the new Questions the same way. For each, search the graph by name and aliases for an existing record of "
             "the same company, campus, person or question. Where one exists, keep the record that is older or in the "
-            "base layer and fold the newer one into it: `premisedb merge KEEP_ID DUPLICATE_ID --input FILE` with "
+            "base layer and fold the newer one into it: `stated merge KEEP_ID DUPLICATE_ID --input FILE` with "
             f'{{"author_id": "{author}"}}. Merge only records that are plainly the same thing; leave anything doubtful '
             'as it is, and do no other research. Reply with JSON alone: {"merged": N}.'
             f"\n\nBrief: {brief}")
@@ -255,7 +255,7 @@ def _review(brief: str, since: str, author: str) -> str:
 
 def _report(brief: str, done: list[dict], author: str, notes: list[str] = ()) -> str:
     return ("Research on the brief below has finished. The workers put what they found in the graph (the database "
-            f"PREMISEDB_DB names, mostly under the author ID {author}); their summaries are below, but the graph is the "
-            "record. Recall from it with the premisedb-research skill, then answer the brief as an answer document "
-            "with the premisedb-answer skill, checked with check-answer. Answer the brief itself; do not narrate the "
+            f"STATED_DB names, mostly under the author ID {author}); their summaries are below, but the graph is the "
+            "record. Recall from it with the stated-research skill, then answer the brief as an answer document "
+            "with the stated-answer skill, checked with check-answer. Answer the brief itself; do not narrate the "
             f"work or list what was not done.\n\nBrief: {brief}{_notes(notes)}\n\nWork done:\n{_listing(done)}")

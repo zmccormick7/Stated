@@ -5,7 +5,7 @@ import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
-from premisedb import Layer, RecordStore
+from stated import Layer, RecordStore
 
 
 class LayerTests(unittest.TestCase):
