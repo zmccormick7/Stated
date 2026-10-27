@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
 <style>
 html, body { margin: 0; }
 [hidden] { display: none !important; }
@@ -55,8 +55,8 @@ html, body { margin: 0; }
   --btn2-ink: #0A0A0C;
   --btn2-rule: rgba(10, 10, 12, 0.1);
   --btn2-hover: #FFFFFF;
-  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: "Geist", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -528,7 +528,7 @@ mark.on { background-size: 100% 100%; }
     ];
     var ctx = cv.getContext("2d");
     var W = 0, H = 0, rows = [], lit = [], running = false, last = 0;
-    var LINE = 28, GAP = 34, FONT = '14px "Instrument Sans", system-ui, sans-serif';
+    var LINE = 28, GAP = 34, FONT = '14px "Geist", system-ui, sans-serif';
     var tone = {};
     function readTone() {
       var cs = getComputedStyle(root);
@@ -796,7 +796,7 @@ mark.on { background-size: 100% 100%; }
     }
     var C = {};
     function tones() { var cs = getComputedStyle(sec); ["fg", "muted", "faint", "accent", "bg", "rule"].forEach(function (k) { C[k] = cs.getPropertyValue("--" + k).trim(); }); C.down = cs.getPropertyValue("--down-ink").trim(); }
-    function mono(px, weight) { return (weight || 400) + " " + px + "px \"JetBrains Mono\", ui-monospace, monospace"; }
+    function mono(px, weight) { return (weight || 400) + " " + px + "px \"Geist Mono\", ui-monospace, monospace"; }
 
     /* Beat 2 and the start of 3: the agent reads the call and finds the claims one at a time, then checks each against what
        customers, suppliers and distributors said; the ledger settles on its answer, then narrows into one cell */
