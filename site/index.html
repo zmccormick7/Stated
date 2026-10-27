@@ -199,7 +199,7 @@ mark.on { background-size: 100% 100%; }
 .statement .quiet { color: var(--faint); }
 
 /* ---------- The story: one feature answered for one company on one date, then the camera pulls back to the whole dataset ---------- */
-.story { position: relative; height: 900vh; margin-top: 12px; border-radius: 24px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
+.story { position: relative; height: 760vh; margin-top: 12px; border-radius: 24px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
 .story-pin {
   position: sticky; top: 0; height: 100vh; height: 100svh; box-sizing: border-box;
   padding: clamp(20px, 4vh, 40px) clamp(16px, 3vw, 48px);
@@ -250,7 +250,7 @@ mark.on { background-size: 100% 100%; }
 .ft tr.me td { background: rgba(138, 157, 255, 0.16); color: var(--fg); }
 
 @media (max-width: 999px) {
-  .story { height: 800vh; border-radius: 18px; }
+  .story { height: 680vh; border-radius: 18px; }
   .story-pin { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 16px; padding: 20px 16px; }
   .story-copy { align-self: start; gap: 0; }
   .beats { display: none; }
@@ -264,13 +264,63 @@ mark.on { background-size: 100% 100%; }
   .ft th, .ft td { padding: 8px 10px; }
 }
 
+/* ---------- Backtests, on their own below the story ---------- */
+.scale { padding: clamp(72px, 9vw, 136px) clamp(4px, 3vw, 40px) clamp(56px, 7vw, 96px); border-top: 1px solid var(--rule); }
+.scale-inner { max-width: 1160px; margin: 0 auto; }
+.scale .label { text-align: left; margin-bottom: clamp(20px, 2.4vw, 28px); }
+/* ---------- Backtests: the as-of date moves along one bank's filings; anything published later stays out of focus ---------- */
+.pit-head { display: grid; gap: 28px 72px; margin-bottom: clamp(56px, 7vw, 96px); }
+@media (min-width: 960px) { .pit-head { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: end; } }
+.pit-head .label { grid-column: 1 / -1; margin: 0; text-align: left; }
+.pit-head h2 { margin: 0; font-size: clamp(3rem, 7vw, 6.25rem); font-weight: 400; line-height: 0.96; letter-spacing: -0.05em; }
+.pit-copy { display: grid; gap: 18px; }
+.pit-copy p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 31rem; }
+.pit-copy b { color: var(--fg); font-weight: 500; }
+
+.pit { position: relative; padding-top: 112px; touch-action: pan-y; cursor: ew-resize; user-select: none; -webkit-user-select: none; outline: none; }
+.pit:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 12px; }
+.pit-subject { position: absolute; top: 0; left: 0; display: flex; gap: 10px; align-items: baseline; font-size: 0.8125rem; color: var(--faint); }
+.pit-subject b { font: 500 13px var(--mono); color: var(--fg); }
+.pit-axis { position: absolute; left: 0; right: 0; top: 86px; border-top: 1px dashed var(--faint); opacity: 0.6; }
+.pit-past { position: absolute; left: 0; top: 85px; height: 2px; width: var(--cut, 0); background: var(--fg); }
+.pit-tick { position: absolute; top: 62px; left: var(--cut, 0); height: 30px; border-left: 1.5px solid var(--accent); }
+.pit-now { position: absolute; top: 86px; left: var(--cut, 0); width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--bg); }
+.pit-pill { position: absolute; top: 36px; left: 0; padding: 3px 10px; border-radius: 999px; background: var(--accent); color: var(--bg); font: 500 12px var(--mono); white-space: nowrap; }
+.pit-later { position: absolute; top: 66px; left: calc(var(--cut, 0) + 14px); font-size: 0.75rem; color: var(--faint); white-space: nowrap; }
+.pit-docs { list-style: none; margin: 0 0 0 56px; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.pit-doc { position: relative; display: flex; flex-direction: column; align-items: flex-start; padding-right: 28px; transition: filter 500ms ease, opacity 500ms ease; }
+.pit-doc::before { content: ""; position: absolute; left: 0; top: -26px; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: var(--fg); }
+.pit-src { font: 12px var(--mono); color: var(--faint); }
+.pit-src b { font-weight: 500; color: var(--fg); }
+.pit-doc p { margin: 12px 0 20px; font-size: 1.0625rem; line-height: 1.5; letter-spacing: -0.01em; }
+.pit-doc mark { padding-block: 0; }
+.pit-val { margin-top: auto; padding: 4px 10px; border-radius: 999px; font: 500 12px var(--mono); transition: box-shadow 300ms ease; }
+.pit-val.up { background: var(--up-bg); color: var(--up-ink); }
+.pit-val.down { background: var(--down-bg); color: var(--down-ink); }
+.pit-val.flat { background: var(--flat-bg); color: var(--flat-ink); }
+.pit-doc.now .pit-val { box-shadow: 0 0 0 2px var(--accent); }
+.pit-doc.later { filter: blur(6px); opacity: 0.45; }
+.pit-doc.later::before { background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--faint); }
+@media (max-width: 719px) {
+  .pit { padding: 76px 0 0 32px; cursor: ns-resize; touch-action: pan-x pan-y; }
+  .pit-axis { left: 8px; right: auto; top: 76px; bottom: 0; border-top: 0; border-left: 1px dashed var(--faint); }
+  .pit-past { left: 7.5px; top: 76px; width: 2px; height: calc(var(--cut, 76px) - 76px); }
+  .pit-tick, .pit-later { display: none; }
+  .pit-now { left: 8px; top: var(--cut, 76px); }
+  .pit-pill { top: 30px; left: 32px; }
+  .pit-docs { margin: 0; grid-template-columns: 1fr; gap: 32px; }
+  .pit-doc { padding-right: 0; }
+  .pit-doc::before { left: -24px; top: 9px; }
+  .pit-doc p { margin: 8px 0 14px; }
+}
+
 @media (max-width: 600px) {
   .hero { border-radius: 18px; height: auto; min-height: 640px; }
   .veil { background: radial-gradient(90% 50% at 50% 50%, var(--veil-0) 0%, var(--veil-1) 60%, var(--veil-2) 100%); }
   .btn { padding: 16px 26px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  mark, .btn, .copy { transition: none; }
+  mark, .btn, .copy, .pit-doc, .pit-val { transition: none; }
   .caret { animation: none; }
 }
 </style>
@@ -319,7 +369,6 @@ mark.on { background-size: 100% 100%; }
       <ol class="beats" aria-label="Steps">
         <li><button type="button">The question</button></li>
         <li><button type="button">The work</button></li>
-        <li><button type="button">The discipline</button></li>
         <li><button type="button">The dataset</button></li>
       </ol>
       <div class="copies">
@@ -330,11 +379,6 @@ mark.on { background-size: 100% 100%; }
         <div class="copy">
           <h2>LLMs can finally read like analysts.</h2>
           <p>Agents read whatever it takes, from one earnings call to everything a company's suppliers and customers have published.</p>
-        </div>
-        <div class="copy">
-          <h2>Describe, don't predict.</h2>
-          <p><b>LLMs know how history turned out.</b> Ask one to predict a bank's prospects in March 2023 and it may simply remember what happened next. That lookahead bias looks like alpha in a backtest and disappears in live trading.</p>
-          <p><b>So our agents never predict anything.</b> They describe a company as it stood on a date: guidance withdrawn, prices raised, a disclosure dropped. The forecasting is left to your models. And because knowing the ending doesn't help describe the starting point, every description is point-in-time by construction.</p>
         </div>
         <div class="copy">
           <h2>Across every company, every day.</h2>
@@ -363,6 +407,33 @@ mark.on { background-size: 100% 100%; }
           </table>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<section class="scale" aria-labelledby="pit-label">
+  <div class="scale-inner">
+    <div class="pit-head">
+      <p class="label" id="pit-label">Built for backtests</p>
+      <h2>Describe, don't predict.</h2>
+      <div class="pit-copy">
+        <p><b>LLMs know how history turned out.</b> Ask one to predict a bank's prospects in March 2023 and it may simply remember what happened next. That lookahead bias looks like alpha in a backtest and disappears in live trading.</p>
+        <p><b>So our agents never predict anything.</b> They describe a company as it stood on a date: guidance withdrawn, prices raised, a disclosure dropped. The forecasting is left to your models. And because knowing the ending doesn't help describe the starting point, every description is point-in-time by construction.</p>
+      </div>
+    </div>
+    <div class="pit" id="pit" tabindex="0" role="slider" aria-label="As-of date for Halcyon Bancorp's guidance stance">
+      <span class="pit-subject"><b>HLCN</b>Halcyon Bancorp · Guidance stance</span>
+      <span class="pit-axis" aria-hidden="true"></span><span class="pit-past" aria-hidden="true"></span>
+      <span class="pit-tick" aria-hidden="true"></span><span class="pit-now" aria-hidden="true"></span>
+      <span class="pit-pill" aria-hidden="true">As of <span id="pit-date">2023-05-20</span></span>
+      <span class="pit-later" aria-hidden="true">Not yet public</span>
+      <ol class="pit-docs">
+        <li class="pit-doc" data-date="2023-01-26"><span class="pit-src"><b>Jan 26</b> · Q4 call</span><p>We are <mark class="on">reaffirming our full-year guidance</mark> for loan growth and net interest income.</p><span class="pit-val flat">Maintained</span></li>
+        <li class="pit-doc" data-date="2023-03-14"><span class="pit-src"><b>Mar 14</b> · 8-K</span><p>Deposit outflows since March 10 will bring net interest income <mark class="on">below our prior outlook</mark>.</p><span class="pit-val down">Lowered</span></li>
+        <li class="pit-doc" data-date="2023-04-27"><span class="pit-src"><b>Apr 27</b> · Q1 call</span><p>Given the uncertainty, <mark class="on">we are withdrawing our outlook</mark> for the remainder of the year.</p><span class="pit-val down">Withdrawn</span></li>
+        <li class="pit-doc" data-date="2023-06-14"><span class="pit-src"><b>Jun 14</b> · Investor day</span><p><mark class="on">We now expect net interest income to decline</mark> 8 to 10% for the full year.</p><span class="pit-val up">Reinstated</span></li>
+        <li class="pit-doc" data-date="2023-07-27"><span class="pit-src"><b>Jul 27</b> · Q2 call</span><p>We are <mark class="on">raising the low end of our range</mark> for net interest income.</p><span class="pit-val up">Raised</span></li>
+      </ol>
     </div>
   </div>
 </section>
@@ -542,7 +613,7 @@ mark.on { background-size: 100% 100%; }
     ["tl", "tr", "bl", "br"].forEach(function (k) { hud[k] = { el: document.getElementById("hud-" + k), html: "" }; });
     var copies = [].slice.call(sec.querySelectorAll(".copy")), steps = [].slice.call(sec.querySelectorAll(".beats button"));
     var BRIEF = "For each claim management made about demand this quarter, check what the company's customers, suppliers and distributors said. Report the share confirmed by at least two of them.";
-    var BEATS = [0, 0.13, 0.45, 0.62], JUMP = [0.07, 0.3, 0.56, 0.8];   // where each beat starts, and where its step button lands
+    var BEATS = [0, 0.15, 0.57], JUMP = [0.08, 0.35, 0.78];   // where each beat starts, and where its step button lands
     var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     function clamp(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
     function seg(p, a, b) { return clamp((p - a) / (b - a)); }
@@ -555,13 +626,10 @@ mark.on { background-size: 100% 100%; }
     function setHud(k, html) { if (hud[k].html !== html) { hud[k].html = html; hud[k].el.innerHTML = html; } }
 
     /* One company's reading: its own filings and calls, and those of 64 customers, suppliers and distributors */
-    var DAY = 864e5, T0 = Date.UTC(2022, 0, 1), CUT = (Date.UTC(2024, 7, 6) - T0) / DAY, TEND = (Date.UTC(2025, 5, 30) - T0) / DAY;
     var R = rng(11), docs = [];
-    function cluster(n) {
+    function cluster(n) {   // every document here was public by the as-of date
       var c = { docs: [], x: 0, y: 0, r: 0, a: 0, oi: 0, npre: 0 };
-      for (var i = 0; i < n; i++) { var d = { c: c, day: Math.floor(R() * TEND), st: R(), hit: 0, claim: -1 }; d.pre = d.day <= CUT; c.docs.push(d); docs.push(d); }
-      c.docs.sort(function (a, b) { return a.day - b.day; });
-      c.docs.forEach(function (d) { if (d.pre) d.pi = c.npre++; });
+      for (var i = 0; i < n; i++) { var d = { c: c, st: R(), hit: 0, claim: -1, pre: true }; d.pi = c.npre++; c.docs.push(d); docs.push(d); }
       return c;
     }
     var self = cluster(60), others = [];
@@ -590,7 +658,7 @@ mark.on { background-size: 100% 100%; }
     });
 
     /* The dataset: 1,500 companies by every weekday from 2015 to 2024, one value per cell */
-    var COLS = 0, ROWS = 1500, R0W = 640, dates = [];
+    var DAY = 864e5, COLS = 0, ROWS = 1500, R0W = 640, dates = [];
     for (var t = Date.UTC(2015, 0, 1); t <= Date.UTC(2024, 11, 31); t += DAY) { var wd = new Date(t).getUTCDay(); if (wd > 0 && wd < 6) dates.push(t); }
     COLS = dates.length;
     var C0 = dates.indexOf(Date.UTC(2024, 7, 6)), Q0 = Math.round(0.38 * 254), vals = null, gridImg = null;
@@ -656,7 +724,7 @@ mark.on { background-size: 100% 100%; }
     }
 
     /* Layout of the reading, in design units around the centre of the view */
-    var W = 0, H = 0, dpr = 1, k = 1, portrait = false, PITCH = 5.6, GW = 3.6, GH = 4.6, base = 0, tx0 = 0, tx1 = 0, claimPos = [], sectors = [];
+    var W = 0, H = 0, dpr = 1, k = 1, portrait = false, PITCH = 5.6, GW = 3.6, GH = 4.6, claimPos = [], sectors = [];
     function place(c, cx, cy, cols) {
       var rows = Math.ceil(c.docs.length / cols);
       c.x = cx; c.y = cy; c.r = Math.max(cols, rows) * PITCH * 0.6;
@@ -672,12 +740,6 @@ mark.on { background-size: 100% 100%; }
       claimPos = [];
       for (var i = 0; i < CLAIMS; i++) { var a = i / CLAIMS * 2 * Math.PI - Math.PI / 2; claimPos.push([Math.cos(a) * 62, Math.sin(a) * 42]); }
       sectors = [["Customers", 270], ["Distributors", 35], ["Suppliers", 145]].map(function (s) { var a = s[1] / 180 * Math.PI; return [s[0], Math.cos(a) * 375 * ax, Math.sin(a) * 372 * ay]; });
-      tx0 = portrait ? -320 : -470; tx1 = -tx0; base = portrait ? 330 : 250;
-      var bins = {};
-      docs.slice().sort(function (a, b) { return a.day - b.day; }).forEach(function (d) {   // a stacked timeline, one column per week
-        var b = Math.floor(d.day / 7), n = bins[b] = (bins[b] || 0) + 1;
-        d.tx = tx0 + (tx1 - tx0) * (b * 7 + 3.5) / TEND; d.ty = base - n * PITCH * 1.4;
-      });
     }
     function size() {
       dpr = Math.min(2, window.devicePixelRatio || 1); W = view.clientWidth; H = view.clientHeight;
@@ -690,10 +752,10 @@ mark.on { background-size: 100% 100%; }
 
     /* Beats 2 to 4a: the reading, the cutoff and the collapse into one cell */
     function drawReading(p, t4) {
-      var show = seg(p, 0.12, 0.17); if (!show) return 0;
-      var t2 = seg(p, 0.13, 0.44), t3 = seg(p, 0.46, 0.61), ta = seg(t4, 0, 0.25);
+      var show = seg(p, 0.14, 0.19); if (!show) return 0;
+      var t2 = seg(p, 0.15, 0.54), ta = seg(t4, 0, 0.25);
       var appear = seg(t2, 0, 0.14), reading = seg(t2, 0.14, 0.9), settle = seg(t2, 0.9, 1);
-      var tw = ease(seg(t3, 0, 0.5)), cutIn = ease(seg(t3, 0.42, 0.62)), away = 1 - seg(ta, 0, 0.35);
+      var tw = ease(seg(ta, 0, 0.3));   // links and labels clear as the documents gather into their cell
       var kf = reading * order.length, ci = reading >= 1 ? order.length : Math.floor(kf), fr = kf - ci;
       var gw = Math.max(1.3, GW * k), gh = Math.max(1.7, GH * k), cx = W / 2, cy = H / 2, cell = CW * 0.84 / slotG, read = 0;
       var conf = [], contra = [], hitsRead = [];
@@ -704,9 +766,8 @@ mark.on { background-size: 100% 100%; }
         var c = d.c, isRead = d.pre && (c.oi < ci || (c.oi === ci && d.pi < fr * c.npre));
         if (isRead) { read++; if (d.hit) { if (d.hit === 1) conf[d.claim]++; else contra[d.claim]++; hitsRead.push(d); } }
         var a = show * seg(appear, c.oi / order.length * 0.75, c.oi / order.length * 0.75 + 0.25);
-        var m = ease(seg(t3, d.st * 0.3, 0.7 + d.st * 0.3)), x = lerp(d.rx, d.tx, m), y = lerp(d.ry, d.ty, m), w = gw, h = gh;
-        if (!d.pre) { var f = ease(seg(t3, 0.62 + d.st * 0.2, 0.8 + d.st * 0.2)); y += f * 260; a *= 1 - f; if (ta > 0) a = 0; }
-        else if (ta > 0) { var q = ease(seg(ta, d.st * 0.3, 0.7 + d.st * 0.3)); x = lerp(x, d.sx, q); y = lerp(y, d.sy, q); w = lerp(gw, cell * 0.6 * k, q); h = lerp(gh, cell * 0.7 * k, q); }
+        var x = d.rx, y = d.ry, w = gw, h = gh;
+        if (ta > 0) { var q = ease(seg(ta, d.st * 0.3, 0.7 + d.st * 0.3)); x = lerp(x, d.sx, q); y = lerp(y, d.sy, q); w = lerp(gw, cell * 0.6 * k, q); h = lerp(gh, cell * 0.7 * k, q); }
         d.X = X(x); d.Y = Y(y); d.w = w; d.h = h; d.a = a; d.read = isRead;
       });
       ctx.save();
@@ -758,28 +819,13 @@ mark.on { background-size: 100% 100%; }
         ctx.fillStyle = C.faint; ctx.font = "400 " + Math.max(10, Math.round(13 * k)) + "px " + getComputedStyle(sec).fontFamily;
         sectors.forEach(function (s) { ctx.fillText(s[0], X(s[1]), Y(s[2])); });
       }
-      var axa = seg(t3, 0.25, 0.5) * away;
-      if (axa > 0) {   // the time axis and the as-of date
-        ctx.globalAlpha = axa * 0.7; ctx.strokeStyle = C.faint; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(X(tx0), Y(base + 4)); ctx.lineTo(X(tx1), Y(base + 4)); ctx.stroke();
-        ctx.fillStyle = C.faint; ctx.font = mono(Math.max(10, Math.round(12 * k)));
-        [2022, 2023, 2024, 2025].forEach(function (yr) { var x = tx0 + (tx1 - tx0) * (Date.UTC(yr, 0, 1) - T0) / DAY / TEND; ctx.fillRect(X(x), Y(base + 4), 1, 5); ctx.fillText(String(yr), X(x) + 18, Y(base + 20)); });
-      }
-      var ca = cutIn * away;
-      if (ca > 0) {
-        var xc = X(tx0 + (tx1 - tx0) * CUT / TEND), top = lerp(base + 8, base - 250, cutIn);
-        ctx.globalAlpha = ca; ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(xc, Y(base + 8)); ctx.lineTo(xc, Y(top)); ctx.stroke();
-        ctx.fillStyle = C.accent; ctx.font = mono(Math.max(10, Math.round(12 * k)), 500);
-        ctx.fillText("As of 2024-08-06", xc, Y(top) - 12);
-      }
 
-      // The value: below the company once the reading is done, then above the timeline, then inside its cell
+      // The value: below the company once the reading is done, then inside its cell
       if (settle > 0) {
-        var vy = lerp(lerp(70, portrait ? -360 : -280, tw), 0, ease(ta)), vs = Math.max(18, 30 * k);
+        var vy = lerp(70, 0, ease(ta)), vs = Math.max(18, 30 * k);
         ctx.globalAlpha = settle; ctx.fillStyle = C.fg; ctx.font = mono(Math.round(vs), 500);
         ctx.fillText("0.38", X(0), Y(vy));
-        if (tw < 1 && ta === 0) { ctx.globalAlpha = settle * (1 - tw); ctx.fillStyle = C.faint; ctx.font = mono(Math.max(10, Math.round(12 * k))); ctx.fillText("3 of 8 demand claims corroborated", X(0), Y(vy) + vs * 0.9); }
+        if (ta === 0) { ctx.globalAlpha = settle; ctx.fillStyle = C.faint; ctx.font = mono(Math.max(10, Math.round(12 * k))); ctx.fillText("3 of 8 demand claims corroborated", X(0), Y(vy) + vs * 0.9); }
       }
       ctx.restore();
       return read;
@@ -854,7 +900,7 @@ mark.on { background-size: 100% 100%; }
     function render() {
       raf = 0;
       var span = sec.offsetHeight - window.innerHeight, p = clamp(-sec.getBoundingClientRect().top / span);
-      var beat = p < BEATS[1] ? 0 : p < BEATS[2] ? 1 : p < BEATS[3] ? 2 : 3;
+      var beat = p < BEATS[1] ? 0 : p < BEATS[2] ? 1 : 2;
       if (beat !== cur) {
         cur = beat;
         copies.forEach(function (c, i) { c.classList.toggle("on", i === beat); });
@@ -862,13 +908,13 @@ mark.on { background-size: 100% 100%; }
       }
 
       // Beat 1: the brief is written, then steps aside for the reading
-      var n = Math.round(seg(p, 0.01, 0.1) * BRIEF.length), out = seg(p, 0.11, 0.15);
+      var n = Math.round(seg(p, 0.01, 0.11) * BRIEF.length), out = seg(p, 0.12, 0.16);
       if (briefText.textContent.length !== n) briefText.textContent = BRIEF.slice(0, n);
       brief.style.opacity = 1 - out; brief.style.transform = "translate(-50%, -50%) scale(" + (1 - 0.04 * out) + ")";
       brief.style.visibility = out < 1 ? "visible" : "hidden";
 
       ctx.clearRect(0, 0, W, H);
-      var t4 = seg(p, 0.62, 0.87), t5 = seg(p, 0.88, 0.98), fade = 1 - 0.85 * ease(seg(t5, 0, 0.5)), grid = null, read = 0;
+      var t4 = seg(p, 0.57, 0.86), t5 = seg(p, 0.88, 0.98), fade = 1 - 0.85 * ease(seg(t5, 0, 0.5)), grid = null, read = 0;
       if (t4 >= 0.22) grid = drawGrid(t4, fade);
       if (t4 < 0.25) read = drawReading(p, t4);
 
@@ -878,7 +924,7 @@ mark.on { background-size: 100% 100%; }
       [].forEach.call(ft.querySelectorAll("tbody tr"), function (tr, i) { var v = ease(seg(t5, 0.2 + i * 0.05, 0.4 + i * 0.05)); tr.style.opacity = v; tr.style.transform = v < 1 ? "translateY(" + (1 - v) * 10 + "px)" : ""; });
 
       // The readout around the edges of the view
-      hudEl.style.opacity = p < 0.13 ? 0 : 1 - seg(t5, 0.1, 0.3);
+      hudEl.style.opacity = p < 0.15 ? 0 : 1 - seg(t5, 0.1, 0.3);
       if (grid) {
         setHud("tl", "<b>demand_corroborated</b>");
         setHud("tr", grid.e < 0.5 ? "OSTV · 2024-08-06" : fmt(ROWS) + " companies · 2015–2024");
@@ -888,7 +934,7 @@ mark.on { background-size: 100% 100%; }
         setHud("tl", W < 600 ? "<b>OSTV</b>" : "<b>OSTV</b> · Ostrava Semiconductor");
         setHud("tr", "as of 2024-08-06");
         setHud("bl", "<b>" + fmt(read) + "</b> documents read");
-        setHud("br", p < 0.46 ? "+ 64 counterparties" : "Later: not visible");
+        setHud("br", "+ 64 counterparties");
       }
     }
     function schedule() { if (!raf) raf = requestAnimationFrame(render); }
@@ -906,6 +952,70 @@ mark.on { background-size: 100% 100%; }
     if (mq.addEventListener) mq.addEventListener("change", function () { tones(); schedule(); });
     setTimeout(function () { if (!gridImg) buildGrid(); }, 1500);   // build the dataset off the critical path
   })();
+
+  /* Backtests: the as-of date moves along the filings; a document comes into focus only once it is public */
+  (function pointInTime() {
+    var pit = document.getElementById("pit"), out = document.getElementById("pit-date");
+    var pill = pit.querySelector(".pit-pill"), later = pit.querySelector(".pit-later");
+    var docs = Array.prototype.slice.call(pit.querySelectorAll(".pit-doc"));
+    var DAY = 864e5, START = Date.UTC(2023, 0, 2), END = Date.UTC(2023, 7, 31);
+    var dates = docs.map(function (d) { return Date.parse(d.dataset.date); });
+    var vert = window.matchMedia("(max-width: 719px)");
+    var t = Date.UTC(2023, 4, 20), stops = [];   // resting state: the outlook withdrawn, not yet reinstated
+    function measure() {   // [date, position along the axis]: each document's dot sits where it becomes public
+      var v = vert.matches;
+      stops = [[START, v ? 76 : 0]];
+      docs.forEach(function (d, i) { stops.push([dates[i], v ? d.offsetTop + 9 : d.offsetLeft]); });
+      stops.push([END, v ? pit.clientHeight : pit.clientWidth]);
+    }
+    function lerp(a, b, k) { return a + (b - a) * k; }
+    function posOf(time) {
+      for (var i = 1; i < stops.length; i++) if (time <= stops[i][0]) return lerp(stops[i - 1][1], stops[i][1], (time - stops[i - 1][0]) / (stops[i][0] - stops[i - 1][0]));
+      return stops[stops.length - 1][1];
+    }
+    function timeOf(pos) {
+      for (var i = 1; i < stops.length; i++) if (pos <= stops[i][1]) return lerp(stops[i - 1][0], stops[i][0], Math.max(0, (pos - stops[i - 1][1]) / (stops[i][1] - stops[i - 1][1])));
+      return END;
+    }
+    function render() {
+      var x = posOf(t), seen = -1, day = new Date(t).toISOString().slice(0, 10);
+      docs.forEach(function (d, i) { var pub = dates[i] <= t; if (pub) seen = i; d.classList.toggle("later", !pub); d.classList.remove("now"); });
+      if (seen >= 0) docs[seen].classList.add("now");
+      pit.style.setProperty("--cut", x + "px");
+      out.textContent = day;
+      if (vert.matches) { pill.style.left = ""; }
+      else { var w = pill.offsetWidth; pill.style.left = Math.min(Math.max(x - w / 2, 0), pit.clientWidth - w) + "px"; }
+      later.style.visibility = t < END && pit.clientWidth - x > 130 ? "visible" : "hidden";
+      pit.setAttribute("aria-valuemin", 0); pit.setAttribute("aria-valuemax", Math.round((END - START) / DAY));
+      pit.setAttribute("aria-valuenow", Math.round((t - START) / DAY));
+      pit.setAttribute("aria-valuetext", "As of " + day + ": " + (seen >= 0 ? docs[seen].querySelector(".pit-val").textContent : "no reading yet"));
+    }
+    function set(time) { t = Math.max(START, Math.min(END, time)); render(); }
+    measure(); render();
+    var touched = false, raf = null, last = 0, held = 0;
+    function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
+    function fromPointer(e) { var r = pit.getBoundingClientRect(); set(timeOf(vert.matches ? e.clientY - r.top : e.clientX - r.left)); }
+    pit.addEventListener("pointerdown", function (e) { touched = true; stop(); pit.setPointerCapture(e.pointerId); fromPointer(e); });
+    pit.addEventListener("pointermove", function (e) { if (pit.hasPointerCapture && pit.hasPointerCapture(e.pointerId)) fromPointer(e); });
+    pit.addEventListener("keydown", function (e) {
+      var step = { ArrowRight: 7, ArrowUp: 7, ArrowLeft: -7, ArrowDown: -7 }[e.key];
+      if (e.key === "Home") set(START); else if (e.key === "End") set(END); else if (step) set(t + step * DAY); else return;
+      touched = true; stop(); e.preventDefault();
+    });
+    var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { measure(); render(); }, 120); });
+    if (reduce || !("IntersectionObserver" in window)) return;
+    function frame(now) {   // sweep the as-of date forward, about 24 days a second, then hold at the end and start over
+      var dt = Math.min(now - (last || now), 50); last = now;
+      if (t >= END) { held += dt; if (held > 2400) { held = 0; set(START); } }
+      else set(t + dt * 24 * DAY / 1000);
+      raf = requestAnimationFrame(frame);
+    }
+    new IntersectionObserver(function (es) {
+      if (es[0].isIntersecting && !raf && !touched) { last = 0; if (t > dates[2]) set(START); raf = requestAnimationFrame(frame); }
+      if (!es[0].isIntersecting) stop();
+    }, { threshold: 0.4 }).observe(pit);
+  })();
+
 })();
 </script>
 </body>
