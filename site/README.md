@@ -2,4 +2,6 @@
 
 `index.html` is the Implied landing page: one static file with its styles, scripts and the logo inline. Fonts load from Google Fonts. Open it in a browser to view it; there is no build step and nothing deploys it.
 
+The icons sit beside it. `favicon.svg` and `favicon.ico` (16, 32 and 48 px) use a cut of the mark for small sizes, with the gap between the blocks widened to whole pixels so it stays open; the SVG turns light when the browser is in dark mode. `apple-touch-icon.png` (180 px) uses the mark unchanged.
+
 The companies, filings and values in the page's examples are illustrative.
