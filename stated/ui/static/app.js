@@ -1,5 +1,6 @@
 // The answer UI: a sidebar of threads and the current thread's turns, polled while a turn is running.
-const state = { threads: [], current: null, thread: null, status: null };
+const state = { threads: [], current: null, thread: null, status: null,
+                view: "threads", coverage: [], feature: null, sort: { key: "subject", desc: false }, onlyNull: false };
 const $ = (id) => document.getElementById(id);
 const api = async (path, body) => {
   const response = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" },
@@ -312,8 +313,12 @@ function render() {
     item.onclick = () => select(thread.id);
     return item;
   })));
+  const features = state.view !== "threads";
+  $("main").classList.toggle("features", features);
+  $("features-view").classList.toggle("current", features);
+  if (features) $("features").replaceChildren(state.view === "feature" ? renderFeature(state.feature) : renderFeatures(state.coverage));
   const main = $("thread");
-  $("main").classList.toggle("empty", !state.thread);
+  $("main").classList.toggle("empty", !state.thread && !features);
   // A finished turn is left exactly as the reader has it (opened records, a moved lever); a running one is
   // patched in place as it changes, so the poll does not undo what the reader did.
   const existing = new Map([...main.children].map((node) => [node.dataset.key, node]));
@@ -352,6 +357,119 @@ function renderStatus() {
   else if (!status.harness_found) $("problem").textContent = `${agent} was not found. Install it and sign in, then ask.`;
 }
 
+// Features, read-only: every definition in the workspace, then one feature with its subjects' latest values.
+const TYPES = { number: "Number", count: "Count", boolean: "Yes or no", category: "Category" };
+const EVERY = { day: "Every day", weekday: "Every weekday", week: "Every week", month: "Every month", quarter: "Every quarter" };
+const schedule = (d) => d.formula ? "Computed from other features" : d.every ? `${EVERY[d.every]} from ${d.start}` : "No schedule";
+const plural = (n, word) => `${number(n)} ${word}${n === 1 ? "" : "s"}`;
+
+// A value as the reader should see it: fractions as percentages, yes or no, and null marked as unknown.
+function shown(value, units) {
+  if (value === null || value === undefined) return el("span", { class: "muted", text: "null" });
+  const text = typeof value === "boolean" ? (value ? "Yes" : "No") : typeof value === "number" ? inUnits(value, units)
+    : Array.isArray(value) ? JSON.stringify(value) : String(value);
+  return el("span", { text });
+}
+
+function grid(head, rows) {
+  return el("div", { class: "scroll" }, [el("table", { class: "grid" }, [el("thead", {}, [el("tr", {}, head)]), el("tbody", {}, rows)])]);
+}
+
+function renderFeatures(coverage) {
+  const node = el("div", { class: "features" }, [el("h1", { text: "Features" })]);
+  if (!coverage.length) return node.append(el("p", { class: "muted",
+    text: "No features yet. Ask for one in a thread, or define one with stated define-feature." })), node;
+  node.append(grid(["Feature", "Type", "Schedule", "Subjects", "Latest value"].map((name, i) =>
+    el("th", { class: i === 3 ? "num" : "", text: name })), coverage.map(({ definition: d, subjects, latest }) => {
+    const open = el("button", { type: "button", class: "link", text: d.key });
+    open.onclick = () => openFeature(d.id);
+    return el("tr", {}, [el("td", {}, [open, ...(d.units ? [el("div", { class: "muted", text: d.units })] : [])]),
+      el("td", { text: TYPES[d.type] }), el("td", { text: schedule(d) }), el("td", { class: "num", text: number(subjects) }),
+      el("td", { class: "date", text: latest || "—" })]);
+  })));
+  return node;
+}
+
+// Sorting keeps nulls last whichever way it runs, so the values that are there stay together.
+const SUBJECT_COLUMNS = [["subject", "Subject"], ["value", "Value"], ["as_of", "Changed"], ["checked", "Checked"], ["values", "Values"]];
+function sortedSubjects(subjects) {
+  const { key, desc } = state.sort;
+  const known = subjects.filter((s) => s[key] !== null), unknown = subjects.filter((s) => s[key] === null);
+  known.sort((a, b) => {
+    const x = a[key], y = b[key];
+    const order = typeof x === "string" && typeof y === "string" ? x.localeCompare(y) : Number(x) - Number(y);
+    return desc ? -order : order;
+  });
+  return [...known, ...unknown];
+}
+
+function renderFeature(found) {
+  const d = found.definition;
+  const back = el("button", { type: "button", class: "link", text: "All features" });
+  back.onclick = openFeatures;
+  const range = d.categories ? d.categories.join(", ")
+    : d.min !== null || d.max !== null ? `${d.min ?? "…"} to ${d.max ?? "…"}` : "";
+  const facts = [TYPES[d.type], range, d.units, schedule(d), `written by ${d.author_id} on ${d.written_at.slice(0, 10)}`];
+  const node = el("div", { class: "features" }, [back, el("h1", { text: d.key }),
+    el("p", { class: "muted", text: facts.filter(Boolean).join(" · ") }), el("p", { text: d.instructions }),
+    ...(d.formula ? [el("p", { class: "muted", text: `Formula: ${d.formula}` })] : [])]);
+  if (d.replaced_by) {
+    const newer = el("button", { type: "button", class: "link", text: "Open the current definition" });
+    newer.onclick = () => openFeature(d.replaced_by);
+    node.append(el("p", { class: "note" }, [el("span", { text: "Newer instructions replaced these. " }), newer]));
+  }
+  const values = found.subjects.reduce((sum, s) => sum + s.values, 0);
+  const count = (n, label) => el("div", { class: "count" }, [el("b", { text: number(n) }), el("span", { text: label })]);
+  node.append(el("div", { class: "stats" }, [count(found.subjects.length, "subjects with a value"), count(values, "values"),
+    count(found.in_sample, "dated on or before the instructions"), ...(found.due === null ? [] : [count(found.due, "dates due")])]));
+  const notes = [];
+  if (found.in_sample) notes.push(`${plural(found.in_sample, "value")} ${found.in_sample === 1 ? "is" : "are"} dated on or before `
+    + `${d.written_at.slice(0, 10)}, the day these instructions were written, so the instructions may carry hindsight about `
+    + `${found.in_sample === 1 ? "it" : "them"}; only later dates test them honestly.`);
+  if (found.due !== null) notes.push("Dates due counts only the subjects that already have a value.");
+  if (notes.length) node.append(el("p", { class: "note", text: notes.join(" ") }));
+  if (found.earlier.length) node.append(el("details", { class: "earlier" }, [
+    el("summary", { text: `${plural(found.earlier.length, "earlier definition")} of ${d.key}` }),
+    ...found.earlier.map((e) => {
+      const open = el("button", { type: "button", class: "link", text: `Written ${e.written_at.slice(0, 10)}` });
+      open.onclick = () => openFeature(e.id);
+      return el("div", { class: "piece" }, [open, el("p", { text: e.instructions })]);
+    })]));
+  if (!found.subjects.length) return node.append(el("p", { class: "muted", text: "No subject has a value of this feature yet." })), node;
+  const nulls = found.subjects.filter((s) => s.value === null).length;
+  if (nulls) {
+    const only = el("input", { type: "checkbox", id: "only-null" });
+    only.checked = state.onlyNull;
+    only.onchange = () => { state.onlyNull = only.checked; render(); };
+    node.append(el("label", { class: "filter", for: "only-null" }, [only, el("span", { text: `Only the ${plural(nulls, "null")}` })]));
+  }
+  const head = SUBJECT_COLUMNS.map(([key, name]) => {
+    const sorted = state.sort.key === key;
+    const button = el("button", { type: "button", text: name + (sorted ? (state.sort.desc ? " ↓" : " ↑") : "") });
+    button.onclick = () => { state.sort = { key, desc: sorted ? !state.sort.desc : false }; render(); };
+    return el("th", { class: key === "values" ? "num" : "", "aria-sort": sorted ? (state.sort.desc ? "descending" : "ascending") : "none" }, [button]);
+  });
+  const rows = sortedSubjects(found.subjects.filter((s) => !state.onlyNull || s.value === null)).map((s) => el("tr", {}, [
+    el("td", { text: s.subject }), el("td", {}, [shown(s.value, d.units)]), el("td", { class: "date", text: s.as_of }),
+    el("td", { class: "date", text: s.checked }), el("td", { class: "num", text: number(s.values) })]));
+  node.append(grid(head, rows));
+  return node;
+}
+
+async function openFeatures() {
+  try { state.coverage = await api("/api/features"); } catch (error) { return alert(error.message); }
+  Object.assign(state, { view: "features", current: null, thread: null });
+  render();
+  $("main").scrollTop = 0;
+}
+
+async function openFeature(feature) {
+  try { state.feature = await api(`/api/features/${encodeURIComponent(feature)}`); } catch (error) { return alert(error.message); }
+  Object.assign(state, { view: "feature", sort: { key: "subject", desc: false }, onlyNull: false });
+  render();
+  $("main").scrollTop = 0;
+}
+
 async function refresh() {
   if (!state.status) { try { state.status = await api("/api/status"); } catch (error) { state.status = null; } }
   state.threads = await api("/api/threads");
@@ -362,6 +480,7 @@ async function refresh() {
 
 async function select(threadId) {
   state.current = threadId;
+  state.view = "threads";
   await refresh();
   $("main").scrollTop = $("main").scrollHeight;
 }
@@ -401,6 +520,7 @@ $("effort").onchange();
 $("question").onkeydown = (event) => {  // Enter asks; Shift+Enter starts a new line.
   if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); $("ask").requestSubmit(); }
 };
-$("new").onclick = () => { state.current = null; state.thread = null; render(); $("question").focus(); };
+$("new").onclick = () => { Object.assign(state, { view: "threads", current: null, thread: null }); render(); $("question").focus(); };
+$("features-view").onclick = openFeatures;
 $("toggle").onclick = () => $("sidebar").classList.toggle("collapsed");
 refresh();
