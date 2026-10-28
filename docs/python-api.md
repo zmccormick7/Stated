@@ -114,9 +114,10 @@ The language: numbers, keys, `+ - * / **`, unary minus, comparisons (chained all
 A feature definition holds the instructions an agent follows to produce one feature's value for a subject as of a date, and the type of that value. Definitions are procedures, not knowledge, so they are kept in their own table rather than as records: they never appear in search or recall, and every cutoff reads them alike.
 
 ```python
-funding = db.define_feature(author_id="researcher", key="flighty_funding", type="number", min=0, max=1,
-    instructions="How much of the subject's funding could leave within weeks, from 0 (none) to 1 (all), "
-                 "judged from what it discloses about its depositors.")
+with RecordStore("research.sqlite") as db:
+    funding = db.define_feature(author_id="researcher", key="flighty_funding", type="number", min=0, max=1,
+        instructions="How much of the subject's funding could leave within weeks, from 0 (none) to 1 (all), "
+                     "judged from what it discloses about its depositors.")
 ```
 
 `define_feature` takes the `key` every value carries, the `instructions`, and the `type`: `"number"` (optionally within `min` and `max`), `"count"` (a whole number, 0 or more, optionally bounded), `"boolean"`, or `"category"` with its `categories`; `units` is optional, and a derived feature gives the `formula` its values compute from other features' keys, which must parse (that the keys are other features is not checked). It returns a `FeatureDefinition` with those fields, its `id`, `author_id`, `written_at` (the UTC time the instructions were last written), `replaces` and `replaced_by`, and `values`, the number of Variables that name it. `read_feature(id_or_key)` reads one by ID, by a unique prefix of 8+ characters, or by key for the key's current definition; `list_features(replaced=False)` lists the current definitions by key. Definitions are written without a cutoff, since their instructions are fixed in the present and followed at every date.
