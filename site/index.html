@@ -314,6 +314,9 @@ mark.on { background-size: 100% 100%; }
 .pit-copy { display: grid; gap: 18px; }
 .pit-copy p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 31rem; }
 .pit-copy b { color: var(--fg); font-weight: 500; }
+.pit-read { justify-self: start; color: var(--fg); font-weight: 500; font-size: 1rem; text-decoration: none; border-bottom: 1px solid var(--rule); padding-bottom: 2px; transition: border-color 160ms ease; }
+.pit-read:hover { border-color: var(--fg); }
+.pit-read span { margin-left: 8px; color: var(--faint); font: 400 12px var(--mono); white-space: nowrap; }
 
 .pit { position: relative; padding-top: 112px; touch-action: pan-y; cursor: ew-resize; user-select: none; -webkit-user-select: none; outline: none; }
 .pit:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 12px; }
@@ -466,6 +469,7 @@ mark.on { background-size: 100% 100%; }
       <div class="pit-copy">
         <p><b>LLMs know how history turned out.</b> Ask one to predict a bank's prospects in March 2023 and it may simply remember what happened next. That lookahead bias looks like alpha in a backtest and disappears in live trading.</p>
         <p><b>So our agents never predict anything.</b> They describe a company as it stood on a date: guidance withdrawn, prices raised, a disclosure dropped. The forecasting is left to your models. And because knowing the ending doesn't help describe the starting point, every description is point-in-time by construction.</p>
+        <a class="pit-read" href="describe-dont-predict.pdf">Read the full method <span>PDF · 7 pages</span></a>
       </div>
     </div>
     <div class="pit" id="pit" tabindex="0" role="slider" aria-label="As-of date for Halcyon Bancorp's guidance stance">
