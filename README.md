@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
-[Install](#install) · [Ask a question](#ask-a-question) · [Use your own agent](#use-your-own-agent) · [How the graph is organised](#how-the-graph-is-organised) · [Status](#status) · [CLI](docs/cli.md) · [Python API](docs/python-api.md) · [Features](docs/features.md)
+[Install](#install) · [Build features](#build-features) · [Ask a question](#ask-a-question) · [Use your own agent](#use-your-own-agent) · [How the graph is organised](#how-the-graph-is-organised) · [Status](#status) · [CLI](docs/cli.md) · [Python API](docs/python-api.md) · [Feature guide](docs/features.md)
 
 ## Install
 
@@ -20,6 +20,33 @@ stated ui
 The first run creates a research folder at `~/Stated`, installs the bundled skills for your agent, and opens the app in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `stated ui --base base-2026.10.01.sqlite`.
 
 To work on Stated itself, clone the repository and install it in editable mode (`python -m pip install -e '.[cli]'` inside a virtual environment); `stated` then runs from your checkout.
+
+## Build features
+
+A feature is a question you would put to an analyst, written once and answered for every subject on every date you schedule. The answer is a typed value (a number, a count, yes or no, or one of a fixed set of categories) that describes the subject as it stood on that date. Agents never forecast: they describe, from what was published by then, and the predicting is left to your models. The [feature guide](docs/features.md) explains why that keeps hindsight out and how to write features that need real analysis.
+
+```bash
+stated define-feature --input - <<'JSON'
+{"author_id": "researcher", "key": "uninsured_share", "type": "number", "min": 0, "max": 1,
+ "units": "fraction of total deposits",
+ "instructions": "Share of the bank's total deposits not covered by deposit insurance, as of the latest balance sheet the bank has reported. Add estimated uninsured domestic deposits to foreign deposits, which are uninsured, when they are disclosed separately; divide by total deposits. Use the bank's own estimates. Null when the bank has not disclosed an uninsured estimate."}
+JSON
+
+stated schedule-feature uninsured_share --input - <<'JSON'
+{"every": "weekday", "start": "2021-01-04"}
+JSON
+
+stated run-features uninsured_share --subjects-file banks.txt --workers 4
+stated feature-table --from 2021-01-04 --feature uninsured_share --out features.csv
+```
+
+- **Define** a feature once: what to measure, the type of its values, and when the answer is unknown. The stated-feature-design skill helps turn an idea into definitions that describe rather than predict.
+- **Schedule** when a value is due for each subject: every day, weekday, week, month or quarter.
+- **Run** the due dates. For each subject, in date order, a fresh session of your own Claude Code or Codex opens at that date's cutoff with the web off. Stated shows it only the sources published by then, and it writes the value linked to the evidence it rests on, or confirms the last one still holds. A value with no new document about the subject since it was last read is confirmed without a session, so runs follow the flow of documents rather than the calendar. Subjects run in parallel, and a stopped run picks up where it left off when you run it again. Codex's sandbox can still read files on disk, so keep later documents out of its reach.
+- **Derive** features that are formulas over other features; Stated computes them, never an agent.
+- **Export** the daily table: one row per subject and day, each feature's value, the date it last changed and the date it was last checked.
+
+Run the commands in your research folder, or point `STATED_DB` at its database. A subjects file holds one Entity ID per line. Sources must carry the date they became public and be linked `about` their subject, since a source without a date is never seen at any cutoff.
 
 ## Ask a question
 
@@ -91,7 +118,7 @@ Links such as `about`, `supported_by`, `depends_on`, `contradicts` and `raises` 
 
 The graph is layered. A **base layer** is a published, read-only graph that any research folder can attach and later update; your own layer holds what your agents add on top, including corrections to base records. Knowledge belongs to the folder, not to any one conversation or harness: a fresh session, on either harness, picks up exactly where the last one left off.
 
-The graph can also be read **as of a date**. Every record carries the date its contents are as of, and a session opened at a cutoff sees only the sources published by then, the disclosed facts those sources support, and what earlier sessions wrote at or before that cutoff; what it writes is stamped with the cutoff in turn. That is what lets agents describe a company's state at a past date from the evidence that existed then, with their work checkable against the dated record rather than against hindsight. A **feature definition** (`stated define-feature`) holds the instructions agents follow to produce one such description, a feature of a subject as of a date, and the type of its values; definitions are kept beside the graph rather than in it, since they are procedures, not knowledge. The [feature guide](docs/features.md) shows how to build systematic features this way: definitions hold the instructions, agents write each value as of a date, and `stated feature-table` exports the result as a daily table.
+The graph can also be read **as of a date**. Every record carries the date its contents are as of, and a session opened at a cutoff sees only the sources published by then, the disclosed facts those sources support, and what earlier sessions wrote at or before that cutoff; what it writes is stamped with the cutoff in turn. That is what lets agents describe a company's state at a past date from the evidence that existed then, with their work checkable against the dated record rather than against hindsight. [Features](#build-features) are built on this: each value is a Variable written at its date's cutoff, while the feature definitions are kept beside the graph rather than in it, since they are procedures, not knowledge.
 
 ## Status
 
@@ -100,10 +127,11 @@ Stated is early software. The database format changes without migrations; recrea
 What exists today:
 
 - The CLI, Python API and five skills. Three are used daily by Claude Code and Codex; the feature-design skill is new; the state skill has been tried on six banks at one cutoff and on one bank at two, in a workspace holding only their pre-cutoff filings.
+- Features end to end: definitions, schedules, `run-features`, derived features and the daily `feature-table`. Runs so far are small, a handful of banks over a few dates.
 - The answer page with checked answers, levers, research runs and the notes, pause and finish controls.
 - A base layer covering the 1,000 largest US filers by public float, with the full text of each company's latest annual report and, for 474 of them, a coverage pack of its business, segments, key figures, relationships, risks and open questions. Driver models exist for a handful of companies.
 
-What is being worked on: coverage packs for the rest of the top 1,000, driver models with sourced inputs for covered companies through the go-deeper skill, quarterly updates as filings land, and runs that describe many companies at many past dates for point-in-time features. The [design specification](docs/database-spec.md) records the reasoning behind the schema.
+What is being worked on: coverage packs for the rest of the top 1,000, driver models with sourced inputs for covered companies through the go-deeper skill, quarterly updates as filings land, collecting a universe's documents for feature runs (sources are ingested one at a time today), runs across many companies and years, and measuring how much hindsight still leaks into values. The [design specification](docs/database-spec.md) records the reasoning behind the schema.
 
 ## Contributing
 
