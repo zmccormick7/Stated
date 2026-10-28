@@ -9,17 +9,17 @@
 
 ## Install
 
-You need Python 3.12 or later built against SQLite 3.51.3 or later with FTS5 (`python -c "import sqlite3; print(sqlite3.sqlite_version)"` shows the version), plus [Claude Code](https://code.claude.com) or [Codex](https://openai.com/codex) signed in to your own account.
+You need Python 3.12 or later built against SQLite 3.51.3 or later with FTS5 (`python -c "import sqlite3; print(sqlite3.sqlite_version)"` shows the version), plus [Claude Code](https://code.claude.com) or [Codex](https://openai.com/codex) signed in to your own account. The steps install [pipx](https://pipx.pypa.io) with Homebrew; on Linux, use your package manager.
 
 ```bash
-git clone https://github.com/zmccormick7/Stated.git
-pipx install "./Stated[cli]"
+brew install pipx
+pipx install "stated[cli] @ git+https://github.com/zmccormick7/Stated.git"
 stated ui
 ```
 
 The first run creates a research folder at `~/Stated`, installs the bundled skills for your agent, and opens the app in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `stated ui --base base-2026.10.01.sqlite`.
 
-To work on Stated itself, clone the repository and install it in editable mode (`python -m pip install -e '.[cli]'` inside a virtual environment); `stated` then runs from your checkout.
+To work on Stated itself, clone the repository anywhere but `~/Stated`, which the app uses for research, and install it in editable mode (`python -m pip install -e '.[cli]'` inside a virtual environment); `stated` then runs from your checkout.
 
 ## Build features
 
