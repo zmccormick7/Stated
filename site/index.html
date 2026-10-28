@@ -314,6 +314,8 @@ mark.on { background-size: 100% 100%; }
 .pit-copy { display: grid; gap: 18px; }
 .pit-copy p { margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.6; max-width: 31rem; }
 .pit-copy b { color: var(--fg); font-weight: 500; }
+.pit-cta { justify-self: start; margin-top: 8px; }
+.pit-cta span { font: 400 12px var(--mono); opacity: 0.6; }
 
 .pit { position: relative; padding-top: 112px; touch-action: pan-y; cursor: ew-resize; user-select: none; -webkit-user-select: none; outline: none; }
 .pit:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 12px; }
@@ -466,6 +468,7 @@ mark.on { background-size: 100% 100%; }
       <div class="pit-copy">
         <p><b>LLMs know how history turned out.</b> Ask one to predict a bank's prospects in March 2023 and it may simply remember what happened next. That lookahead bias looks like alpha in a backtest and disappears in live trading.</p>
         <p><b>So our agents never predict anything.</b> They describe a company as it stood on a date: guidance withdrawn, prices raised, a disclosure dropped. The forecasting is left to your models. And because knowing the ending doesn't help describe the starting point, every description is point-in-time by construction.</p>
+        <a class="btn btn-light pit-cta" href="describe-dont-predict.pdf"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 0h5.5L14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5 1.5V5h3.5L9 1.5zM5 8.25a.75.75 0 0 0 0 1.5h6a.75.75 0 0 0 0-1.5H5zm0 3a.75.75 0 0 0 0 1.5h4a.75.75 0 0 0 0-1.5H5z"></path></svg>Read the paper <span>PDF</span></a>
       </div>
     </div>
     <div class="pit" id="pit" tabindex="0" role="slider" aria-label="As-of date for Halcyon Bancorp's guidance stance">
