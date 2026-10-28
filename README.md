@@ -48,6 +48,8 @@ stated feature-table --from 2021-01-04 --feature uninsured_share --out features.
 
 Run the commands in your research folder, or point `STATED_DB` at its database. A subjects file holds one Entity ID per line. Sources must carry the date they became public and be linked `about` their subject, since a source without a date is never seen at any cutoff.
 
+To look over what a run produced, open Features (▦) in `stated ui`: every definition with its schedule and coverage, then each subject's latest value, when it last changed and was last checked, and how many values are dated on or before the day the instructions were written, which may carry hindsight.
+
 ## Ask a question
 
 `stated ui` runs a small local web app on your machine, next to your research folder: a Python server and a plain web page, with nothing hosted elsewhere. The page holds threads of questions and their answers, like a chat, in a sidebar on the left. The answers come from your own Claude Code or Codex, which the app runs in your research folder each time you ask.

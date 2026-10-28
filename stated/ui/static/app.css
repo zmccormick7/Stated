@@ -126,3 +126,29 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .pieces details.piece summary::-webkit-details-marker { display: none; }
 .pieces details.piece .note { margin-top: 2px; }
 .pieces details.piece .detail { margin-top: 6px; font-size: 13px; color: #555555; }
+.rail button.current { background: var(--fill); }
+#features { width: min(760px, 100% - 48px); padding: 40px 0 48px; display: none; }
+#main.features #features { display: block; }
+#main.features #thread, #main.features #ask, #main.features #problem { display: none; }
+.features { display: flex; flex-direction: column; gap: 16px; }
+.features h1 { margin: 0; font-size: 30px; line-height: 1.25; font-weight: 600; }
+.features p { margin: 0; text-wrap: pretty; }
+.features .muted, .features .note { color: var(--mute); font-size: 13px; }
+.features button.link { height: auto; padding: 0; border: 0; background: none; text-align: left; text-decoration: underline; align-self: flex-start; }
+.features > button.link { font-size: 13px; }
+.features .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; border-top: 1px solid var(--line); padding-top: 16px; }
+.features .count { display: flex; flex-direction: column; }
+.features .count b { font-size: 28px; line-height: 1.1; font-weight: 600; font-variant-numeric: tabular-nums; }
+.features .count span { font-size: 13px; color: #555555; }
+.features .earlier summary { cursor: pointer; font-size: 13px; color: #555555; }
+.features .earlier .piece { border-top: 1px solid var(--line); padding: 8px 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.features .filter { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #555555; cursor: pointer; }
+.scroll { overflow-x: auto; }
+.grid { width: 100%; border-collapse: collapse; font-size: 14px; }
+.grid th { text-align: left; font-weight: 400; font-size: 13px; color: var(--mute); padding: 6px 16px 6px 0; border-bottom: 1px solid var(--ink); white-space: nowrap; }
+.grid th button { height: auto; padding: 0; border: 0; background: none; color: inherit; font-size: inherit; }
+.grid td { padding: 9px 16px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.grid .num { text-align: right; font-variant-numeric: tabular-nums; }
+.grid th:last-child, .grid td:last-child { padding-right: 0; }
+.grid .date { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.grid .muted { color: var(--mute); font-size: 12px; }
