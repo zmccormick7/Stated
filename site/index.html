@@ -417,7 +417,7 @@ mark.on { background-size: 100% 100%; }
         </div>
         <div class="copy">
           <h2>LLMs can finally read like analysts.</h2>
-          <p>Agents read whatever it takes, from one earnings call to everything a company's suppliers and customers have published.</p>
+          <p>Agents read whatever it takes, from one earnings call to every filing, transcript, article and report the question touches.</p>
         </div>
         <div class="copy">
           <h2>Across every company, every day.</h2>
@@ -427,7 +427,7 @@ mark.on { background-size: 100% 100%; }
     </div>
 
     <div class="view" id="view">
-      <canvas id="scene" role="img" aria-label="Illustrative: one feature answered for one company on one date by reading its own filings and calls and those of 64 counterparties, using only documents published by that date; then the same value shown as one cell among millions, companies by trading days"></canvas>
+      <canvas id="scene" role="img" aria-label="Illustrative: one feature answered for one company on one date, as a ledger of the claims found in its earnings call checked against what others said by that date; then the same value shown as one cell among millions, companies by trading days"></canvas>
       <div class="hud" id="hud" aria-hidden="true"><span id="hud-tl"></span><span id="hud-tr"></span><span id="hud-bl"></span><span id="hud-br"></span></div>
       <div class="brief" id="brief">
         <div class="brief-k"><span>New feature</span><span>demand_corroborated</span></div>
@@ -437,7 +437,7 @@ mark.on { background-size: 100% 100%; }
           <dt>Runs on</dt><dd>Every company, every trading day</dd>
         </dl>
       </div>
-      <div class="ledger" id="ledger" aria-label="Illustrative: eight demand claims from Ostrava's Q2 call, each checked against what its customers, suppliers and distributors said by 2024-08-06">
+      <div class="ledger" id="ledger" aria-label="Illustrative: eight demand claims from Ostrava's Q2 call, each checked against what its customers, suppliers and distributors said and the trade press reported by 2024-08-06">
         <div class="lg-head"><span>Demand claims · Q2 earnings call</span><span>Status</span></div>
         <ol class="lg-rows"></ol>
         <div class="lg-foot"><span><b id="lg-read">0</b> <span id="lg-read-k">documents read</span></span><span><b id="lg-ok">0</b> of <span id="lg-n">0</span> corroborated</span></div>
@@ -524,7 +524,10 @@ mark.on { background-size: 100% 100%; }
       "we deferred construction until conditions improve", "management believes liquidity is sufficient", "we exited two unprofitable markets",
       "bookings accelerated through the quarter", "we recorded an impairment charge", "the transaction is expected to close",
       "we raised list prices effective July 1", "headcount was reduced by approximately", "we see early signs of stabilization",
-      "contract renewals came in at flat pricing", "we no longer expect to meet", "the review of strategic alternatives continues"
+      "contract renewals came in at flat pricing", "we no longer expect to meet", "the review of strategic alternatives continues",
+      "shares fell after the company cut its forecast", "people familiar with the matter said", "the regulator opened an inquiry into",
+      "we downgrade to neutral on slowing bookings", "channel checks point to elevated inventory", "suppliers report longer lead times",
+      "the agency approved the merger with conditions", "the court denied the motion to dismiss", "we raise our price target on firmer pricing"
     ];
     var ctx = cv.getContext("2d");
     var W = 0, H = 0, rows = [], lit = [], running = false, last = 0;
@@ -659,7 +662,7 @@ mark.on { background-size: 100% 100%; }
     var hud = {};
     ["tl", "tr", "bl", "br"].forEach(function (k) { hud[k] = { el: document.getElementById("hud-" + k), html: "" }; });
     var copies = [].slice.call(sec.querySelectorAll(".copy")), steps = [].slice.call(sec.querySelectorAll(".beats button"));
-    var BRIEF = "For each claim management made about demand this quarter, check what the company's customers, suppliers and distributors said. Report the share confirmed by at least two of them.";
+    var BRIEF = "For each claim management made about demand this quarter, check what the company's customers, suppliers and distributors said, and what the trade press reported. Report the share confirmed by at least two of them.";
     var BEATS = [0, 0.15, 0.57], JUMP = [0.08, 0.35, 0.78];   // where each beat starts, and where its step button lands
     var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     function clamp(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
@@ -672,7 +675,7 @@ mark.on { background-size: 100% 100%; }
     function fmt(n) { return Math.round(n).toLocaleString("en-US"); }
     function setHud(k, html) { if (hud[k].html !== html) { hud[k].html = html; hud[k].el.innerHTML = html; } }
 
-    /* The reading: eight demand claims from the Q2 call, checked against what customers, suppliers and distributors said.
+    /* The reading: eight demand claims from the Q2 call, checked against what customers, suppliers, distributors and the trade press said.
        Sources arrive in the order they are read, so rows resolve out of order; every one was public by 2024-08-06. */
     var CLAIMS = [
       "Demand from our largest customer remained strong through the quarter.",
@@ -687,12 +690,12 @@ mark.on { background-size: 100% 100%; }
     var EVIDENCE = [   // [claim, when it is read (share of the reading), source, confirms]
       [4, 0.08, "Customer · Northgate Systems · Q2 call · Jul 23", true],
       [0, 0.17, "Customer · Kestrel Motors · Q2 call · Jul 24", true],
-      [3, 0.27, "Customer · Pellucid Devices · Q2 call · Jul 25", true],
+      [3, 0.27, "Trade press · Fab Insider · Jul 25", true],
       [1, 0.38, "Customer · Brightway Auto · Q2 call · Jul 30", true],
       [2, 0.48, "Distributor · Corrin Electronics · Q2 call · Jul 31", false],
       [1, 0.58, "Supplier · Halden Substrates · Q2 call · Aug 1", true],
       [0, 0.67, "Distributor · Arlen Supply · 10-Q · Aug 2", true],
-      [6, 0.74, "Distributor · Arlen Supply · 10-Q · Aug 2", true],
+      [6, 0.74, "Trade press · EE Supply Weekly · Aug 3", true],
       [4, 0.86, "Supplier · Vantor Packaging · 10-Q · Aug 5", true]
     ];
     var READ = 2418;
