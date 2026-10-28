@@ -126,12 +126,15 @@ class ServerTests(unittest.TestCase):
     def test_a_record_is_served_with_its_citations_and_connections(self):
         status, record = self.call("GET", f"/api/records/{self.finding[:8]}")
         self.assertEqual((status, record["id"], record["kind"], record["layer"]), (200, self.finding, "Finding", "workspace"))
+        # The source has no publication date, so no cutoff sees it; the Finding is seen from its stamp.
         self.assertEqual(record["citations"], [{"quote": "one customer were 22%", "source": record["citations"][0]["source"],
-                                                "title": "PowerFrame 10-K"}])
+                                                "title": "PowerFrame 10-K", "seen_from": None}])
+        self.assertEqual(record["seen_from"], record["as_of"])
         self.assertEqual([(c["relation"], c["direction"], c["record"]["kind"]) for c in record["connections"]],
                          [("about", "out", "Entity"), ("supported_by", "out", "Source")])
         self.assertEqual(record["connections"][0]["record"], {"id": self.entity, "kind": "Entity",
-                                                              "text": "PowerFrame Inc. (PowerFrame)"})
+                                                              "text": "PowerFrame Inc. (PowerFrame)", "seen_from": ""})
+        self.assertIsNone(record["connections"][1]["record"]["seen_from"])
         self.assertNotIn("citations", record["attributes"])
         status, entity = self.call("GET", f"/api/records/{self.entity}")
         self.assertEqual((entity["connections"][0]["direction"], entity["connections"][0]["record"]["id"]), ("in", self.finding))

@@ -568,6 +568,19 @@ class RecordStore:
         from .layers import attach_layer
         return attach_layer(self, path)
 
+    def seen_from(self, record_ids: Iterable[str]) -> dict[str, str | None]:
+        """The date a read at a cutoff first sees each record, by full ID: a Source's publication date, a
+        disclosed Finding's latest Source date, an Entity's empty string (always seen), otherwise its stamp;
+        None for a Source with no date, which no cutoff sees. IDs not found are left out."""
+        ids = list(dict.fromkeys(record_ids))
+        found = {}
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            found.update(self._db.execute(
+                f"""SELECT r.id, v.visible_from FROM records r JOIN record_visibility v ON v.record_key = r.record_key
+                    WHERE r.id IN ({','.join('?' * len(chunk))})""", chunk).fetchall())
+        return found
+
     def _seen(self, alias: str, link: bool = False) -> str:
         """A condition keeping the records (or links) `alias` names that a read at the cutoff sees."""
         if self.as_of is None:

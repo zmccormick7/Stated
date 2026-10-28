@@ -32,6 +32,17 @@ class PointInTimeTests(unittest.TestCase):
         self.addCleanup(store.close)
         return store
 
+    def test_seen_from_gives_the_date_each_record_is_first_seen(self):
+        disclosed = self.at("2023-03-01").create("Finding", text="Deposits were $173.1 billion.", author_id="agent",
+                                                 attributes={"basis": "disclosed"})
+        self.live.create_link(disclosed.id, self.annual.id, "supported_by", author_id="agent")
+        inferred = self.at("2023-03-01").create("Finding", text="Deposits were falling.", author_id="agent",
+                                                attributes={"basis": "inference"})
+        self.assertEqual(self.live.seen_from([self.annual.id, self.undated.id, self.bank.id, disclosed.id, inferred.id,
+                                              "missing"]),
+                         {self.annual.id: "2023-02-24", self.undated.id: None, self.bank.id: "",
+                          disclosed.id: "2023-02-24", inferred.id: "2023-03-01"})
+
     def test_writes_are_stamped_with_the_cutoff_or_the_date(self):
         self.assertEqual(self.bank.as_of, self.today)
         cutoff = self.at("2023-02-24")
