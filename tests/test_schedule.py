@@ -68,6 +68,18 @@ class ScheduleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "has no schedule"):
             self.db.pending_work("runnable", [self.a.id])
 
+    def test_new_instructions_keep_the_schedule_they_replace(self):
+        self.db.schedule_feature("runnable", every="quarter", start="2023-03-31")
+        rewritten = self.db.define_feature(author_id="r", key="runnable", type="number", min=0, max=1,
+                                           instructions="Share of deposits that could leave within days.",
+                                           replaces=self.feature.id)
+        self.assertEqual((rewritten.every, rewritten.start), ("quarter", "2023-03-31"))
+        self.assertEqual(self.db.pending_work("runnable", [self.a.id], end="2023-06-30").total, 2)
+        # A derived feature is computed whenever its inputs change, so a formula takes no schedule over.
+        derived = self.db.define_feature(author_id="r", key="runnable", type="number", formula="0.5",
+                                         instructions="Half.", replaces=rewritten.id)
+        self.assertEqual((derived.every, derived.start), (None, None))
+
     def test_values_and_checks_mark_dates_done(self):
         self.db.schedule_feature("runnable", every="week", start="2023-01-02")
         first = self.value(self.at("2023-01-02"), self.a, 0.4)

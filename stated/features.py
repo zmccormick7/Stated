@@ -222,12 +222,16 @@ def define(store, *, author_id: str, key: str, instructions: str, type: str, uni
         if replaces is not None and (current is None or replaces != current[0]):
             raise ValueError(f"replaces must name the current definition of {key!r}"
                              + (f", {current[0]}" if current else "; there is none"))
+        # New instructions keep the schedule of those they replace; a derived feature has none.
+        every, starts = (None, None) if replaces is None or formula is not None else store._db.execute(
+            "SELECT every, starts FROM features WHERE id = ?", (replaces,)).fetchone()
         store._db.execute(
             """INSERT INTO features (id, key, instructions, type, units, minimum, maximum, categories, formula,
-                                     replaces, author_id, written_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                     replaces, every, starts, author_id, written_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (feature_id, key, instructions, type, units, min, max,
-             None if categories is None else json.dumps(list(categories)), formula, replaces, author_id,
-             datetime.now(UTC).isoformat()))
+             None if categories is None else json.dumps(list(categories)), formula, replaces, every, starts,
+             author_id, datetime.now(UTC).isoformat()))
     return read(store, feature_id)
 
 
