@@ -48,7 +48,7 @@ stated feature-table --from 2021-01-04 --feature uninsured_share --out features.
 
 Run the commands in your research folder, or point `STATED_DB` at its database. A subjects file holds one Entity ID per line. Sources must carry the date they became public and be linked `about` their subject, since a source without a date is never seen at any cutoff.
 
-To look over what a run produced, open Features (▦) in `stated ui`: every definition with its schedule and coverage, then each subject's latest value, when it last changed and was last checked, and how many values are dated on or before the day the instructions were written, which may carry hindsight.
+To look over what a run produced, open Features (▦) in `stated ui`: every definition with its schedule and coverage, then each subject's latest value, when it last changed and was last checked, and how many values are dated on or before the day the instructions were written, which may carry hindsight. A subject opens to its values over time, each opening to the evidence it rests on, with anything a cutoff on the value's date could not have seen marked.
 
 ## Ask a question
 

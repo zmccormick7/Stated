@@ -50,16 +50,16 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .answer .sources { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink); }
 .answer .sources summary { cursor: pointer; color: #555555; }
 .answer .sources details[open] summary { color: var(--ink); }
-.answer .sources .record { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; }
-.answer .sources .record p { margin: 0; font-size: 13px; }
-.answer .sources .record blockquote { margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); }
-.answer .sources .record blockquote p { font-style: italic; font-size: 13px; }
-.answer .sources .record blockquote small { display: block; color: var(--mute); font-size: 12px; }
-.answer .sources .links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.answer .sources .links li { display: flex; align-items: baseline; gap: 8px; }
-.answer .sources .links span { flex-shrink: 0; width: 110px; text-align: right; }
-.answer .sources .links button, .answer .sources .back { height: auto; padding: 0; border: 0; background: none; text-align: left; font-size: 13px; text-decoration: underline; cursor: pointer; }
-.answer .sources .muted { color: var(--mute); font-size: 12px; }
+.answer .sources .record, .evidence { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; }
+.answer .sources .record p, .evidence p { margin: 0; font-size: 13px; }
+.answer .sources .record blockquote, .evidence blockquote { margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--line); }
+.answer .sources .record blockquote p, .evidence blockquote p { font-style: italic; font-size: 13px; }
+.answer .sources .record blockquote small, .evidence blockquote small { display: block; color: var(--mute); font-size: 12px; }
+.answer .sources .links, .evidence .links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.answer .sources .links li, .evidence .links li { display: flex; align-items: baseline; gap: 8px; }
+.answer .sources .links span, .evidence .links span { flex-shrink: 0; width: 110px; text-align: right; }
+.answer .sources .links button, .answer .sources .back, .evidence .links button, .evidence .back { height: auto; padding: 0; border: 0; background: none; text-align: left; font-size: 13px; text-decoration: underline; cursor: pointer; }
+.answer .sources .muted, .evidence .muted { color: var(--mute); font-size: 12px; }
 .progress { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .error { border: 1px solid var(--ink); padding: 10px 14px; font-size: 14px; }
 #main.empty { justify-content: center; }
@@ -152,3 +152,24 @@ button { cursor: pointer; background: #FFFFFF; border: 1px solid var(--ink); pad
 .grid th:last-child, .grid td:last-child { padding-right: 0; }
 .grid .date { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .grid .muted { color: var(--mute); font-size: 12px; }
+.features h2 { margin: 8px 0 0; font-size: 13px; font-weight: 400; color: var(--mute); }
+figure.series { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+figure.series figcaption { color: var(--mute); font-size: 12px; }
+svg.series { width: 100%; height: auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+svg.series text { fill: var(--mute); }
+svg.series .sample { fill: var(--fill); }
+svg.series .grid { stroke: var(--line); }
+svg.series .axis { stroke: var(--ink); }
+svg.series .step { stroke: var(--ink); stroke-width: 2; }
+svg.series circle { fill: var(--ink); }
+svg.series .check { stroke: var(--mute); }
+svg.series .null { text-anchor: middle; font-size: 11px; }
+.changes details { border-top: 1px solid var(--line); padding: 8px 0; }
+.changes summary { cursor: pointer; display: flex; gap: 16px; align-items: baseline; font-size: 14px; }
+.changes summary .date { font-variant-numeric: tabular-nums; }
+.changes .tag { font-size: 11px; border: 1px solid var(--line); padding: 0 6px; color: #555555; }
+.evidence { padding: 10px 0 4px 16px; }
+.evidence .links .target { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.evidence .links .seen { width: auto; text-align: left; }
+.evidence .late { color: #B3261E; font-size: 12px; }
+.evidence blockquote small .seen { margin-left: 8px; }

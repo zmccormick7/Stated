@@ -123,13 +123,18 @@ class App:
                     title = None
                 citations.append({"quote": quote, "source": citation.get("source_id"), "title": title})
             found = db.connections(record.id, limit=50)
+            # When a cutoff first sees each record, so a feature value's evidence can be checked against its date.
+            seen = db.seen_from([record.id, *found.records, *(c["source"] for c in citations if isinstance(c["source"], str))])
+            for citation in citations:
+                citation["seen_from"] = seen.get(citation["source"])
             connections = []
             for link in found.links:
                 other = found.records[link.from_id if link.to_id == record.id else link.to_id]
                 connections.append({"relation": link.relation, "direction": "in" if link.to_id == record.id else "out",
-                                    "explanation": link.explanation, "record": _preview(other)})
+                                    "explanation": link.explanation, "record": {**_preview(other), "seen_from": seen.get(other.id)}})
         return {"id": record.id, "kind": record.kind, "text": record.text, "layer": record.layer,
-                "author_id": record.author_id, "updated_at": record.updated_at,
+                "author_id": record.author_id, "updated_at": record.updated_at, "as_of": record.as_of,
+                "seen_from": seen.get(record.id),
                 "attributes": {k: v for k, v in record.attributes.items() if k != "citations"},
                 "citations": citations, "connections": connections, "has_more": found.has_more}
 
