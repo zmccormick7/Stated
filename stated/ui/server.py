@@ -3,13 +3,14 @@
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from dataclasses import asdict
 import json
 from pathlib import Path
 import shutil
 import sys
 import threading
 import webbrowser
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from ..store import RecordStore
 from .harness import ClaudeCode, Codex
@@ -85,6 +86,21 @@ class App:
                     if turn["status"] == "running" and turn["effort"] in RUN_EFFORTS:
                         turn["written"] = written_since(db, turn["started_at"])
         return thread
+
+    def features(self) -> list:
+        """The current feature definitions, each with how many subjects have a value and the latest value's date."""
+        with RecordStore(self.db_path) as db:
+            return [asdict(c) for c in db.feature_coverage()]
+
+    def feature(self, feature: str) -> dict:
+        """A feature definition by key or ID, with every subject's latest value and the dates still due."""
+        with RecordStore(self.db_path) as db:
+            return asdict(db.feature_subjects(feature))
+
+    def feature_series(self, feature: str, subject_id: str) -> dict:
+        """Every value of a feature about one subject in date order, and the dates it was confirmed."""
+        with RecordStore(self.db_path) as db:
+            return asdict(db.feature_series(feature, subject_id))
 
     def record(self, record_id: str) -> dict:
         """A record for the reader: its text and attributes, the passages it cites, and one hop of links."""
@@ -166,6 +182,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(self.app.thread(path[13:]))
             except KeyError:
                 return self._error(HTTPStatus.NOT_FOUND, "no such thread")
+        if path == "/api/features":
+            return self._json(self.app.features())
+        if path.startswith("/api/features/"):
+            parts = [unquote(part) for part in path[14:].split("/")]
+            try:
+                if len(parts) == 1:
+                    return self._json(self.app.feature(parts[0]))
+                if len(parts) == 3 and parts[1] == "subjects":
+                    return self._json(self.app.feature_series(parts[0], parts[2]))
+            except KeyError:
+                return self._error(HTTPStatus.NOT_FOUND, "no such feature or subject")
+            except ValueError as error:
+                return self._error(HTTPStatus.BAD_REQUEST, str(error))
         if path.startswith("/api/records/"):
             try:
                 return self._json(self.app.record(path[13:]))

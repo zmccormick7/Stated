@@ -529,6 +529,23 @@ class RecordStore:
         from .features import table
         return table(self, features, subject_ids, start=start, end=end, every=every)
 
+    def feature_coverage(self) -> tuple["Coverage", ...]:
+        """Each current feature definition with how many subjects have a value of it and its latest value's date."""
+        from .features import coverage
+        return coverage(self)
+
+    def feature_subjects(self, feature: str) -> "FeatureSubjects":
+        """A feature definition with every subject's latest value, when it last changed and was last read, the
+        definitions it replaced, its values dated on or before its instructions, and the dates still due."""
+        from .features import subjects
+        return subjects(self, feature)
+
+    def feature_series(self, feature: str, subject_id: str) -> "FeatureSeries":
+        """Every value of a feature definition about one subject, in date order, and the dates checks found
+        the latest value still held."""
+        from .features import series
+        return series(self, feature, subject_id)
+
     def schedule_feature(self, feature: str, *, every: str | None, start: str | None = None) -> "FeatureDefinition":
         """Set the dates a value of the feature is due for each subject (day, weekday, week, month or quarter
         from `start`), or clear them with `every` None."""

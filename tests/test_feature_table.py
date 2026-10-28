@@ -63,6 +63,50 @@ class FeatureTableTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "after the cutoff"):
                 then.feature_table(start="2023-01-05", end="2023-01-06")
 
+    def test_coverage_subjects_and_series_read_each_value_with_when_it_was_dated_and_read(self):
+        with RecordStore(self.path) as db:
+            other = db.create("Entity", text="Another bank", author_id="setup").id
+            db.schedule_feature("share", every="weekday", start="2023-01-02")
+            # Instructions written on 2023-01-04: values dated by then may carry hindsight.
+            db._db.execute("UPDATE features SET written_at = '2023-01-04T12:00:00+00:00' WHERE id = ?", (self.share.id,))
+        first = self.value("2023-01-03", self.share, 0.4)
+        with RecordStore(self.path, as_of="2023-01-05") as db:
+            db.confirm_value(first.id, author_id="agent")
+        self.value("2023-01-05", self.cut, True)
+        second = self.value("2023-01-06", self.share, 0.6)
+        with RecordStore(self.path, as_of="2023-01-04") as db:
+            db.contribute(author_id="agent", records=[{"ref": "v", "kind": "Variable", "text": "v",
+                "attributes": {"key": "share", "feature": self.share.id, "value": None}}],
+                links=[{"from_id": "v", "to_id": other, "relation": "about"}])
+        with RecordStore(self.path, as_of="2023-01-09") as db:
+            self.assertEqual([(c.definition.key, c.subjects, c.latest) for c in db.feature_coverage()],
+                             [("cut", 1, "2023-01-05"), ("share", 2, "2023-01-06")])
+            found = db.feature_subjects("share")
+            self.assertEqual([(s.subject, s.value_id, s.value, s.as_of, s.checked, s.values) for s in found.subjects],
+                             [("Another bank", found.subjects[0].value_id, None, "2023-01-04", "2023-01-04", 1),
+                              ("Bank", second.id, 0.6, "2023-01-06", "2023-01-06", 2)])
+            # Due: the bank's 2, 4 and 9 January and the other bank's weekdays but the 4th.
+            self.assertEqual((found.earlier, found.in_sample, found.due), ((), 2, 8))
+            series = db.feature_series("share", self.bank[:8])
+            self.assertEqual([(p.id, p.as_of, p.value, p.author_id, p.in_sample) for p in series.points],
+                             [(first.id, "2023-01-03", 0.4, "agent", True), (second.id, "2023-01-06", 0.6, "agent", False)])
+            self.assertEqual((series.subject, series.checks), ("Bank", ("2023-01-05",)))
+            with self.assertRaisesRegex(ValueError, "not an Entity"):
+                db.feature_series("share", first.id)
+            with self.assertRaises(KeyError):
+                db.feature_series("missing", self.bank)
+        with RecordStore(self.path, as_of="2023-01-04") as then:
+            series = then.feature_series("share", self.bank)
+            self.assertEqual(([p.as_of for p in series.points], series.checks), (["2023-01-03"], ()))
+            self.assertEqual([s.checked for s in then.feature_subjects("share").subjects], ["2023-01-04", "2023-01-03"])
+        with RecordStore(self.path) as db:
+            replacement = db.define_feature(author_id="r", key="share", type="number", instructions="The new share.",
+                                            replaces=self.share.id)
+            found = db.feature_subjects("share")
+            self.assertEqual((found.definition.id, [d.id for d in found.earlier], found.subjects, found.due),
+                             (replacement.id, [self.share.id], (), None))
+            self.assertEqual(len(db.feature_subjects(self.share.id).subjects), 2)
+
     def test_cli_writes_the_table_as_csv(self):
         self.value("2023-01-03", self.cut, False)
         out = self.path.with_name("table.csv")
