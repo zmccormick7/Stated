@@ -78,6 +78,51 @@ class Derived:
 
 
 @dataclass(frozen=True)
+class Coverage:
+    definition: FeatureDefinition
+    subjects: int  # Entities with a value of the definition.
+    latest: str | None  # The date of its latest value, or None without one.
+
+
+@dataclass(frozen=True)
+class SubjectState:
+    subject_id: str
+    subject: str
+    value_id: str  # The latest value of the definition about the subject.
+    value: object
+    as_of: str  # That value's date: when the feature last changed.
+    checked: str  # The latest date it was read, by a new value or a check.
+    values: int  # Values of the definition about the subject.
+
+
+@dataclass(frozen=True)
+class FeatureSubjects:
+    definition: FeatureDefinition
+    earlier: tuple[FeatureDefinition, ...]  # The definitions of the key it replaced, latest first.
+    subjects: tuple[SubjectState, ...]
+    in_sample: int  # Values dated on or before the day the instructions were written.
+    due: int | None  # Scheduled dates still due for these subjects; None without a schedule or subjects.
+
+
+@dataclass(frozen=True)
+class SeriesPoint:
+    id: str
+    as_of: str
+    value: object
+    author_id: str
+    in_sample: bool  # Dated on or before the day the instructions were written, so they may carry hindsight.
+
+
+@dataclass(frozen=True)
+class FeatureSeries:
+    definition: FeatureDefinition
+    subject_id: str
+    subject: str
+    points: tuple[SeriesPoint, ...]  # Every value about the subject in date order, later versions of a date last.
+    checks: tuple[str, ...]  # The dates a check found the latest value still held.
+
+
+@dataclass(frozen=True)
 class FeatureCheck:
     value_id: str  # The latest value, found still to hold.
     feature_id: str
@@ -496,6 +541,78 @@ def table(store, features, subject_ids, *, start: str, end: str | None, every: s
     columns = ("subject_id", "subject", "date") + tuple(
         name for d in order for name in (d.key, f"{d.key}_as_of", f"{d.key}_checked"))
     return FeatureTable(columns, tuple(rows))
+
+
+def coverage(store) -> tuple[Coverage, ...]:
+    """Each current definition with the number of subjects that have a value of it and its latest value's date."""
+    found = []
+    for definition in list_definitions(store):
+        subjects, latest = store._db.execute(
+            f"""SELECT count(DISTINCT a.to_key), max(v.as_of) FROM records v JOIN links a ON a.from_key = v.record_key
+                JOIN records e ON e.record_key = a.to_key WHERE v.kind = 'Variable'
+                AND json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about' AND e.kind = 'Entity'
+                AND {store._seen('v')} AND {store._seen('a', link=True)}""", (definition.id,)).fetchone()
+        found.append(Coverage(definition, subjects, latest))
+    return tuple(found)
+
+
+def subjects(store, feature: str) -> FeatureSubjects:
+    """A definition, named by key (its current one) or ID, with the latest value of every subject that has one,
+    when it last changed and was last read, how many values were dated on or before the instructions were
+    written, and how many scheduled dates are still due for those subjects."""
+    definition = read(store, feature)
+    earlier, previous = [], definition.replaces
+    while previous is not None:
+        earlier.append(read(store, previous))
+        previous = earlier[-1].replaces
+    checked = dict(store._db.execute(
+        """SELECT e.id, max(c.as_of) FROM feature_checks c JOIN records v ON v.record_key = c.value_key
+           JOIN links a ON a.from_key = v.record_key JOIN records e ON e.record_key = a.to_key
+           WHERE json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about' AND e.kind = 'Entity'
+             AND (? IS NULL OR c.as_of <= ?) GROUP BY e.id""", (definition.id, store.as_of, store.as_of)))
+    rows, in_sample = {}, 0
+    for subject_id, subject, value_id, as_of, attributes in _values(store, definition.id):
+        count = rows[subject_id].values + 1 if subject_id in rows else 1
+        rows[subject_id] = SubjectState(subject_id, subject, value_id, json.loads(attributes).get("value"), as_of,
+                                        max(as_of, checked.get(subject_id) or as_of), count)
+        in_sample += as_of <= definition.written_at[:10]
+    due = None
+    if definition.every is not None and rows:
+        due = pending(store, definition.id, list(rows), limit=1).total
+    return FeatureSubjects(definition, tuple(earlier), tuple(rows.values()), in_sample, due)
+
+
+def series(store, feature: str, subject_id: str) -> FeatureSeries:
+    """Every value of a definition about one subject, in date order, each marked when it is dated on or before
+    the day the instructions were written, and the dates checks found the latest value still held."""
+    definition = read(store, feature)
+    subject = store.read(store.resolve_id(subject_id))
+    if subject.kind != "Entity":
+        raise ValueError(f"{subject.id} is a {subject.kind}, not an Entity")
+    points = tuple(SeriesPoint(value_id, as_of, json.loads(attributes).get("value"), author_id,
+                               as_of <= definition.written_at[:10])
+                   for value_id, as_of, attributes, author_id in store._db.execute(
+        f"""SELECT v.id, v.as_of, v.attributes, v.author_id FROM records v JOIN links a ON a.from_key = v.record_key
+            WHERE v.kind = 'Variable' AND json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about'
+              AND a.to_key = ? AND {store._seen('v')} AND {store._seen('a', link=True)}
+            ORDER BY v.as_of, v.record_key""", (definition.id, store._record_key(subject.id))))
+    checks = tuple(row[0] for row in store._db.execute(
+        """SELECT DISTINCT c.as_of FROM feature_checks c JOIN records v ON v.record_key = c.value_key
+           JOIN links a ON a.from_key = v.record_key WHERE json_extract(v.attributes, '$.feature') = ?
+           AND a.relation = 'about' AND a.to_key = ? AND (? IS NULL OR c.as_of <= ?) ORDER BY c.as_of""",
+        (definition.id, store._record_key(subject.id), store.as_of, store.as_of)))
+    return FeatureSeries(definition, subject.id, subject.text, points, checks)
+
+
+def _values(store, feature_id: str):
+    """(subject ID, subject, value ID, date, attributes) for every value of a definition about an Entity,
+    subject by subject in date order, later versions of a date last."""
+    return store._db.execute(
+        f"""SELECT e.id, e.text, v.id, v.as_of, v.attributes FROM records v JOIN links a ON a.from_key = v.record_key
+            JOIN records e ON e.record_key = a.to_key WHERE v.kind = 'Variable'
+            AND json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about' AND e.kind = 'Entity'
+            AND {store._seen('v')} AND {store._seen('a', link=True)} ORDER BY e.text, e.id, v.as_of, v.record_key""",
+        (feature_id,))
 
 
 def _latest(store, feature_id: str, subject_id: str):

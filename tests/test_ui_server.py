@@ -36,7 +36,7 @@ class ServerTests(unittest.TestCase):
     def setUp(self):
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        db_path = Path(directory.name) / "research.sqlite"
+        db_path = self.db_path = Path(directory.name) / "research.sqlite"
         with RecordStore(db_path) as db:
             finding = db.create("Finding", text="Two customers were 22% and 14% of revenue.", author_id="a").id
             self.finding = finding
@@ -136,6 +136,27 @@ class ServerTests(unittest.TestCase):
         status, entity = self.call("GET", f"/api/records/{self.entity}")
         self.assertEqual((entity["connections"][0]["direction"], entity["connections"][0]["record"]["id"]), ("in", self.finding))
         self.assertEqual(self.call("GET", "/api/records/missing")[0], 404)
+
+    def test_features_are_served_with_their_subjects_and_series(self):
+        with RecordStore(self.db_path) as db:
+            share = db.define_feature(author_id="r", key="top_customer", type="number", instructions="Top customer share.")
+        with RecordStore(self.db_path, as_of="2024-02-01") as db:
+            value = db.contribute(author_id="agent", records=[{"ref": "v", "kind": "Variable", "text": "22% of sales.",
+                "attributes": {"key": "top_customer", "feature": share.id, "value": 0.22}}],
+                links=[{"from_id": "v", "to_id": self.entity, "relation": "about"}]).records["v"]
+        status, features = self.call("GET", "/api/features")
+        self.assertEqual((status, [(f["definition"]["key"], f["subjects"], f["latest"]) for f in features]),
+                         (200, [("top_customer", 1, "2024-02-01")]))
+        status, feature = self.call("GET", "/api/features/top_customer")
+        self.assertEqual((status, feature["definition"]["id"], feature["due"], feature["in_sample"]), (200, share.id, None, 1))
+        self.assertEqual(feature["subjects"], [{"subject_id": self.entity, "subject": "PowerFrame Inc. (PowerFrame)",
+            "value_id": value.id, "value": 0.22, "as_of": "2024-02-01", "checked": "2024-02-01", "values": 1}])
+        status, series = self.call("GET", f"/api/features/{share.id[:8]}/subjects/{self.entity[:8]}")
+        self.assertEqual((status, series["checks"], series["points"]), (200, [], [{"id": value.id, "as_of": "2024-02-01",
+            "value": 0.22, "author_id": "agent", "in_sample": True}]))
+        self.assertEqual(self.call("GET", "/api/features/missing")[0], 404)
+        self.assertEqual(self.call("GET", f"/api/features/top_customer/subjects/{self.finding}")[0], 400)
+        self.assertEqual(self.call("GET", "/api/features/top_customer/values")[0], 404)
 
     def test_what_was_left_running_is_picked_up_or_failed_on_start(self):
         store = ThreadStore(self.server.RequestHandlerClass.args[0].store.path)
