@@ -133,7 +133,7 @@ What exists today:
 - The answer page with checked answers, levers, research runs and the notes, pause and finish controls.
 - A base layer covering the 1,000 largest US filers by public float, with the full text of each company's latest annual report and, for 474 of them, a coverage pack of its business, segments, key figures, relationships, risks and open questions. Driver models exist for a handful of companies.
 
-What is being worked on: coverage packs for the rest of the top 1,000, driver models with sourced inputs for covered companies through the go-deeper skill, quarterly updates as filings land, collecting a universe's documents for feature runs (sources are ingested one at a time today), runs across many companies and years, and measuring how much hindsight still leaks into values.
+What is being worked on: coverage packs for the rest of the top 1,000, driver models with sourced inputs for covered companies through the go-deeper skill, quarterly updates as filings land, runs across many companies and years, and measuring how much hindsight still leaks into values.
 
 ## Contributing
 
