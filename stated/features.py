@@ -10,7 +10,9 @@ produced it, and `written_at` records when those instructions were fixed.
 
 A definition may carry a schedule: the dates a value is due for each subject, every day, weekday, week, month
 or quarter from a start date. A date is done for a subject once a value of the definition about it carries
-that date, or once a check confirms that the latest value still held then; `pending` lists the rest.
+that date, or once a check confirms that the latest value still held then; `pending` lists the rest. A
+schedule may also carry a lapse: the number of days after the newest document a value rests on that the
+instructions may change the answer with no new document, as when they discount evidence past a certain age.
 """
 
 from calendar import monthrange
@@ -42,6 +44,7 @@ class FeatureDefinition:
     values: int  # Variables that name this definition.
     every: str | None  # The schedule: day, weekday, week, month or quarter, or None.
     start: str | None  # The schedule's first date.
+    lapse_days: int | None = None  # Days after its newest evidence that a value may change without a new document.
 
 
 @dataclass(frozen=True)
@@ -136,7 +139,7 @@ _SELECT = """
     SELECT f.id, f.key, f.instructions, f.type, f.units, f.minimum, f.maximum, f.categories, f.formula,
            f.replaces, (SELECT n.id FROM features n WHERE n.replaces = f.id) AS replaced_by, f.author_id, f.written_at,
            (SELECT count(*) FROM records r WHERE r.kind = 'Variable'
-              AND json_extract(r.attributes, '$.feature') = f.id) AS value_count, f.every, f.starts
+              AND json_extract(r.attributes, '$.feature') = f.id) AS value_count, f.every, f.starts, f.lapse_days
     FROM features f
 """
 
@@ -149,7 +152,8 @@ def _decode(row) -> FeatureDefinition:
     categories = None if row["categories"] is None else tuple(json.loads(row["categories"]))
     return FeatureDefinition(row["id"], row["key"], row["instructions"], row["type"], row["units"], row["minimum"],
                              row["maximum"], categories, row["formula"], row["replaces"], row["replaced_by"],
-                             row["author_id"], row["written_at"], row["value_count"], row["every"], row["starts"])
+                             row["author_id"], row["written_at"], row["value_count"], row["every"], row["starts"],
+                             row["lapse_days"])
 
 
 def _check(key, instructions, type, units, min, max, categories, formula, author_id) -> None:
@@ -223,15 +227,15 @@ def define(store, *, author_id: str, key: str, instructions: str, type: str, uni
             raise ValueError(f"replaces must name the current definition of {key!r}"
                              + (f", {current[0]}" if current else "; there is none"))
         # New instructions keep the schedule of those they replace; a derived feature has none.
-        every, starts = (None, None) if replaces is None or formula is not None else store._db.execute(
-            "SELECT every, starts FROM features WHERE id = ?", (replaces,)).fetchone()
+        every, starts, lapse = (None, None, None) if replaces is None or formula is not None else store._db.execute(
+            "SELECT every, starts, lapse_days FROM features WHERE id = ?", (replaces,)).fetchone()
         store._db.execute(
             """INSERT INTO features (id, key, instructions, type, units, minimum, maximum, categories, formula,
-                                     replaces, every, starts, author_id, written_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                     replaces, every, starts, lapse_days, author_id, written_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (feature_id, key, instructions, type, units, min, max,
              None if categories is None else json.dumps(list(categories)), formula, replaces, every, starts,
-             author_id, datetime.now(UTC).isoformat()))
+             lapse, author_id, datetime.now(UTC).isoformat()))
     return read(store, feature_id)
 
 
@@ -278,13 +282,18 @@ def list_definitions(store, *, replaced: bool = False) -> tuple[FeatureDefinitio
     return tuple(_decode(row) for row in store._db.execute(_SELECT + where + " ORDER BY f.key, f.feature_key"))
 
 
-def schedule(store, feature: str, *, every: str | None, start: str | None = None) -> FeatureDefinition:
-    """Set the dates a value of the feature is due for each subject, or clear them with `every` None. A
-    schedule is not part of the instructions, so it can change after values exist."""
+def schedule(store, feature: str, *, every: str | None, start: str | None = None,
+             lapse_days: int | None = None) -> FeatureDefinition:
+    """Set the dates a value of the feature is due for each subject, and optionally its lapse, or clear them
+    with `every` None. A schedule is not part of the instructions, so it can change after values exist."""
     _writable(store)
     definition = read(store, feature)
     if every is None and start is not None:
         raise ValueError("clearing a schedule takes no start")
+    if every is None and lapse_days is not None:
+        raise ValueError("clearing a schedule takes no lapse_days")
+    if lapse_days is not None and (not isinstance(lapse_days, int) or isinstance(lapse_days, bool) or lapse_days < 1):
+        raise ValueError("lapse_days must be a positive whole number of days")
     if every is not None:
         if every not in EVERY:
             raise ValueError(f"every is one of {', '.join(EVERY)}")
@@ -293,7 +302,8 @@ def schedule(store, feature: str, *, every: str | None, start: str | None = None
             raise ValueError("a derived feature has no schedule: it is computed whenever its inputs change")
     with store._db:
         store._db.execute("BEGIN IMMEDIATE")
-        store._db.execute("UPDATE features SET every = ?, starts = ? WHERE id = ?", (every, start, definition.id))
+        store._db.execute("UPDATE features SET every = ?, starts = ?, lapse_days = ? WHERE id = ?",
+                          (every, start, lapse_days, definition.id))
     return read(store, definition.id)
 
 

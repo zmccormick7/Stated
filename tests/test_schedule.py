@@ -52,13 +52,18 @@ class ScheduleTests(unittest.TestCase):
 
     def test_a_schedule_is_set_cleared_and_checked(self):
         scheduled = self.db.schedule_feature("runnable", every="week", start="2023-01-02")
-        self.assertEqual((scheduled.every, scheduled.start), ("week", "2023-01-02"))
+        self.assertEqual((scheduled.every, scheduled.start, scheduled.lapse_days), ("week", "2023-01-02", None))
+        lapsing = self.db.schedule_feature("runnable", every="week", start="2023-01-02", lapse_days=458)
+        self.assertEqual(lapsing.lapse_days, 458)
         self.assertEqual(self.db.schedule_feature(self.feature.id, every=None).every, None)
         derived = self.db.define_feature(author_id="r", key="twice", type="number", formula="runnable * 2",
                                          instructions="Twice the runnable share.")
         for args, message in (({"every": "hourly", "start": "2023-01-02"}, "every is one of"),
                               ({"every": "week"}, "start must be a date"),
-                              ({"every": None, "start": "2023-01-02"}, "takes no start")):
+                              ({"every": None, "start": "2023-01-02"}, "takes no start"),
+                              ({"every": None, "lapse_days": 30}, "takes no lapse_days"),
+                              ({"every": "week", "start": "2023-01-02", "lapse_days": 0}, "positive whole number"),
+                              ({"every": "week", "start": "2023-01-02", "lapse_days": 1.5}, "positive whole number")):
             with self.subTest(args=args), self.assertRaisesRegex(ValueError, message):
                 self.db.schedule_feature("runnable", **args)
         with self.assertRaisesRegex(ValueError, "derived feature has no schedule"):
@@ -69,16 +74,16 @@ class ScheduleTests(unittest.TestCase):
             self.db.pending_work("runnable", [self.a.id])
 
     def test_new_instructions_keep_the_schedule_they_replace(self):
-        self.db.schedule_feature("runnable", every="quarter", start="2023-03-31")
+        self.db.schedule_feature("runnable", every="quarter", start="2023-03-31", lapse_days=120)
         rewritten = self.db.define_feature(author_id="r", key="runnable", type="number", min=0, max=1,
                                            instructions="Share of deposits that could leave within days.",
                                            replaces=self.feature.id)
-        self.assertEqual((rewritten.every, rewritten.start), ("quarter", "2023-03-31"))
+        self.assertEqual((rewritten.every, rewritten.start, rewritten.lapse_days), ("quarter", "2023-03-31", 120))
         self.assertEqual(self.db.pending_work("runnable", [self.a.id], end="2023-06-30").total, 2)
         # A derived feature is computed whenever its inputs change, so a formula takes no schedule over.
         derived = self.db.define_feature(author_id="r", key="runnable", type="number", formula="0.5",
                                          instructions="Half.", replaces=rewritten.id)
-        self.assertEqual((derived.every, derived.start), (None, None))
+        self.assertEqual((derived.every, derived.start, derived.lapse_days), (None, None, None))
 
     def test_values_and_checks_mark_dates_done(self):
         self.db.schedule_feature("runnable", every="week", start="2023-01-02")

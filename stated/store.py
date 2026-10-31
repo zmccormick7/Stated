@@ -15,7 +15,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 17
+_SCHEMA_VERSION = 18
 
 
 @dataclass(frozen=True)
@@ -546,11 +546,12 @@ class RecordStore:
         from .features import series
         return series(self, feature, subject_id)
 
-    def schedule_feature(self, feature: str, *, every: str | None, start: str | None = None) -> "FeatureDefinition":
+    def schedule_feature(self, feature: str, *, every: str | None, start: str | None = None,
+                         lapse_days: int | None = None) -> "FeatureDefinition":
         """Set the dates a value of the feature is due for each subject (day, weekday, week, month or quarter
-        from `start`), or clear them with `every` None."""
+        from `start`) and its lapse in days, or clear them with `every` None."""
         from .features import schedule
-        return schedule(self, feature, every=every, start=start)
+        return schedule(self, feature, every=every, start=start, lapse_days=lapse_days)
 
     def pending_work(self, feature: str, subject_ids: Iterable[str], *, start: str | None = None,
                      end: str | None = None, limit: int = 1000) -> "PendingWork":

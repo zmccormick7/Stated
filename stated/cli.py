@@ -138,7 +138,7 @@ def _parser():
     command("feature", "read_feature", "Read a feature definition by ID, or the current one for a key.", "feature")
     command("schedule-feature", "schedule_feature",
             "Set the dates a value of a feature is due for each subject, or clear them with every null.", "feature",
-            payload="every (day, weekday, week, month, quarter or null), start (a date)")
+            payload="every (day, weekday, week, month, quarter or null), start (a date), optional lapse_days")
     todo = command("pending", "pending_work",
                    "List the scheduled dates on which a subject has neither a value of the feature nor a check.", "feature")
     todo.add_argument("--subject", dest="subject_ids", action="append", default=[], metavar="ENTITY_ID",

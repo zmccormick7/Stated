@@ -34,7 +34,8 @@ CREATE INDEX records_feature ON records (json_extract(attributes, '$.feature')) 
 -- a date, and the type of that value. They are procedures, not knowledge, so they are not records: every
 -- cutoff reads them alike. A value is a Variable whose attributes.feature is a definition's id. A definition
 -- is rewritten only while no value names it; new instructions for a key then replace it. Its schedule, the
--- dates a value is due for each subject, can change at any time.
+-- dates a value is due for each subject, can change at any time, and so can its lapse: how many days after the
+-- newest document its latest value rests on that value may change with no new document about the subject.
 CREATE TABLE features (
     feature_key INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
@@ -49,6 +50,7 @@ CREATE TABLE features (
     replaces TEXT UNIQUE REFERENCES features (id),  -- The definition of the same key this one took over from.
     every TEXT CHECK (every IN ('day', 'weekday', 'week', 'month', 'quarter')),
     starts TEXT CHECK (starts GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    lapse_days INTEGER CHECK (lapse_days IS NULL OR (lapse_days > 0 AND every IS NOT NULL)),
     author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),
     written_at TEXT NOT NULL,  -- UTC time the instructions were last written: dates after it test them honestly.
     CHECK ((every IS NULL) = (starts IS NULL) AND (every IS NULL OR formula IS NULL))
