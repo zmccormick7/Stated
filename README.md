@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
-[Install](#install) · [Build features](#build-features) · [Ask a question](#ask-a-question) · [Use your own agent](#use-your-own-agent) · [How the graph is organised](#how-the-graph-is-organised) · [Status](#status) · [CLI](docs/cli.md) · [Python API](docs/python-api.md) · [Feature guide](docs/features.md)
+[Install](#install) · [Build features](#build-features) · [Ask a question](#ask-a-question) · [Use your own agent](#use-your-own-agent) · [How the graph is organised](#how-the-graph-is-organised) · [Status](#status) · [CLI](docs/cli.md) · [Python API](docs/python-api.md) · [Feature guide](docs/features.md) · [Base layer](docs/base-layer.md)
 
 ## Install
 
@@ -17,7 +17,7 @@ pipx install "stated[cli] @ git+https://github.com/zmccormick7/Stated.git"
 stated ui
 ```
 
-The first run creates a research folder at `~/Stated`, installs the bundled skills for your agent, and opens the app in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `stated ui --base base-2026.10.01.sqlite`.
+The first run creates a research folder at `~/Stated`, installs the bundled skills for your agent, and opens the app in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `stated ui --base base-2026.10.01.sqlite`. The [base layer guide](docs/base-layer.md) covers what it holds and what it leaves out: it is a starting point, and an edge is more likely to come from the data you bring.
 
 To work on Stated itself, clone the repository anywhere but `~/Stated`, which the app uses for research, and install it in editable mode (`python -m pip install -e '.[cli]'` inside a virtual environment); `stated` then runs from your checkout.
 
@@ -131,7 +131,7 @@ What exists today:
 - The CLI, Python API and five skills. Three are used daily by Claude Code and Codex; the feature-design skill is new; the state skill has been tried on six banks at one cutoff and on one bank at two, in a workspace holding only their pre-cutoff filings.
 - Features end to end: definitions, schedules, `run-features`, derived features and the daily `feature-table`. Runs so far are small, a handful of banks over a few dates.
 - The answer page with checked answers, levers, research runs and the notes, pause and finish controls.
-- A base layer covering the 1,000 largest US filers by public float, with the full text of each company's latest annual report and, for 474 of them, a coverage pack of its business, segments, key figures, relationships, risks and open questions. Driver models exist for a handful of companies.
+- A base layer covering the 1,000 largest US filers by public float: three years of their 10-Ks, 10-Qs and results releases in full text, each dated and linked to its company for point-in-time reads, and for about 470 of them a coverage pack of the business, segments, key figures, relationships, risks and open questions. The published file, `base-2026.10.01`, predates the quarterly reports and results releases; the next export carries them. Driver models exist for a handful of companies.
 
 What is being worked on: coverage packs for the rest of the top 1,000, driver models with sourced inputs for covered companies through the go-deeper skill, quarterly updates as filings land, runs across many companies and years, and measuring how much hindsight still leaks into values.
 
