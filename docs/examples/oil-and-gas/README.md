@@ -6,45 +6,73 @@ This example uses Stated to measure three things about 31 US oil and gas produce
 - whether it says how much drilling inventory it has left, and
 - what share of its chief executive's annual bonus is tied to growing production or reserves.
 
-Each week's values come only from filings published by that date, and each value links to the passages it was read from. The result is a table with one row per company and weekday. This page explains how the companies were chosen, which documents were collected, what each feature asks, and how to reproduce the run. It shows how the features are built, not whether they predict anything.
+Each week's values come only from filings published by that date, and each value links to the passages it was read from. The values describe what the companies had said. They are not tested here as predictors of anything.
 
 | File | Contents |
 | --- | --- |
 | [feature-table.csv](feature-table.csv) | The exported table, with one row per company and weekday from 2023-01-02 to 2024-12-31. |
 | [definitions/](definitions/) | The three feature definitions. |
-| [tools/](tools/) | The two scripts that chose the companies and downloaded their filings, as they were run. |
+| [tools/](tools/) | The two scripts that chose the companies and downloaded their filings. |
 
-## How the companies were chosen
+## What the run produced
 
-The universe is every SEC filer whose industry code (SIC) is 1311, crude petroleum and natural gas, and that reported total assets of at least $3 billion at the end of 2021. [select_universe.py](tools/select_universe.py) reads total assets from the SEC's XBRL data for that date, and the rule returns 31 companies. Two of them were removed by hand. Apache Corp is a subsidiary of APA Corp, which is already in the universe, and Hess Midstream gathers and processes oil and gas rather than producing it. Two companies were added by name: ConocoPhillips and Hess. The SEC classes both as petroleum refining (SIC 2911), although neither of them refines. That leaves 31 companies.
+The table has one row per company and weekday. Here are six of the companies on 2024-12-31:
 
-The universe is fixed at the end of 2021, before the period begins, so companies acquired during the period stay in it until their filings stop. PDC Energy's filings end in August 2023, Callon's in April 2024, Pioneer's in May 2024, Southwestern's in October 2024 and Marathon Oil's in November 2024. Hess's sale was still pending at the end of 2024. Viper Energy owns mineral and royalty interests rather than operating wells, but the SEC classes it under SIC 1311, so it stays in.
+| Company | production_guidance_drift | inventory_disclosure | bonus_weight_on_growth |
+| --- | --- | --- | --- |
+| Devon Energy | 1.05 | quantified | 0.1 |
+| Diamondback Energy | | quantified | 0 |
+| EQT | 0.955556 | quantified | 0 |
+| Marathon Oil | 1.010526 | stopped_quantifying | 0 |
+| Murphy Oil | 0.983696 | stopped_quantifying | 0 |
+| SM Energy | 1.022643 | described | 0.35 |
 
-Each company appears under the name it used on 2021-07-01, so that no session sees a name the company adopted later. Coterra appears as Cabot Oil & Gas, Expand Energy as Chesapeake Energy, Chord as Oasis Petroleum, Civitas as Bonanza Creek Energy, Permian Resources as Centennial Resource Development, and Crescent Energy as IE PubCo.
+An empty cell is a null, and every null has a recorded reason. Diamondback's guidance drift is null because it revised its 2024 guidance to include its merger with Endeavor, which closed in September 2024, without saying how much Endeavor would add to the year's production.
 
-## Which filings were collected
+Each feature also has two date columns. `_as_of` is the date the value was written for, and `_checked` is the latest date on which it was read again or confirmed. Here is Murphy Oil's guidance drift on the days around its third-quarter 2024 earnings release, which it filed on Thursday, 2024-11-07:
 
-[fetch_corpus.py](tools/fetch_corpus.py) downloaded every 10-K, 10-Q, 8-K and DEF 14A that the companies filed between 2021-07-01 and 2024-12-31, along with the EX-99 exhibits furnished with each 8-K, which hold earnings releases and investor presentations. That comes to 3,186 documents, split into 92,328 passages for search. Each document is stored as a Source that records its filing date (as `published`), form, exhibit, accession number and URL, and is linked `about` its company. The collection starts eighteen months before the first date in the table, so that the earliest sessions can see a year and a half of filings.
+| date | production_guidance_drift | production_guidance_drift_as_of | production_guidance_drift_checked |
+| --- | --- | --- | --- |
+| 2024-11-01 | 1.0 | 2024-01-29 | 2024-10-28 |
+| 2024-11-04 | 1.0 | 2024-01-29 | 2024-11-04 |
+| 2024-11-08 | 1.0 | 2024-01-29 | 2024-11-04 |
+| 2024-11-11 | 0.983696 | 2024-11-11 | 2024-11-11 |
 
-The corpus contains only the text of what the companies filed with the SEC. Guidance published only on a company's website, or only in images, is missing. EOG files the narrative pages of its earnings releases as images, including its production guidance, so no session could see that guidance, and EOG's guidance drift is null throughout.
+The features are read every Monday. On 2024-11-04 nothing had changed, so the value from January was confirmed. The release came out on the Thursday, and the next Monday's reading picked it up and wrote a new value.
 
-## What each feature measures
+## How Murphy Oil's guidance drift moved over two years
 
-The three features describe how each company runs its business, using only what it has disclosed. None of them rates the company.
+Each time Murphy's guidance drift changed, the new value rested on a sentence in an earnings release:
 
-[production_guidance_drift](definitions/production_guidance_drift.json) is a number. For the latest fiscal year the company has given production guidance for, it divides the company's latest expectation for that year's production by the first guidance it gave. The latest expectation is the midpoint of the most recent guidance until the company reports the year's actual production, and the actual after that. The value is 1.0 when guidance is first given, and 1.05 means the company now expects 5% more than it first said. When a company revises its guidance to include an acquisition or a sale, the agent removes the deal's effect if the company states how much it contributes. If the company doesn't state it, the value is null for the rest of that year.
+| Value date | Value | Filing | What it says |
+| --- | --- | --- | --- |
+| 2023-01-30 | 1.000 | [Q4 2022 release](https://www.sec.gov/Archives/edgar/data/717423/000071742323000004/mur-2022q4xex991.htm), 2023-01-26 | "Full year 2023 production is expected to be in the range of 175.5 to 183.5 MBOEPD" |
+| 2023-08-07 | 1.020 | [Q2 2023 release](https://www.sec.gov/Archives/edgar/data/717423/000071742323000048/mur-2023q2xex991.htm), 2023-08-03 | Guidance raised to 180,000 to 186,000 barrels of oil equivalent per day |
+| 2023-11-06 | null | [Q3 2023 release](https://www.sec.gov/Archives/edgar/data/717423/000071742323000059/mur-2023q3xex991.htm), 2023-11-02 | Guidance raised to 185 to 187, after the sale of some Canadian assets closed |
+| 2024-01-29 | 1.000 | [Q4 2023 release](https://www.sec.gov/Archives/edgar/data/717423/000071742324000004/mur-2023q4xex991.htm), 2024-01-25 | "Full year 2024 production is expected to be in the range of 180 to 188 MBOEPD" |
+| 2024-11-11 | 0.984 | [Q3 2024 release](https://www.sec.gov/Archives/edgar/data/717423/000071742324000036/mur-2024q3xex991.htm), 2024-11-07 | Range tightened to 180 to 182 |
 
-[inventory_disclosure](definitions/inventory_disclosure.json) is one of four categories: `quantified`, `stopped_quantifying`, `described` or `not_discussed`. It records whether the company's latest annual report or latest quarterly earnings materials state how many drilling locations, or how many years of drilling, the company has left. `stopped_quantifying` means that neither of them states a number, but one of those documents did in the previous 18 months. Only annual reports and quarterly earnings materials count. Because companies publish them on a regular cycle, a number missing from the latest one can be compared with the same document a quarter or a year earlier.
+The value is the midpoint of the latest guidance divided by the midpoint of the first guidance for the same year. The August 2023 raise took the 2023 midpoint from 179.5 to 183, a drift of 1.020. In November 2023 Murphy raised the range again, but the new figure no longer included the Canadian assets it had sold, and it never said how much those assets would have produced over the full year. The two figures could no longer be compared, so the value became null for the rest of 2023. In January 2024 the first 2024 guidance started a new year at 1.000.
 
-[bonus_weight_on_growth](definitions/bonus_weight_on_growth.json) is a number from 0 to 1. It is the share of the chief executive's target annual bonus that is tied to growth in production or reserve volumes, read from a proxy statement filed in the previous 15 months. Metrics measured per share, costs, returns and cash flow do not count as growth. The value is 0 when the bonus plan assigns weights and none of them goes to growth. It is null when there is no recent proxy statement, or when the plan assigns no weights.
+The last value, 0.984 on 2024-11-11, was written by an agent session that could see only filings published by that date. Its record says, in part:
 
-All three features are scheduled weekly, starting on Monday 2023-01-02.
+> Initial guidance: 180-188 MBOEPD (midpoint 184), Q4 2023 earnings release of 2024-01-25. Latest expectation: 180-182 MBOEPD (midpoint 181), Q3 2024 earnings release of 2024-11-07; FY2024 actuals are not yet reported. No in-year acquisition or divestiture adjustment applies.
 
-Every date in the example falls before the day the definitions were written, and before the training cutoff of the model the agents ran on. The values are only as good as the instructions and the documents allow, and they cannot show whether the features are free of hindsight. The [feature guide](../../features.md#lookahead-what-stated-handles-and-what-it-doesnt) explains why only dates after a definition was written can test that.
+The value is linked to two Findings, one for each release. Each Finding cites the exact passage it was read from. The newer one cites this sentence from the Q3 2024 release:
+
+> The company is tightening its full year 2024 production range to 180 to 182 MBOEPD, consisting of approximately 50 percent oil and 55 percent liquids volumes.
+
+## What the three features measure
+
+[production_guidance_drift](definitions/production_guidance_drift.json) is the company's latest expectation for a year's production divided by the first guidance it gave for that year. The latest expectation is the midpoint of the most recent guidance until the company reports the year's actual production, and the actual after that. When guidance is revised to include an acquisition or a sale, the agent removes the deal's effect if the company says how much it contributes. If the company doesn't say, the value is null for the rest of the year.
+
+[inventory_disclosure](definitions/inventory_disclosure.json) records whether the company's latest annual report or quarterly earnings materials state how many drilling locations, or how many years of drilling, it has left. The value is `quantified` if either of them gives a number. It is `stopped_quantifying` if neither does but one of those documents did in the previous 18 months. Otherwise it is `described` if they discuss inventory in words, and `not_discussed` if they don't mention it.
+
+[bonus_weight_on_growth](definitions/bonus_weight_on_growth.json) is the share of the chief executive's target annual bonus that is tied to growth in production or reserve volumes, read from a proxy statement filed in the previous 15 months. Measures per share, costs, returns and cash flow do not count as growth.
 
 ## How to reproduce the run
 
-To reproduce the run, start in an empty folder. Copy this example's `tools/` and `definitions/` into it, and add a file named `contact.txt` holding your name and email address, which the SEC asks every request to carry. Then run:
+Start in an empty folder. Copy this example's `tools/` and `definitions/` into it, and add a file named `contact.txt` holding your name and email address, which the SEC asks every request to carry. Then run:
 
 ```bash
 stated init --layer oil-and-gas
@@ -63,95 +91,22 @@ stated feature-table --subjects-file subjects.txt --from 2023-01-02 --to 2024-12
   --every weekday --out feature-table.csv
 ```
 
-`select_universe.py` writes the list of companies to `edgar/universe.json`. The removals and additions described above are made by editing that file before running `fetch_corpus.py`, which creates one Entity for each company along with its Sources and passages. If `fetch_corpus.py` is interrupted, running it again picks up where it stopped. `subjects.txt` lists the IDs of the 31 Entities, one per line.
+`select_universe.py` writes the list of companies to `edgar/universe.json`. The changes to that list described below are made by editing the file before running `fetch_corpus.py`. Every agent session used Claude Code with Claude Opus 5.5.
 
-Every session used Claude Code with Claude Opus 5.5.
+## How the companies and filings were chosen
 
-## How many sessions the run needed
+The companies are every SEC filer with industry code (SIC) 1311, crude petroleum and natural gas, and total assets of at least $3 billion at the end of 2021. Apache Corp was removed because its parent, APA, is already included, and Hess Midstream because it doesn't produce oil or gas. ConocoPhillips and Hess were added, because the SEC classes them as refiners although neither of them refines. Companies acquired during 2023 and 2024 stay in: PDC Energy, Callon, Pioneer, Southwestern and Marathon Oil. Each company appears under the name it used in mid-2021, so that no session sees a later name. Coterra, for example, appears as Cabot Oil & Gas.
 
-On each weekly date, `run-features` looked at each company in turn. If no new filing had been linked to the company since its values were last read, Stated confirmed those values without starting a session. Otherwise it started one agent session for the company at that date, which read the new filings and either wrote new values or confirmed that the existing ones still held.
+The filings are every 10-K, 10-Q, 8-K and proxy statement the companies filed from mid-2021 to the end of 2024, together with the earnings releases and presentations furnished with the 8-Ks: 3,186 documents in all. Only text filed with the SEC is included. EOG files its earnings releases' guidance as images, so its guidance drift is null throughout.
 
-| | |
-| --- | --- |
-| Company-weeks | 3,255 (31 companies over 105 weeks), each with all three features due |
-| Agent sessions | 839, so an agent read about a quarter of the company-weeks |
-| Values confirmed without a session | 7,323 |
-| Values confirmed by an agent | 2,049 |
-| Values written | 393: 162 for guidance drift (23 of them null), 140 for inventory (1 null) and 91 for bonus weight (21 null) |
+On about a quarter of the 3,255 company-weeks, Stated started an agent session, because a new filing had appeared since the last reading or because a reading had passed the age limit its definition sets: 839 sessions in all. On the other weeks it confirmed the existing values without a session. The agents wrote 393 values.
 
-An agent writes a new value only when the answer changes, including when the period it covers or the document it rests on changes. Otherwise it confirms the latest value. Every null value states its reason. For guidance drift, the usual reasons are that the company gave no numeric guidance, or that it closed an acquisition or sale without saying how much it contributes to the year's production. For bonus weight, they are that the plan assigns no weights to its metrics, or that no proxy statement was filed in the previous 15 months.
-
-## Every company's values at the end of 2024
-
-[feature-table.csv](feature-table.csv) has one row per company and weekday. Each feature has three columns: the value itself, `_as_of`, which is the date the value was written for, and `_checked`, which is the latest date on which it was read or confirmed. An empty value is null. The table below shows each company's values on 2024-12-31, with the period each value covers:
-
-| Company | CIK | Guidance drift | Inventory | Bonus weight on growth | Latest filing |
-| --- | --- | --- | --- | --- | --- |
-| Antero Resources | 1433270 | 1.015 (FY2024) | quantified | 0.25 (FY2023) | 2024-10-30 |
-| APA | 1841666 | null (FY2024) | described | 0 (FY2023) | 2024-12-03 |
-| Bonanza Creek Energy | 1509589 | 1.036 (FY2024) | quantified | null (FY2023) | 2024-11-07 |
-| Cabot Oil & Gas | 858470 | 1.019 (FY2024) | quantified | 0.2 (FY2023) | 2024-12-31 |
-| California Resources | 1609253 | 0.963 (FY2024) | described | 0 (FY2023) | 2024-11-25 |
-| Callon Petroleum | 928022 | null (FY2023) | described | null (FY2023) | 2024-04-01 |
-| Centennial Resource Development | 1658566 | null (FY2024) | described | null (FY2023) | 2024-11-07 |
-| Chesapeake Energy | 895126 | 1.000 (FY2025) | described | 0.05 (FY2023) | 2024-12-02 |
-| CNX Resources | 1070412 | 0.948 (FY2024) | described | 0 (FY2023) | 2024-12-05 |
-| Comstock Resources | 23194 | null (FY2022) | quantified | 0.15 (FY2023) | 2024-10-31 |
-| ConocoPhillips | 1163165 | 1.008 (FY2024) | not_discussed | 0.075 (FY2023) | 2024-12-30 |
-| Continental Resources | 732834 | null (FY2022) | quantified | null (FY2022) | 2024-11-12 |
-| Devon Energy | 1090012 | 1.050 (FY2024) | quantified | 0.1 (FY2023) | 2024-12-09 |
-| Diamondback Energy | 1539838 | null (FY2024) | quantified | 0 (FY2023) | 2024-11-07 |
-| EOG Resources | 821189 | null (FY2022) | described | 0.05 (FY2023) | 2024-11-21 |
-| EQT | 33213 | 0.956 (FY2024) | quantified | 0 (FY2023) | 2024-12-31 |
-| Hess | 4447 | 1.094 (FY2023) | not_discussed | 0.35 (FY2023) | 2024-11-06 |
-| IE PubCo | 1866175 | 1.020 (FY2024) | described | null (FY2022) | 2024-12-20 |
-| Kosmos Energy | 1509991 | 0.905 (FY2024) | described | 0.141 (FY2023) | 2024-11-29 |
-| Marathon Oil | 101778 | 1.011 (FY2024) | stopped_quantifying | 0 (FY2023) | 2024-11-22 |
-| Matador Resources | 1520006 | null (FY2024) | quantified | null (FY2023) | 2024-11-07 |
-| Murphy Oil | 717423 | 0.984 (FY2024) | stopped_quantifying | 0 (FY2023) | 2024-12-23 |
-| Oasis Petroleum | 1486159 | 1.000 (FY2025) | described | 0 (FY2023) | 2024-11-08 |
-| Occidental Petroleum | 797468 | 1.023 (FY2023) | quantified | 0 (FY2023) | 2024-11-12 |
-| Ovintiv | 1792580 | 1.000 (FY2025) | described | null (FY2023) | 2024-12-12 |
-| PDC Energy | 77877 | 1.000 (FY2023) | null | null | 2023-08-24 |
-| Pioneer Natural Resources | 1038357 | 1.044 (FY2023) | quantified | null (FY2023) | 2024-05-03 |
-| Range Resources | 315852 | 1.014 (FY2024) | described | 0 (FY2023) | 2024-10-23 |
-| SM Energy | 893538 | 1.023 (FY2024) | described | 0.35 (FY2023) | 2024-12-12 |
-| Southwestern Energy | 7332 | null (FY2023) | quantified | null (FY2023) | 2024-10-01 |
-| Viper Energy Partners | 1602065 | 1.000 (FY2025) | not_discussed | null (FY2023) | 2024-12-09 |
-
-## Murphy Oil's values over two years
-
-The table below lists each value written for Murphy Oil, on the date it was written for. In the weeks between, the latest value was confirmed.
-
-| Date | Guidance drift | Inventory | Bonus weight on growth |
-| --- | --- | --- | --- |
-| 2023-01-02 | null (FY2022): guidance was revised for acquisitions and a sale, without the sale's full-year contribution | not_discussed | 0.15 (FY2021): a production target weighted 15% |
-| 2023-01-30 | 1.000 (FY2023): 179.5 thousand barrels of oil equivalent per day guided | | |
-| 2023-03-27 | | | 0 (FY2022): the production metric was removed |
-| 2023-08-07 | 1.020: guidance raised to 183 | quantified: about 488 Kaybob Duvernay locations left after a pending sale | |
-| 2023-11-06 | null: the sale closed without its contribution being stated | stopped_quantifying | |
-| 2024-01-29 | 1.000 (FY2024): 184 guided | | |
-| 2024-03-25 | | | 0 (FY2023) |
-| 2024-11-11 | 0.984: guidance lowered to 181 | | |
-
-The inventory value was also written five more times with the same category, each time because a newer document had become the latest one read. Those rows are left out.
-
-## The evidence behind one of Murphy's values
-
-Murphy's `inventory_disclosure` value at 2023-08-07 is `quantified`. It rests on one Finding, written by the same session:
-
-> Murphy Oil's Q2 2023 earnings release (8-K EX-99.1, 2023-08-03) states a remaining drilling inventory for the Kaybob Duvernay: after the pending divestiture of 250 gross (138 net) drilling locations, Murphy will have approximately 488 gross drilling locations remaining there.
-
-The Finding cites a passage of the [release as filed](https://www.sec.gov/Archives/edgar/data/717423/000071742323000048/mur-2023q2xex991.htm), published 2023-08-03:
-
-> After the transaction closes, Murphy will have approximately 488 gross drilling locations with an average 75 percent oil weighting remaining in the Kaybob Duvernay
-
-On 2023-11-06 the value became `stopped_quantifying`. That value rests on two Findings: a new one recording that the third-quarter release gives no count and mentions drilling locations only in its forward-looking statements disclaimer, and the second-quarter Finding above, as the last document that gave one. The definition, read literally, treats a number given to explain an asset sale as quantifying inventory. Whether it should is a decision for the next version of the definition, not for the agent.
+Every date in the example falls before the definitions were written and before the model's training cutoff, so the example cannot show whether the features are free of hindsight. The [feature guide](../../features.md#lookahead-what-stated-handles-and-what-it-doesnt) explains why only later dates can test that.
 
 ## Limitations
 
-`_checked` keeps advancing after a company stops filing. Each week without a new filing confirms the latest values, so a company acquired in 2023 still shows values checked on 2024-12-30. The `_as_of` column and the date of the latest filing tell the two cases apart.
+`_checked` keeps advancing after a company stops filing, because each week without a new filing confirms its latest values. A company acquired in 2023 still shows values checked on 2024-12-30. Its `_as_of` dates show when the values were last written.
 
-Seven values are linked to a Finding written at a later date than the value. In each case a later session confirmed that the value still held and linked it to the Finding it relied on. The value's contents did not change, and the link carries the later date, so a point-in-time read leaves it out. Someone following evidence from an old value in the current graph, however, can reach documents published after the value's date.
+Seven values are linked to a Finding written later than the value, by a session that confirmed the value still held. A point-in-time read leaves those links out, but someone following evidence from an old value in the current graph can reach documents published after its date.
 
-Values carry the author `run/claude-code`, which names the harness but not the model. The model, Claude Opus 5.5 for every session, is recorded only in the session logs. The [feature guide](../../features.md) recommends naming the model in `author_id`.
+Values carry the author `run/claude-code`, which names the harness but not the model. The [feature guide](../../features.md) recommends naming the model in `author_id`.
