@@ -14,7 +14,7 @@ Each week's values come only from filings published by that date, and each value
 | [definitions/](definitions/) | The three feature definitions. |
 | [tools/](tools/) | The two scripts that chose the companies and downloaded their filings, as they were run. |
 
-## The companies
+## How the companies were chosen
 
 The universe is every SEC filer whose industry code (SIC) is 1311, crude petroleum and natural gas, and that reported total assets of at least $3 billion at the end of 2021. [select_universe.py](tools/select_universe.py) reads total assets from the SEC's XBRL data for that date, and the rule returns 31 companies. Two of them were removed by hand. Apache Corp is a subsidiary of APA Corp, which is already in the universe, and Hess Midstream gathers and processes oil and gas rather than producing it. Two companies were added by name: ConocoPhillips and Hess. The SEC classes both as petroleum refining (SIC 2911), although neither of them refines. That leaves 31 companies.
 
@@ -22,13 +22,13 @@ The universe is fixed at the end of 2021, before the period begins, so companies
 
 Each company appears under the name it used on 2021-07-01, so that no session sees a name the company adopted later. Coterra appears as Cabot Oil & Gas, Expand Energy as Chesapeake Energy, Chord as Oasis Petroleum, Civitas as Bonanza Creek Energy, Permian Resources as Centennial Resource Development, and Crescent Energy as IE PubCo.
 
-## The documents
+## Which filings were collected
 
 [fetch_corpus.py](tools/fetch_corpus.py) downloaded every 10-K, 10-Q, 8-K and DEF 14A that the companies filed between 2021-07-01 and 2024-12-31, along with the EX-99 exhibits furnished with each 8-K, which hold earnings releases and investor presentations. That comes to 3,186 documents, split into 92,328 passages for search. Each document is stored as a Source that records its filing date (as `published`), form, exhibit, accession number and URL, and is linked `about` its company. The collection starts eighteen months before the first date in the table, so that the earliest sessions can see a year and a half of filings.
 
 The corpus contains only the text of what the companies filed with the SEC. Guidance published only on a company's website, or only in images, is missing. EOG files the narrative pages of its earnings releases as images, including its production guidance, so no session could see that guidance, and EOG's guidance drift is null throughout.
 
-## The features
+## What each feature measures
 
 The three features describe how each company runs its business, using only what it has disclosed. None of them rates the company.
 
@@ -42,7 +42,7 @@ All three features are scheduled weekly, starting on Monday 2023-01-02.
 
 Every date in the example falls before the day the definitions were written, and before the training cutoff of the model the agents ran on. The values are only as good as the instructions and the documents allow, and they cannot show whether the features are free of hindsight. The [feature guide](../../features.md#lookahead-what-stated-handles-and-what-it-doesnt) explains why only dates after a definition was written can test that.
 
-## Running it
+## How to reproduce the run
 
 To reproduce the run, start in an empty folder. Copy this example's `tools/` and `definitions/` into it, and add a file named `contact.txt` holding your name and email address, which the SEC asks every request to carry. Then run:
 
@@ -67,7 +67,7 @@ stated feature-table --subjects-file subjects.txt --from 2023-01-02 --to 2024-12
 
 Every session used Claude Code with Claude Opus 5.5.
 
-## What the run did
+## How many sessions the run needed
 
 On each weekly date, `run-features` looked at each company in turn. If no new filing had been linked to the company since its values were last read, Stated confirmed those values without starting a session. Otherwise it started one agent session for the company at that date, which read the new filings and either wrote new values or confirmed that the existing ones still held.
 
@@ -81,7 +81,7 @@ On each weekly date, `run-features` looked at each company in turn. If no new fi
 
 An agent writes a new value only when the answer changes, including when the period it covers or the document it rests on changes. Otherwise it confirms the latest value. Every null value states its reason. For guidance drift, the usual reasons are that the company gave no numeric guidance, or that it closed an acquisition or sale without saying how much it contributes to the year's production. For bonus weight, they are that the plan assigns no weights to its metrics, or that no proxy statement was filed in the previous 15 months.
 
-## The table
+## Every company's values at the end of 2024
 
 [feature-table.csv](feature-table.csv) has one row per company and weekday. Each feature has three columns: the value itself, `_as_of`, which is the date the value was written for, and `_checked`, which is the latest date on which it was read or confirmed. An empty value is null. The table below shows each company's values on 2024-12-31, with the period each value covers:
 
@@ -119,7 +119,7 @@ An agent writes a new value only when the answer changes, including when the per
 | Southwestern Energy | 7332 | null (FY2023) | quantified | null (FY2023) | 2024-10-01 |
 | Viper Energy Partners | 1602065 | 1.000 (FY2025) | not_discussed | null (FY2023) | 2024-12-09 |
 
-## One company over time
+## Murphy Oil's values over two years
 
 The table below lists each value written for Murphy Oil, on the date it was written for. In the weeks between, the latest value was confirmed.
 
@@ -136,7 +136,7 @@ The table below lists each value written for Murphy Oil, on the date it was writ
 
 The inventory value was also written five more times with the same category, each time because a newer document had become the latest one read. Those rows are left out.
 
-## One value traced
+## The evidence behind one of Murphy's values
 
 Murphy's `inventory_disclosure` value at 2023-08-07 is `quantified`. It rests on one Finding, written by the same session:
 
@@ -148,7 +148,7 @@ The Finding cites a passage of the [release as filed](https://www.sec.gov/Archiv
 
 On 2023-11-06 the value became `stopped_quantifying`. That value rests on two Findings: a new one recording that the third-quarter release gives no count and mentions drilling locations only in its forward-looking statements disclaimer, and the second-quarter Finding above, as the last document that gave one. The definition, read literally, treats a number given to explain an asset sale as quantifying inventory. Whether it should is a decision for the next version of the definition, not for the agent.
 
-## Known limitations
+## Limitations
 
 `_checked` keeps advancing after a company stops filing. Each week without a new filing confirms the latest values, so a company acquired in 2023 still shows values checked on 2024-12-30. The `_as_of` column and the date of the latest filing tell the two cases apart.
 
