@@ -6,7 +6,7 @@ Three features describing 31 US oil and gas producers every week of 2023 and 202
 | --- | --- |
 | [feature-table.csv](feature-table.csv) | The exported table: one row per company and weekday, 2023-01-02 to 2024-12-31. |
 | [definitions/](definitions/) | The three definitions the run used, and in [definitions/pilot/](definitions/pilot/) the two they replaced. |
-| [tools/](tools/) | The scripts that chose the universe and collected the filings, as run. |
+| [tools/](tools/) | The scripts that chose the universe, collected the filings and reran expired readings, as run. |
 
 ## The universe
 
@@ -59,13 +59,13 @@ stated feature-table --subjects-file subjects.txt --from 2023-01-02 --to 2024-12
 | | |
 | --- | --- |
 | Company-weeks | 3,255 (31 companies × 105 weeks), each with all three features due |
-| Agent sessions | 812, plus 21 in the pilot: an agent read on about a quarter of company-weeks |
-| Confirmed without a session | 7,272 feature values, on dates with no new filing since the last read |
+| Agent sessions | 818, plus 21 in the pilot: an agent read on about a quarter of company-weeks |
+| Confirmed without a session | 7,266 feature values, on dates with no new filing since the last read |
 | Confirmed by an agent | 2,034 feature values, read again and found to hold |
-| Values written | 381: 162 drift (23 null), 133 inventory, 86 bonus weight (16 null) |
-| Failed sessions | 0 |
+| Values written | 387: 162 drift (23 null), 134 inventory (1 null), 91 bonus weight (21 null) |
+| Failed sessions | 0 in the run; the six rerun sessions below failed once on an expired login and ran again |
 
-A value is written only when the answer changes, including its period or the document it rests on; otherwise the last value is confirmed. Each null carries its reason: for drift, mostly no numeric guidance, or an acquisition or divestiture whose contribution the company never stated; for bonus weight, a plan that states no metric weights.
+A value is written only when the answer changes, including its period or the document it rests on; otherwise the last value is confirmed. Each null carries its reason: for drift, mostly no numeric guidance, or an acquisition or divestiture whose contribution the company never stated; for bonus weight, a plan that states no metric weights, or no proxy filed in the last 15 months.
 
 ## The table
 
@@ -78,7 +78,7 @@ A value is written only when the answer changes, including its period or the doc
 | Bonanza Creek Energy | 1509589 | 1.036 (FY2024) | quantified | null (FY2023) | 2024-11-07 |
 | Cabot Oil & Gas | 858470 | 1.019 (FY2024) | quantified | 0.2 (FY2023) | 2024-12-31 |
 | California Resources | 1609253 | 0.963 (FY2024) | described | 0 (FY2023) | 2024-11-25 |
-| Callon Petroleum | 928022 | null (FY2023) | described | 0 (FY2022) | 2024-04-01 |
+| Callon Petroleum | 928022 | null (FY2023) | described | null (FY2023) | 2024-04-01 |
 | Centennial Resource Development | 1658566 | null (FY2024) | described | null (FY2023) | 2024-11-07 |
 | Chesapeake Energy | 895126 | 1.000 (FY2025) | described | 0.05 (FY2023) | 2024-12-02 |
 | CNX Resources | 1070412 | 0.948 (FY2024) | described | 0 (FY2023) | 2024-12-05 |
@@ -98,8 +98,8 @@ A value is written only when the answer changes, including its period or the doc
 | Oasis Petroleum | 1486159 | 1.000 (FY2025) | described | 0 (FY2023) | 2024-11-08 |
 | Occidental Petroleum | 797468 | 1.023 (FY2023) | quantified | 0 (FY2023) | 2024-11-12 |
 | Ovintiv | 1792580 | 1.000 (FY2025) | described | null (FY2023) | 2024-12-12 |
-| PDC Energy | 77877 | 1.000 (FY2023) | quantified | 0 (FY2022) | 2023-08-24 |
-| Pioneer Natural Resources | 1038357 | 1.044 (FY2023) | quantified | 0 (FY2022) | 2024-05-03 |
+| PDC Energy | 77877 | 1.000 (FY2023) | null | null | 2023-08-24 |
+| Pioneer Natural Resources | 1038357 | 1.044 (FY2023) | quantified | null (FY2023) | 2024-05-03 |
 | Range Resources | 315852 | 1.014 (FY2024) | described | 0 (FY2023) | 2024-10-23 |
 | SM Energy | 893538 | 1.023 (FY2024) | described | 0.35 (FY2023) | 2024-12-12 |
 | Southwestern Energy | 7332 | null (FY2023) | quantified | null (FY2023) | 2024-10-01 |
@@ -134,9 +134,14 @@ The Finding cites a byte range of the [release as filed](https://www.sec.gov/Arc
 
 At 2023-11-06 the value became `stopped_quantifying`. It depends on a new Finding that the Q3 release states no count and mentions drilling locations only in its forward-looking boilerplate, and on the Q2 Finding as the last document that did. Read literally, the definition counts a figure given to explain an asset sale as quantifying inventory; whether it should is a question for the next version of the definition, not for the agent.
 
+## Readings that expire
+
+`bonus_weight_on_growth` becomes null once the latest proxy is more than 15 months old, and `inventory_disclosure` once no annual report or earnings release has appeared in 15 months, with no new document needed. A date with no new filing is confirmed without a session, so as first run, those limits took effect only when a later filing brought a session, and for companies that had stopped filing the last value stood. A reading may now say when it `expires`, the first date it would no longer hold if nothing new were published, and `run-features` gives it a session on that date; the stated-state skill tells agents to set it when the instructions discount evidence by age.
+
+The values here were written before readings could expire, so the expiry dates were computed from the two definitions' rules ([rerun_expired.py](tools/rerun_expired.py)): for six company–feature pairs, the checks made without a session from the expiry date on were removed, one session was run at that date, and an ordinary run confirmed the dates after it. All six sessions wrote null: bonus weight for Continental (from 2023-07-10), Callon (2024-06-17), Southwestern (2024-07-08), PDC and Pioneer (2024-07-15), and inventory for PDC (2024-08-05). That changed 538 cells of the table.
+
 ## Known limitations
 
-- **Time limits are not applied without a session.** `bonus_weight_on_growth` becomes null once the latest proxy is more than 15 months old, and `inventory_disclosure` once no annual report or earnings release has appeared in 15 months. A date with no new filing is confirmed without a session, so those limits take effect only when a later filing brings a session. For companies that stopped filing, the last value stands: bonus weight for PDC, Callon and Pioneer from mid-2024, and inventory for PDC from August 2024, 539 cells in all, plus a few weeks each for Southwestern and Continental before their next filings.
 - **`_checked` keeps advancing after a company stops filing.** Each week with no new filing confirms the last values, so a company acquired in 2023 shows values checked on 2024-12-30. `_as_of` and the latest-filing date tell the two apart.
 - **Later evidence on earlier values.** Seven values were linked to a Finding written at a later date, by a session that confirmed the value still held. The link carries the later date and the value's own contents never changed, but following evidence from an old value can reach documents published after it; a point-in-time read leaves those links out.
 - **Author names the harness, not the model.** Values carry `run/claude-code`; the model, Claude Opus 5.5 throughout, comes from the session logs. The [feature guide](../../features.md) recommends naming it in `author_id`.
