@@ -110,6 +110,22 @@ class FeatureRunTests(unittest.TestCase):
             check = db._db.execute("SELECT author_id FROM feature_checks").fetchall()
             self.assertEqual({row[0] for row in check}, {"feature-run/fake/no-new-documents"})
 
+    def test_an_expired_reading_gets_a_session_without_a_new_document(self):
+        self.source(self.a, "2022-12-30")
+        with RecordStore(self.path, as_of="2023-01-02") as db:
+            db.contribute(author_id="agent", records=[{"ref": "v", "kind": "Variable", "text": "reading",
+                "attributes": {"key": "runnable", "feature": db.read_feature("runnable").id, "value": 0.5,
+                               "expires": "2023-01-16"}}], links=[{"from_id": "v", "to_id": self.a, "relation": "about"}])
+        # The check made without a session carries the expiry forward; the session confirms with none.
+        harness = FakeHarness(self.path, {(self.a, "2023-01-16"): "confirm"})
+        result = run_features(self.path, ["runnable"], [self.a], harness=harness, end="2023-01-23")
+        self.assertEqual([(s, d) for s, d, *_ in harness.calls], [(self.a, "2023-01-16")])
+        self.assertEqual([(s.date, s.session) for s in result.sessions],
+                         [("2023-01-09", False), ("2023-01-16", True), ("2023-01-23", False)])
+        with RecordStore(self.path) as db:
+            self.assertEqual([tuple(row) for row in db._db.execute("SELECT as_of, expires FROM feature_checks ORDER BY as_of")],
+                             [("2023-01-09", "2023-01-16"), ("2023-01-16", None), ("2023-01-23", None)])
+
     def test_a_failed_date_stops_its_subject_and_the_run_resumes_from_it(self):
         harness, result, _ = self.run_with({(self.a, "2023-01-09"): "nothing",
                                             (self.b, "2023-01-02"): HarnessError("crashed")})

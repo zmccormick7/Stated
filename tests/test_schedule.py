@@ -30,12 +30,13 @@ class ScheduleTests(unittest.TestCase):
         self.addCleanup(store.close)
         return store
 
-    def value(self, store, subject, value, updates=None):
+    def value(self, store, subject, value, updates=None, **attributes):
         links = [{"from_id": "v", "to_id": subject.id, "relation": "about"}]
         if updates is not None:
             links.append({"from_id": "v", "to_id": updates.id, "relation": "updates"})
         return store.contribute(author_id="agent", records=[{"ref": "v", "kind": "Variable", "text": "reading",
-            "attributes": {"key": "runnable", "feature": self.feature.id, "value": value}}], links=links).records["v"]
+            "attributes": {"key": "runnable", "feature": self.feature.id, "value": value, **attributes}}],
+            links=links).records["v"]
 
     def test_scheduled_dates(self):
         self.assertEqual(scheduled_dates("day", "2023-01-30", "2023-01-30", "2023-02-02"),
@@ -113,6 +114,21 @@ class ScheduleTests(unittest.TestCase):
             self.db.confirm_value(plain.id, author_id="agent")
         with self.assertRaisesRegex(ValueError, "name one or more Entities"):
             self.db.pending_work("runnable", [plain.id])
+
+    def test_a_reading_may_say_when_it_expires(self):
+        store = self.at("2023-01-02")
+        first = store.contribute(author_id="agent", records=[{"ref": "v", "kind": "Variable", "text": "reading",
+            "attributes": {"key": "runnable", "feature": self.feature.id, "value": 0.4, "expires": "2023-04-13"}}],
+            links=[{"from_id": "v", "to_id": self.a.id, "relation": "about"}]).records["v"]
+        self.assertEqual(self.at("2023-01-09").confirm_value(first.id, author_id="agent", expires="2023-07-01").expires,
+                         "2023-07-01")
+        for attributes, message in (({"expires": "April"}, "expires must be a date"),
+                                    ({"expires": "2023-01-16"}, "expires must be after 2023-01-16")):
+            with self.subTest(attributes=attributes), self.assertRaisesRegex(ValueError, message):
+                self.value(self.at("2023-01-16"), self.b, 0.5, **attributes)
+        for expires, message in (("soon", "expires must be a date"), ("2023-01-16", "must be after 2023-01-16")):
+            with self.subTest(expires=expires), self.assertRaisesRegex(ValueError, message):
+                self.at("2023-01-16").confirm_value(first.id, author_id="agent", expires=expires)
 
     def test_cli_lists_pending_dates_for_subjects_in_a_file(self):
         self.db.schedule_feature("runnable", every="month", start="2023-01-31")

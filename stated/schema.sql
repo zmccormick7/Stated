@@ -64,6 +64,9 @@ CREATE TABLE feature_checks (
     as_of TEXT NOT NULL CHECK (as_of GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
     author_id TEXT NOT NULL CHECK (length(trim(author_id)) > 0),
     written_at TEXT NOT NULL,
+    -- The first date on which the reading would no longer hold with no new document, as when the instructions
+    -- discount evidence past a certain age; null when only a new document could change it.
+    expires TEXT CHECK (expires IS NULL OR (expires GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND expires > as_of)),
     UNIQUE (value_key, as_of)
 );
 

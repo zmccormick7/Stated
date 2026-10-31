@@ -2,7 +2,9 @@
 session, opened at a date's cutoff, takes every feature due for a subject on that date, writing each one's
 value or confirming that its latest value still holds. A feature with no new document about the subject
 since it was last read is confirmed without a session: a document is about a subject when its Source is
-linked `about` the subject's Entity.
+linked `about` the subject's Entity. A reading that says when it expires, the first date it would no longer
+hold with no new document, gets a session on that date instead, and each check made without one carries the
+expiry forward.
 
 Subjects run in parallel, up to the number of workers; each subject's dates run in order, since each session
 starts from the value the one before left. A session that ends without its date done stops that subject's
@@ -165,7 +167,8 @@ def run_features(db_path: str | Path, features, subject_ids, *, harness, workers
 
 def _confirm_unchanged(db_path: Path, subject_id: str, subject: str, day: str, definitions, author: str, report):
     """Confirm, without a session, each definition whose latest value about the subject was last read on or
-    after the latest publication date of a document about it; return the definitions that need a session."""
+    after the latest publication date of a document about it and whose latest reading has not expired by the
+    date; return the definitions that need a session."""
     from .features import _latest
     left = []
     with RecordStore(db_path, as_of=day) as db:
@@ -176,13 +179,17 @@ def _confirm_unchanged(db_path: Path, subject_id: str, subject: str, day: str, d
             (db._record_key(subject_id),)).fetchone()[0]
         for definition in definitions:
             latest = _latest(db, definition.id, subject_id)
-            read_on = None if latest is None else max([latest.as_of] + [row[0] for row in db._db.execute(
-                "SELECT as_of FROM feature_checks WHERE value_key = ? AND as_of < ?",
-                (db._record_key(latest.id), day))])
-            if latest is None or (published is not None and published > read_on):
+            if latest is None:
                 left.append(definition)
                 continue
-            db.confirm_value(latest.id, author_id=author)
+            check = db._db.execute(
+                "SELECT as_of, expires FROM feature_checks WHERE value_key = ? AND as_of < ? ORDER BY as_of DESC "
+                "LIMIT 1", (db._record_key(latest.id), day)).fetchone()
+            read_on, expires = check or (latest.as_of, latest.attributes.get("expires"))
+            if (published is not None and published > read_on) or (expires is not None and expires <= day):
+                left.append(definition)
+                continue
+            db.confirm_value(latest.id, author_id=author, expires=expires)
             report(SessionResult(subject_id, subject, day, (definition.key,), True,
                                  f"No new document about the subject since {read_on}; confirmed {latest.id}.", False))
     return left

@@ -188,7 +188,7 @@ def _parser():
     table.add_argument("--out", required=True, metavar="FILE", help="The CSV file to write.")
     command("confirm", "confirm_value",
             "Record that a feature's latest value about its subject still holds on this date, instead of "
-            "writing it again.", "value_id", payload="author_id")
+            "writing it again.", "value_id", payload="author_id, optional expires (a date)")
     features = command("features", "list_features", "List the current feature definitions by key.")
     features.add_argument("--replaced", action="store_true", help="Include definitions that were replaced.")
     command("check-answer", "check_answer",

@@ -10,7 +10,9 @@ produced it, and `written_at` records when those instructions were fixed.
 
 A definition may carry a schedule: the dates a value is due for each subject, every day, weekday, week, month
 or quarter from a start date. A date is done for a subject once a value of the definition about it carries
-that date, or once a check confirms that the latest value still held then; `pending` lists the rest.
+that date, or once a check confirms that the latest value still held then; `pending` lists the rest. A
+value or a check may say when it `expires`: the first date on which the reading would no longer hold if
+nothing new were published, as when the instructions discount evidence past a certain age.
 """
 
 from calendar import monthrange
@@ -130,6 +132,7 @@ class FeatureCheck:
     as_of: str
     author_id: str
     written_at: str
+    expires: str | None = None  # The first date the reading would no longer hold with no new document.
 
 
 _SELECT = """
@@ -195,6 +198,8 @@ def check_value(attributes: dict[str, object], definition: FeatureDefinition) ->
                 and (definition.min is None or value >= definition.min)
                 and (definition.max is None or value <= definition.max))
 
+    if attributes.get("expires") is not None:
+        _day(attributes["expires"], "expires")
     value = attributes.get("value")
     if not all(fits(v) for v in (value if isinstance(value, list) else [value])):
         expected = {"boolean": "true or false", "count": "a whole number, 0 or more", "number": "a number",
@@ -357,11 +362,14 @@ def pending(store, feature: str, subject_ids: Iterable[str], *, start: str | Non
     return PendingWork(definition.id, definition.key, start, end, total, tuple(tasks))
 
 
-def confirm(store, value_id: str, *, author_id: str) -> FeatureCheck:
+def confirm(store, value_id: str, *, author_id: str, expires: str | None = None) -> FeatureCheck:
     """Record that a feature value, the latest of its definition about its subject, still holds on the store's
-    date: the scheduled date is done without writing the same value again."""
+    date: the scheduled date is done without writing the same value again. `expires` is the first date on
+    which the reading would no longer hold with no new document, if there is one."""
     if not isinstance(author_id, str) or not author_id.strip():
         raise ValueError("author_id must be a nonblank string")
+    if expires is not None:
+        _day(expires, "expires")
     value = store.read(store.resolve_id(value_id))
     feature_id = value.attributes.get("feature") if value.kind == "Variable" else None
     if not isinstance(feature_id, str):
@@ -375,6 +383,8 @@ def confirm(store, value_id: str, *, author_id: str) -> FeatureCheck:
     day = store._stamp()
     if value.as_of >= day:
         raise ValueError(f"{value.id} is dated {value.as_of}, so it already stands for that date")
+    if expires is not None and expires <= day:
+        raise ValueError(f"expires must be after {day}, the date confirmed")
     latest = store._db.execute(
         f"""SELECT v.id FROM records v JOIN links a ON a.from_key = v.record_key
             WHERE v.kind = 'Variable' AND json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about'
@@ -388,10 +398,10 @@ def confirm(store, value_id: str, *, author_id: str) -> FeatureCheck:
         if store._db.execute("SELECT 1 FROM feature_checks WHERE value_key = ? AND as_of = ?",
                              (store._record_key(value.id), day)).fetchone():
             raise ValueError(f"{value.id} is already confirmed as of {day}")
-        store._db.execute("INSERT INTO feature_checks (value_key, as_of, author_id, written_at) VALUES (?, ?, ?, ?)",
-                          (store._record_key(value.id), day, author_id, written_at))
+        store._db.execute("INSERT INTO feature_checks (value_key, as_of, author_id, written_at, expires) "
+                          "VALUES (?, ?, ?, ?, ?)", (store._record_key(value.id), day, author_id, written_at, expires))
     subject_id = store._db.execute("SELECT id FROM records WHERE record_key = ?", (subjects[0],)).fetchone()[0]
-    return FeatureCheck(value.id, feature_id, subject_id, day, author_id, written_at)
+    return FeatureCheck(value.id, feature_id, subject_id, day, author_id, written_at, expires)
 
 
 def derive(store, subject_id: str, *, author_id: str) -> tuple[Derived, ...]:
