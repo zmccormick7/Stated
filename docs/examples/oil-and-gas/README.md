@@ -6,7 +6,7 @@ Three features describing 31 US oil and gas producers every week of 2023 and 202
 | --- | --- |
 | [feature-table.csv](feature-table.csv) | The exported table: one row per company and weekday, 2023-01-02 to 2024-12-31. |
 | [definitions/](definitions/) | The three definitions the run used, and in [definitions/pilot/](definitions/pilot/) the two they replaced. |
-| [tools/](tools/) | The scripts that chose the universe, collected the filings and reran expired readings, as run. |
+| [tools/](tools/) | The scripts that chose the universe and collected the filings, as run. |
 
 ## The universe
 
@@ -36,12 +36,15 @@ Every date in the example precedes the day the definitions were written, and the
 
 ## Running it
 
-In a new folder holding `contact.txt`, the name and email the SEC asks requests to carry, with the two scripts in `tools/`:
+In a new folder holding `contact.txt`, the name and email the SEC asks requests to carry, with this example's `tools/` and `definitions/`:
 
 ```bash
 stated init --layer oil-and-gas
+mkdir edgar
 python tools/select_universe.py     # writes edgar/universe.json; exclusions and additions edited by hand
 python tools/fetch_corpus.py        # Entities, Sources and passages; resumable
+stated list --kind Entity --limit 100 \
+  | python -c "import json, sys; print(*(r['id'] for r in json.load(sys.stdin)['records']), sep='\n')" > subjects.txt
 for k in production_guidance_drift inventory_disclosure bonus_weight_on_growth; do
   stated define-feature --input definitions/$k.json
   echo '{"every": "week", "start": "2023-01-02"}' | stated schedule-feature $k --input -
@@ -52,7 +55,7 @@ stated feature-table --subjects-file subjects.txt --from 2023-01-02 --to 2024-12
   --every weekday --out feature-table.csv
 ```
 
-`subjects.txt` lists the 31 Entity IDs the corpus script created. The run used Claude Code with Claude Opus 5.5 in every session. It ran with four workers until it was paused for a usage limit, and was resumed with one by running the same command again.
+`subjects.txt` lists the 31 Entities the corpus script created, one ID per line. The run used Claude Code with Claude Opus 5.5 in every session. It ran with four workers until it was paused for a usage limit, and was resumed with one by running the same command again.
 
 ## What the run did
 
@@ -138,7 +141,7 @@ At 2023-11-06 the value became `stopped_quantifying`. It depends on a new Findin
 
 `bonus_weight_on_growth` becomes null once the latest proxy is more than 15 months old, and `inventory_disclosure` once no annual report or earnings release has appeared in 15 months, with no new document needed. A date with no new filing is confirmed without a session, so as first run, those limits took effect only when a later filing brought a session, and for companies that had stopped filing the last value stood. A reading may now say when it `expires`, the first date it would no longer hold if nothing new were published, and `run-features` gives it a session on that date; the stated-state skill tells agents to set it when the instructions discount evidence by age.
 
-The values here were written before readings could expire, so the expiry dates were computed from the two definitions' rules ([rerun_expired.py](tools/rerun_expired.py)): for six company–feature pairs, the checks made without a session from the expiry date on were removed, one session was run at that date, and an ordinary run confirmed the dates after it. All six sessions wrote null: bonus weight for Continental (from 2023-07-10), Callon (2024-06-17), Southwestern (2024-07-08), PDC and Pioneer (2024-07-15), and inventory for PDC (2024-08-05). That changed 538 cells of the table.
+The values here were written before readings could expire, so the expiry dates were computed from the two definitions' rules, from each company's latest proxy, annual report and earnings release: for six company–feature pairs, the checks made without a session from the expiry date on were removed, one session was run at that date, and an ordinary run confirmed the dates after it. All six sessions wrote null: bonus weight for Continental (from 2023-07-10), Callon (2024-06-17), Southwestern (2024-07-08), PDC and Pioneer (2024-07-15), and inventory for PDC (2024-08-05). That changed 538 cells of the table.
 
 ## Known limitations
 
