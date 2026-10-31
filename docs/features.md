@@ -114,6 +114,8 @@ JSON
 
 `stated state --feature uninsured_share --from 2021-01-01 --to 2023-12-31` then gives each bank's values at the start of the range and at every date one changed, from its first value on.
 
+The [oil and gas example](examples/oil-and-gas/) goes through every step on real filings: 31 producers, three features, weekly over 2023 and 2024.
+
 ## Not built yet
 
 Measuring residual lookahead, how a feature and the agents producing it behave before and after the agent model's training cutoff, is still being designed; the audits above are, for now, work you do on the exported table.

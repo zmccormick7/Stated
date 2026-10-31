@@ -1,0 +1,12 @@
+{
+ "author_id": "zach-mccormick",
+ "key": "inventory_disclosure",
+ "type": "category",
+ "categories": [
+  "quantified",
+  "stopped_quantifying",
+  "described",
+  "not_discussed"
+ ],
+ "instructions": "Whether the company states how much drilling inventory it has left. Count only its recurring disclosures, because silence can be compared only between documents that recur: the annual report (10-K) and each quarter's earnings materials (the earnings release and any presentation furnished with it). Quantifying inventory means stating a number of remaining drilling locations or wells, or years of inventory at a stated or current pace, for the whole company or for any of its basins. Proved reserves, reserve life and acreage alone are not inventory. Classify from the latest annual report and the latest quarter's earnings materials visible on the date. 'quantified': either of them states such a number. 'stopped_quantifying': neither does, but an annual report or quarterly earnings materials published in the 18 months before the date did. 'described': neither states a number and none in those 18 months did, but the latest ones discuss remaining inventory in words, such as 'decades of high-return locations'. 'not_discussed': none of them discusses remaining inventory. Null when no annual report and no quarterly earnings materials of the company published in the 15 months before the date are visible. Set period to the date of the latest document read. In the text, name the documents read and quote any number or wording found, with its document and date; for 'stopped_quantifying', name the last document that quantified inventory and what it said."
+}

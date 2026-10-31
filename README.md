@@ -128,8 +128,8 @@ Stated is early software. The database format changes without migrations; recrea
 
 What exists today:
 
-- The CLI, Python API and five skills. Three are used daily by Claude Code and Codex; the feature-design skill is new; the state skill has been tried on six banks at one cutoff and on one bank at two, in a workspace holding only their pre-cutoff filings.
-- Features end to end: definitions, schedules, `run-features`, derived features and the daily `feature-table`. Runs so far are small, a handful of banks over a few dates.
+- The CLI, the Python API and five skills, which teach an agent to research the graph, answer a question from it, deepen one company's coverage, design a feature and write a feature's value at a date. The skills work in Claude Code and Codex.
+- Features end to end: definitions, schedules, `run-features`, derived features and the daily `feature-table`. The [oil and gas example](docs/examples/oil-and-gas/) runs three features weekly on 31 producers over 2023 and 2024 from their SEC filings, with the definitions, the exported table and its known limitations.
 - The answer page with checked answers, levers, research runs and the notes, pause and finish controls.
 - A base layer covering the 1,000 largest US filers by public float, with the full text of each company's latest annual report and, for 474 of them, a coverage pack of its business, segments, key figures, relationships, risks and open questions. Driver models exist for a handful of companies.
 

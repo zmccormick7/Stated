@@ -1,0 +1,9 @@
+{
+ "author_id": "zach-mccormick",
+ "key": "bonus_weight_on_growth",
+ "type": "number",
+ "min": 0,
+ "max": 1,
+ "units": "share of the CEO's target annual bonus",
+ "instructions": "The share of the chief executive's target annual cash bonus tied to growth in production or reserve volumes, from the latest proxy statement (DEF 14A) visible on the date and filed in the 15 months before it. Read its compensation discussion of the annual incentive plan for the most recently completed fiscal year. Use the target weights the plan assigns to each metric, not the payout achieved. Growth metrics are those measured as an absolute volume or volume growth of production or reserves: production volume, production growth, reserve additions and reserve replacement. Not growth metrics are: measures per share or per unit of debt or capital (such as production per share or debt-adjusted growth per share); costs and efficiency (cost per barrel of oil equivalent, capital efficiency); returns, cash flow and free cash flow; safety, environmental and other operational targets; and discretionary or individual components. If the bonus combines a company scorecard with an individual component, weight the scorecard by its share of the bonus, so the value is relative to the whole target bonus. Ignore multiplicative modifiers, such as a shareholder-return modifier, and use base weights. Set period to the fiscal year the plan covers, as 'FY2023'. The value is 0 when the plan states metric weights and none is a growth metric. Null when no proxy statement filed in those 15 months is visible, or when the plan states no metric weights, such as a fully discretionary bonus; say which in the text. In the text, list each metric with its weight and whether it counted as growth, citing the proxy."
+}
