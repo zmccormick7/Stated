@@ -138,7 +138,7 @@ def _parser():
     command("feature", "read_feature", "Read a feature definition by ID, or the current one for a key.", "feature")
     command("schedule-feature", "schedule_feature",
             "Set the dates a value of a feature is due for each subject, or clear them with every null.", "feature",
-            payload="every (day, weekday, week, month, quarter or null), start (a date), optional lapse_days")
+            payload="every (day, weekday, week, month, quarter or null), start (a date)")
     todo = command("pending", "pending_work",
                    "List the scheduled dates on which a subject has neither a value of the feature nor a check.", "feature")
     todo.add_argument("--subject", dest="subject_ids", action="append", default=[], metavar="ENTITY_ID",
@@ -188,7 +188,7 @@ def _parser():
     table.add_argument("--out", required=True, metavar="FILE", help="The CSV file to write.")
     command("confirm", "confirm_value",
             "Record that a feature's latest value about its subject still holds on this date, instead of "
-            "writing it again.", "value_id", payload="author_id")
+            "writing it again.", "value_id", payload="author_id, optional expires (a date)")
     features = command("features", "list_features", "List the current feature definitions by key.")
     features.add_argument("--replaced", action="store_true", help="Include definitions that were replaced.")
     command("check-answer", "check_answer",

@@ -11,8 +11,8 @@ produced it, and `written_at` records when those instructions were fixed.
 A definition may carry a schedule: the dates a value is due for each subject, every day, weekday, week, month
 or quarter from a start date. A date is done for a subject once a value of the definition about it carries
 that date, or once a check confirms that the latest value still held then; `pending` lists the rest. A
-schedule may also carry a lapse: the number of days after the newest document a value rests on that the
-instructions may change the answer with no new document, as when they discount evidence past a certain age.
+value or a check may say when it `expires`: the first date on which the reading would no longer hold if
+nothing new were published, as when the instructions discount evidence past a certain age.
 """
 
 from calendar import monthrange
@@ -44,7 +44,6 @@ class FeatureDefinition:
     values: int  # Variables that name this definition.
     every: str | None  # The schedule: day, weekday, week, month or quarter, or None.
     start: str | None  # The schedule's first date.
-    lapse_days: int | None = None  # Days after its newest evidence that a value may change without a new document.
 
 
 @dataclass(frozen=True)
@@ -133,13 +132,14 @@ class FeatureCheck:
     as_of: str
     author_id: str
     written_at: str
+    expires: str | None = None  # The first date the reading would no longer hold with no new document.
 
 
 _SELECT = """
     SELECT f.id, f.key, f.instructions, f.type, f.units, f.minimum, f.maximum, f.categories, f.formula,
            f.replaces, (SELECT n.id FROM features n WHERE n.replaces = f.id) AS replaced_by, f.author_id, f.written_at,
            (SELECT count(*) FROM records r WHERE r.kind = 'Variable'
-              AND json_extract(r.attributes, '$.feature') = f.id) AS value_count, f.every, f.starts, f.lapse_days
+              AND json_extract(r.attributes, '$.feature') = f.id) AS value_count, f.every, f.starts
     FROM features f
 """
 
@@ -152,8 +152,7 @@ def _decode(row) -> FeatureDefinition:
     categories = None if row["categories"] is None else tuple(json.loads(row["categories"]))
     return FeatureDefinition(row["id"], row["key"], row["instructions"], row["type"], row["units"], row["minimum"],
                              row["maximum"], categories, row["formula"], row["replaces"], row["replaced_by"],
-                             row["author_id"], row["written_at"], row["value_count"], row["every"], row["starts"],
-                             row["lapse_days"])
+                             row["author_id"], row["written_at"], row["value_count"], row["every"], row["starts"])
 
 
 def _check(key, instructions, type, units, min, max, categories, formula, author_id) -> None:
@@ -199,6 +198,8 @@ def check_value(attributes: dict[str, object], definition: FeatureDefinition) ->
                 and (definition.min is None or value >= definition.min)
                 and (definition.max is None or value <= definition.max))
 
+    if attributes.get("expires") is not None:
+        _day(attributes["expires"], "expires")
     value = attributes.get("value")
     if not all(fits(v) for v in (value if isinstance(value, list) else [value])):
         expected = {"boolean": "true or false", "count": "a whole number, 0 or more", "number": "a number",
@@ -227,15 +228,15 @@ def define(store, *, author_id: str, key: str, instructions: str, type: str, uni
             raise ValueError(f"replaces must name the current definition of {key!r}"
                              + (f", {current[0]}" if current else "; there is none"))
         # New instructions keep the schedule of those they replace; a derived feature has none.
-        every, starts, lapse = (None, None, None) if replaces is None or formula is not None else store._db.execute(
-            "SELECT every, starts, lapse_days FROM features WHERE id = ?", (replaces,)).fetchone()
+        every, starts = (None, None) if replaces is None or formula is not None else store._db.execute(
+            "SELECT every, starts FROM features WHERE id = ?", (replaces,)).fetchone()
         store._db.execute(
             """INSERT INTO features (id, key, instructions, type, units, minimum, maximum, categories, formula,
-                                     replaces, every, starts, lapse_days, author_id, written_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                     replaces, every, starts, author_id, written_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (feature_id, key, instructions, type, units, min, max,
              None if categories is None else json.dumps(list(categories)), formula, replaces, every, starts,
-             lapse, author_id, datetime.now(UTC).isoformat()))
+             author_id, datetime.now(UTC).isoformat()))
     return read(store, feature_id)
 
 
@@ -282,18 +283,13 @@ def list_definitions(store, *, replaced: bool = False) -> tuple[FeatureDefinitio
     return tuple(_decode(row) for row in store._db.execute(_SELECT + where + " ORDER BY f.key, f.feature_key"))
 
 
-def schedule(store, feature: str, *, every: str | None, start: str | None = None,
-             lapse_days: int | None = None) -> FeatureDefinition:
-    """Set the dates a value of the feature is due for each subject, and optionally its lapse, or clear them
-    with `every` None. A schedule is not part of the instructions, so it can change after values exist."""
+def schedule(store, feature: str, *, every: str | None, start: str | None = None) -> FeatureDefinition:
+    """Set the dates a value of the feature is due for each subject, or clear them with `every` None. A
+    schedule is not part of the instructions, so it can change after values exist."""
     _writable(store)
     definition = read(store, feature)
     if every is None and start is not None:
         raise ValueError("clearing a schedule takes no start")
-    if every is None and lapse_days is not None:
-        raise ValueError("clearing a schedule takes no lapse_days")
-    if lapse_days is not None and (not isinstance(lapse_days, int) or isinstance(lapse_days, bool) or lapse_days < 1):
-        raise ValueError("lapse_days must be a positive whole number of days")
     if every is not None:
         if every not in EVERY:
             raise ValueError(f"every is one of {', '.join(EVERY)}")
@@ -302,8 +298,7 @@ def schedule(store, feature: str, *, every: str | None, start: str | None = None
             raise ValueError("a derived feature has no schedule: it is computed whenever its inputs change")
     with store._db:
         store._db.execute("BEGIN IMMEDIATE")
-        store._db.execute("UPDATE features SET every = ?, starts = ?, lapse_days = ? WHERE id = ?",
-                          (every, start, lapse_days, definition.id))
+        store._db.execute("UPDATE features SET every = ?, starts = ? WHERE id = ?", (every, start, definition.id))
     return read(store, definition.id)
 
 
@@ -367,11 +362,14 @@ def pending(store, feature: str, subject_ids: Iterable[str], *, start: str | Non
     return PendingWork(definition.id, definition.key, start, end, total, tuple(tasks))
 
 
-def confirm(store, value_id: str, *, author_id: str) -> FeatureCheck:
+def confirm(store, value_id: str, *, author_id: str, expires: str | None = None) -> FeatureCheck:
     """Record that a feature value, the latest of its definition about its subject, still holds on the store's
-    date: the scheduled date is done without writing the same value again."""
+    date: the scheduled date is done without writing the same value again. `expires` is the first date on
+    which the reading would no longer hold with no new document, if there is one."""
     if not isinstance(author_id, str) or not author_id.strip():
         raise ValueError("author_id must be a nonblank string")
+    if expires is not None:
+        _day(expires, "expires")
     value = store.read(store.resolve_id(value_id))
     feature_id = value.attributes.get("feature") if value.kind == "Variable" else None
     if not isinstance(feature_id, str):
@@ -385,6 +383,8 @@ def confirm(store, value_id: str, *, author_id: str) -> FeatureCheck:
     day = store._stamp()
     if value.as_of >= day:
         raise ValueError(f"{value.id} is dated {value.as_of}, so it already stands for that date")
+    if expires is not None and expires <= day:
+        raise ValueError(f"expires must be after {day}, the date confirmed")
     latest = store._db.execute(
         f"""SELECT v.id FROM records v JOIN links a ON a.from_key = v.record_key
             WHERE v.kind = 'Variable' AND json_extract(v.attributes, '$.feature') = ? AND a.relation = 'about'
@@ -398,10 +398,10 @@ def confirm(store, value_id: str, *, author_id: str) -> FeatureCheck:
         if store._db.execute("SELECT 1 FROM feature_checks WHERE value_key = ? AND as_of = ?",
                              (store._record_key(value.id), day)).fetchone():
             raise ValueError(f"{value.id} is already confirmed as of {day}")
-        store._db.execute("INSERT INTO feature_checks (value_key, as_of, author_id, written_at) VALUES (?, ?, ?, ?)",
-                          (store._record_key(value.id), day, author_id, written_at))
+        store._db.execute("INSERT INTO feature_checks (value_key, as_of, author_id, written_at, expires) "
+                          "VALUES (?, ?, ?, ?, ?)", (store._record_key(value.id), day, author_id, written_at, expires))
     subject_id = store._db.execute("SELECT id FROM records WHERE record_key = ?", (subjects[0],)).fetchone()[0]
-    return FeatureCheck(value.id, feature_id, subject_id, day, author_id, written_at)
+    return FeatureCheck(value.id, feature_id, subject_id, day, author_id, written_at, expires)
 
 
 def derive(store, subject_id: str, *, author_id: str) -> tuple[Derived, ...]:

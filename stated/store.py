@@ -546,12 +546,11 @@ class RecordStore:
         from .features import series
         return series(self, feature, subject_id)
 
-    def schedule_feature(self, feature: str, *, every: str | None, start: str | None = None,
-                         lapse_days: int | None = None) -> "FeatureDefinition":
+    def schedule_feature(self, feature: str, *, every: str | None, start: str | None = None) -> "FeatureDefinition":
         """Set the dates a value of the feature is due for each subject (day, weekday, week, month or quarter
-        from `start`) and its lapse in days, or clear them with `every` None."""
+        from `start`), or clear them with `every` None."""
         from .features import schedule
-        return schedule(self, feature, every=every, start=start, lapse_days=lapse_days)
+        return schedule(self, feature, every=every, start=start)
 
     def pending_work(self, feature: str, subject_ids: Iterable[str], *, start: str | None = None,
                      end: str | None = None, limit: int = 1000) -> "PendingWork":
@@ -559,10 +558,11 @@ class RecordStore:
         from .features import pending
         return pending(self, feature, subject_ids, start=start, end=end, limit=limit)
 
-    def confirm_value(self, value_id: str, *, author_id: str) -> "FeatureCheck":
-        """Record that the latest value of a feature about its subject still holds on this store's date."""
+    def confirm_value(self, value_id: str, *, author_id: str, expires: str | None = None) -> "FeatureCheck":
+        """Record that the latest value of a feature about its subject still holds on this store's date, and
+        optionally the first date it would no longer hold with no new document."""
         from .features import confirm
-        return confirm(self, value_id, author_id=author_id)
+        return confirm(self, value_id, author_id=author_id, expires=expires)
 
     def attach_layer(self, path: str | Path) -> "LayerAttachment":
         """Attach a published layer file read-only, or bring an attached layer to the file's version."""
@@ -1433,6 +1433,8 @@ class RecordStore:
         if definition is None or definition.id != named:
             raise ValueError(f"attributes.feature must be a feature definition's full ID, not {named!r}")
         check_value(attributes, definition)
+        if attributes.get("expires") is not None and attributes["expires"] <= self._stamp():
+            raise ValueError(f"expires must be after {self._stamp()}, the date the value is written for")
 
     def _refuse_duplicate_link(self, values: tuple, link_id: str | None = None) -> None:
         """One link per endpoints and relation; a second would only repeat or split its explanation."""
