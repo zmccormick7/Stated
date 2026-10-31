@@ -1,6 +1,12 @@
 # Oil and gas producers, 2023–2024
 
-Three features describing 31 US oil and gas producers every week of 2023 and 2024, written by agents reading each company's SEC filings as they stood on each date. The example shows the whole loop on real documents: choosing a universe by rule, collecting filings with their publication dates, defining features, running sessions at weekly cutoffs, exporting the table, and tracing a value to the passage it rests on. It describes state only; it does not test whether the features predict anything.
+This example uses Stated to measure three things about 31 US oil and gas producers, every week of 2023 and 2024, from their SEC filings:
+
+- how far each company's production guidance for the year has moved from the first figure it gave,
+- whether it says how much drilling inventory it has left, and
+- what share of its chief executive's annual bonus is tied to growing production or reserves.
+
+Each week's values come only from filings published by that date, and each value links to the passages it was read from. The result is a table with one row per company and weekday. This page explains how the companies were chosen, which documents were collected, what each feature asks, and how to reproduce the run. It shows how the features are built, not whether they predict anything.
 
 | File | Holds |
 | --- | --- |
