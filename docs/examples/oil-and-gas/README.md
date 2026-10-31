@@ -1,11 +1,11 @@
 # Oil and gas producers, 2023–2024
 
-Three features describing 31 US oil and gas producers every week of 2023 and 2024, written by agents reading each company's SEC filings as they stood on each date. The example shows the whole loop on real documents: choosing a universe by rule, collecting filings with their publication dates, defining and revising features, running sessions at weekly cutoffs, exporting the table, and tracing a value to the passage it rests on. It describes state only; it does not test whether the features predict anything.
+Three features describing 31 US oil and gas producers every week of 2023 and 2024, written by agents reading each company's SEC filings as they stood on each date. The example shows the whole loop on real documents: choosing a universe by rule, collecting filings with their publication dates, defining features, running sessions at weekly cutoffs, exporting the table, and tracing a value to the passage it rests on. It describes state only; it does not test whether the features predict anything.
 
 | File | Holds |
 | --- | --- |
 | [feature-table.csv](feature-table.csv) | The exported table: one row per company and weekday, 2023-01-02 to 2024-12-31. |
-| [definitions/](definitions/) | The three definitions the run used, and in [definitions/pilot/](definitions/pilot/) the two they replaced. |
+| [definitions/](definitions/) | The three feature definitions. |
 | [tools/](tools/) | The scripts that chose the universe and collected the filings, as run. |
 
 ## The universe
@@ -30,8 +30,6 @@ Each describes how a producer runs its business, from what it has disclosed, wit
 
 All three are scheduled weekly from Monday 2023-01-02.
 
-The definitions were written on 2026-10-23. A pilot on Continental, Diamondback and Range through June 2023 (21 sessions) turned up three faults, and two definitions were replaced on 2026-10-24 before the full run: the drift instructions had let a statement with no number, such as "similar to 2022", count as guidance, and had made every year with an acquisition null even when the company stated the acquisition's contribution; the bonus instructions had let a proxy more than a year old stand. The pilot's values remain under the [replaced definitions](definitions/pilot/); `inventory_disclosure` was not changed, so its pilot values for those three companies stand in the table.
-
 Every date in the example precedes the day the definitions were written, and the training cutoff of the agent model. The values are as good as the instructions and the documents allow, but they are no test of hindsight; the [feature guide](../../features.md#lookahead-what-stated-handles-and-what-it-doesnt) explains why only later dates are.
 
 ## Running it
@@ -55,18 +53,17 @@ stated feature-table --subjects-file subjects.txt --from 2023-01-02 --to 2024-12
   --every weekday --out feature-table.csv
 ```
 
-`subjects.txt` lists the 31 Entities the corpus script created, one ID per line. The run used Claude Code with Claude Opus 5.5 in every session. It ran with four workers until it was paused for a usage limit, and was resumed with one by running the same command again.
+`subjects.txt` lists the 31 Entities the corpus script created, one ID per line. Every session used Claude Code with Claude Opus 5.5.
 
 ## What the run did
 
 | | |
 | --- | --- |
 | Company-weeks | 3,255 (31 companies × 105 weeks), each with all three features due |
-| Agent sessions | 818, plus 21 in the pilot: an agent read on about a quarter of company-weeks |
-| Confirmed without a session | 7,266 feature values, on dates with no new filing since the last read |
-| Confirmed by an agent | 2,034 feature values, read again and found to hold |
-| Values written | 387: 162 drift (23 null), 134 inventory (1 null), 91 bonus weight (21 null) |
-| Failed sessions | 0 in the run; the six rerun sessions below failed once on an expired login and ran again |
+| Agent sessions | 839: an agent read on about a quarter of company-weeks |
+| Confirmed without a session | 7,323 feature values, on dates with no new filing since the last read |
+| Confirmed by an agent | 2,049 feature values, read again and found to hold |
+| Values written | 393: 162 drift (23 null), 140 inventory (1 null), 91 bonus weight (21 null) |
 
 A value is written only when the answer changes, including its period or the document it rests on; otherwise the last value is confirmed. Each null carries its reason: for drift, mostly no numeric guidance, or an acquisition or divestiture whose contribution the company never stated; for bonus weight, a plan that states no metric weights, or no proxy filed in the last 15 months.
 
@@ -136,12 +133,6 @@ The Finding cites a byte range of the [release as filed](https://www.sec.gov/Arc
 > After the transaction closes, Murphy will have approximately 488 gross drilling locations with an average 75 percent oil weighting remaining in the Kaybob Duvernay
 
 At 2023-11-06 the value became `stopped_quantifying`. It depends on a new Finding that the Q3 release states no count and mentions drilling locations only in its forward-looking boilerplate, and on the Q2 Finding as the last document that did. Read literally, the definition counts a figure given to explain an asset sale as quantifying inventory; whether it should is a question for the next version of the definition, not for the agent.
-
-## Readings that expire
-
-`bonus_weight_on_growth` becomes null once the latest proxy is more than 15 months old, and `inventory_disclosure` once no annual report or earnings release has appeared in 15 months, with no new document needed. A date with no new filing is confirmed without a session, so as first run, those limits took effect only when a later filing brought a session, and for companies that had stopped filing the last value stood. A reading may now say when it `expires`, the first date it would no longer hold if nothing new were published, and `run-features` gives it a session on that date; the stated-state skill tells agents to set it when the instructions discount evidence by age.
-
-The values here were written before readings could expire, so the expiry dates were computed from the two definitions' rules, from each company's latest proxy, annual report and earnings release: for six company–feature pairs, the checks made without a session from the expiry date on were removed, one session was run at that date, and an ordinary run confirmed the dates after it. All six sessions wrote null: bonus weight for Continental (from 2023-07-10), Callon (2024-06-17), Southwestern (2024-07-08), PDC and Pioneer (2024-07-15), and inventory for PDC (2024-08-05). That changed 538 cells of the table.
 
 ## Known limitations
 
