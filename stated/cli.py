@@ -127,7 +127,7 @@ def _parser():
     state.add_argument("--from", dest="start", metavar="DATE", help="A row at this date, then one at each change up to --to.")
     state.add_argument("--to", dest="end", metavar="DATE", help="Default: the cutoff, or today.")
     state.add_argument("--limit", type=int, default=1000)
-    definition = "author_id, instructions, type (number, count, boolean or category), optional units, min, max, " \
+    definition = "author_id, instructions, type (number, count, boolean, category or date), optional units, min, max, " \
                  "categories (for a category) and formula (for a derived feature)"
     command("define-feature", "define_feature",
             "Define a feature: the instructions an agent follows for one value of a subject as of a date, and the "

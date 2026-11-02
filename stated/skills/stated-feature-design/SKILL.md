@@ -15,7 +15,8 @@ Use this when asked to turn an idea for something to measure into features, or t
 - `number`, with `units` and, where the scale has limits, `min` and `max` (a share is 0 to 1);
 - `count`, a whole number of things the instructions define precisely;
 - `boolean`, for a question with a clear yes or no;
-- `category`, with `categories` for every state a subject the evidence describes can be in, each defined in the instructions.
+- `category`, with `categories` for every state a subject the evidence describes can be in, each defined in the instructions;
+- `date`, a day written `YYYY-MM-DD`, for when something scheduled is to happen or last happened. Prefer it to a count of days until a date, which would change every day with nothing new published.
 
 A value need not be a figure any document states: most useful features are assembled from several disclosures, compared across periods or computed. When the documents give only a bound (a customer is "more than 10%" of revenue), pick a type that can hold what is known, such as a boolean or a category of ranges, rather than a number that will mostly be null. Units must mean the same for every subject: prefer ratios and shares, and when a level is needed, state the currency and scale.
 

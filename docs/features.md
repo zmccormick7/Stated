@@ -19,7 +19,7 @@ This works because in a description task, knowledge of the future can only show 
 
 | What | In Stated |
 | --- | --- |
-| A feature | A **feature definition**, kept beside the graph (`stated define-feature`): the instructions an agent follows, the `key` its values carry and their `type`: `number` (optionally within `min` and `max`), `count`, `boolean`, or `category` with its `categories`; optionally `units`, and a `formula` for a derived feature. |
+| A feature | A **feature definition**, kept beside the graph (`stated define-feature`): the instructions an agent follows, the `key` its values carry and their `type`: `number` (optionally within `min` and `max`), `count`, `boolean`, `category` with its `categories`, or `date` (`YYYY-MM-DD`); optionally `units`, and a `formula` for a derived feature. |
 | A subject | An **Entity**: a company, a market, a sector, a deal, whatever the instructions describe. |
 | A value | A **Variable** whose `feature` attribute is the definition's ID, linked `about` its subject, carrying the feature's `key` and a `value` of its type, linked `depends_on` the Findings and Sources it was read from. Stated refuses a value outside the type; nothing else about the value is checked. |
 | The date | The session's cutoff. A session opened with `STATED_AS_OF=2023-02-24` sees only Sources published by then and what earlier sessions wrote at or before then, and stamps everything it writes with that date. |
