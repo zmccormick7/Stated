@@ -40,7 +40,7 @@ CREATE TABLE features (
     id TEXT NOT NULL UNIQUE,
     key TEXT NOT NULL CHECK (length(trim(key)) > 0),
     instructions TEXT NOT NULL CHECK (length(trim(instructions)) > 0),
-    type TEXT NOT NULL CHECK (type IN ('number', 'count', 'boolean', 'category')),
+    type TEXT NOT NULL CHECK (type IN ('number', 'count', 'boolean', 'category', 'date')),
     units TEXT,
     minimum NUMERIC,
     maximum NUMERIC,

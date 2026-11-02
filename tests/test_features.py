@@ -40,6 +40,7 @@ class FeatureDefinitionTests(unittest.TestCase):
                 ({"key": "x", "type": "number", "categories": ["a"]}, "exactly when its type is category"),
                 ({"key": "x", "type": "category", "categories": ["a", "a"]}, "distinct"),
                 ({"key": "x", "type": "boolean", "min": 0}, "type number or count"),
+                ({"key": "x", "type": "date", "max": 20231231}, "type number or count"),
                 ({"key": "x", "type": "number", "min": 2, "max": 1}, "not be above"),
                 ({"key": "x", "type": "number", "formula": "a * 2 +"}, "formula syntax"),
                 ({"key": "x", "type": "number", "formula": "log(a)"}, "formula calls must be")):
@@ -59,12 +60,17 @@ class FeatureDefinitionTests(unittest.TestCase):
         self.value(self.funding, None)
         count = self.db.define_feature(author_id="r", key="new_risks", type="count", instructions="New risk factors.")
         flag = self.db.define_feature(author_id="r", key="doubt", type="boolean", instructions="Going-concern doubt.")
+        meeting = self.db.define_feature(author_id="r", key="next_meeting", type="date",
+                                         instructions="Date of the next scheduled shareholder meeting.")
         self.value(count, 3)
         self.value(flag, False)
+        self.value(meeting, "2023-05-16")
         for feature, value, message in ((self.funding, 1.5, "a number from 0 to 1"), (self.funding, "high", "a number"),
                                         (self.dividend, "halved", "one of 'raised'"), (count, -1, "a whole number"),
                                         (count, 2.5, "a whole number"), (flag, 1, "true or false"),
-                                        (self.funding, [0.2, 2], "a number from 0 to 1")):
+                                        (self.funding, [0.2, 2], "a number from 0 to 1"),
+                                        (meeting, "2023-5-16", "a date, like"), (meeting, 20230516, "a date, like"),
+                                        (meeting, "2023-02-30", "a date, like"), (meeting, "2023-W20-2", "a date, like")):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, message):
                 self.value(feature, value)
         with self.assertRaisesRegex(ValueError, "carries key 'flighty_funding'"):
@@ -76,6 +82,7 @@ class FeatureDefinitionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "only a Variable"):
             self.db.create("Finding", text="A finding.", author_id="agent", attributes={"feature": self.funding.id})
         self.assertEqual(self.db.read_feature(self.funding.id).values, 3)
+        self.assertEqual(self.db.read_feature(meeting.id).values, 1)
 
     def test_edits_and_versions_of_a_value_stay_within_its_feature(self):
         empty = self.value(self.funding, None)

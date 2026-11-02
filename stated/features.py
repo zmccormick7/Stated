@@ -22,7 +22,7 @@ from typing import Iterable
 import json
 from uuid import uuid4
 
-TYPES = ("number", "count", "boolean", "category")
+TYPES = ("number", "count", "boolean", "category", "date")
 EVERY = ("day", "weekday", "week", "month", "quarter")
 
 
@@ -31,7 +31,7 @@ class FeatureDefinition:
     id: str
     key: str  # The name every value carries in its `key` attribute.
     instructions: str
-    type: str  # number, count, boolean or category.
+    type: str  # number, count, boolean, category or date.
     units: str | None
     min: int | float | None
     max: int | float | None
@@ -194,6 +194,8 @@ def check_value(attributes: dict[str, object], definition: FeatureDefinition) ->
             return isinstance(value, bool)
         if definition.type == "category":
             return isinstance(value, str) and value in definition.categories
+        if definition.type == "date":
+            return _is_day(value)
         return (_is_number(value) and (definition.type == "number" or (value == int(value) and value >= 0))
                 and (definition.min is None or value >= definition.min)
                 and (definition.max is None or value <= definition.max))
@@ -203,7 +205,8 @@ def check_value(attributes: dict[str, object], definition: FeatureDefinition) ->
     value = attributes.get("value")
     if not all(fits(v) for v in (value if isinstance(value, list) else [value])):
         expected = {"boolean": "true or false", "count": "a whole number, 0 or more", "number": "a number",
-                    "category": f"one of {', '.join(map(repr, definition.categories or ()))}"}[definition.type]
+                    "category": f"one of {', '.join(map(repr, definition.categories or ()))}",
+                    "date": "a date, like 2023-02-24"}[definition.type]
         bounds = " ".join(part for part in (f"from {definition.min}" if definition.min is not None else "",
                                             f"to {definition.max}" if definition.max is not None else "") if part)
         raise ValueError(f"{value!r} is not a value of feature {definition.key}: it takes {expected}"
@@ -639,13 +642,16 @@ def _latest(store, feature_id: str, subject_id: str):
     return None if row is None else store.read(row[0])
 
 
-def _day(value: object, name: str) -> str:
+def _is_day(value: object) -> bool:
     try:
-        if isinstance(value, str) and len(value) == 10:
-            date.fromisoformat(value)
-            return value
+        return isinstance(value, str) and date.fromisoformat(value).isoformat() == value
     except ValueError:
-        pass
+        return False
+
+
+def _day(value: object, name: str) -> str:
+    if _is_day(value):
+        return value
     raise ValueError(f"{name} must be a date, like 2023-02-24")
 
 

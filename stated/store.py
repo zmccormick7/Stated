@@ -15,7 +15,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 18
+_SCHEMA_VERSION = 19
 
 
 @dataclass(frozen=True)
