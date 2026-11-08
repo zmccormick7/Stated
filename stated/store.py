@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from hashlib import sha256
+import csv
+import io
 from pathlib import Path
 import json
 import math
@@ -207,6 +209,27 @@ def _fill_refs(text: object, ids: dict[str, str], where: str) -> object:
             raise ValueError(f"{where}: {match.group(0)} names no record in this contribution")
         return ids[match.group(1)]
     return _REF.sub(replace, text)
+
+
+def _table_shape(text: str) -> tuple[list[str], int]:
+    """The column names and data row count of a CSV table, refusing one a reader could not cite row by row:
+    no header, blank or repeated column names, a row of another width, a blank line or no data at all."""
+    try:
+        table = list(csv.reader(io.StringIO(text.removeprefix("\ufeff"), newline=""), strict=True))
+    except csv.Error as error:
+        raise ValueError(f"the table is not valid CSV: {error}") from None
+    if not table or not table[0]:
+        raise ValueError("a table needs a header row naming its columns")
+    columns = [name.strip() for name in table[0]]
+    if not all(columns) or len(set(columns)) != len(columns):
+        raise ValueError(f"column names must be nonblank and distinct: {table[0]}")
+    for number, row in enumerate(table[1:], start=2):
+        if len(row) != len(columns):
+            raise ValueError(f"row {number} has {len(row)} fields where the header names {len(columns)}"
+                             + ("; remove blank lines" if not row else ""))
+    if len(table) < 2:
+        raise ValueError("a table needs at least one data row")
+    return columns, len(table) - 1
 
 
 def _date(value: str):
@@ -813,6 +836,32 @@ class RecordStore:
             )
         return source
 
+    def ingest_table(self, *, description: str, table_text: str, author_id: str,
+                     attributes: dict[str, object] | None = None, allow_duplicate: bool = False) -> Record:
+        """Ingest a CSV table as a Source: one release of structured data, all of it public from the date in
+        attributes.published, which a table always needs. The text is kept byte for byte, so a Variable cites
+        the row it came from as it would a sentence; format, columns and the row count are recorded."""
+        attributes = dict(attributes or {})
+        if taken := {"format", "columns", "rows"} & set(attributes):
+            raise ValueError(f"ingest-table sets {', '.join(sorted(taken))} itself; leave them out of attributes")
+        published = attributes.get("published")
+        if not isinstance(published, str) or _date(published[:10]) is None:
+            raise ValueError("a table needs attributes.published, the date its release became public: "
+                             "a reader before then could not have seen any of it")
+        if not isinstance(table_text, str) or not table_text:
+            raise ValueError("table_text must be a nonempty string")
+        columns, rows = _table_shape(table_text)
+        return self.ingest_source(description=description, document_text=table_text, author_id=author_id,
+                                  attributes=attributes | {"format": "csv", "columns": columns, "rows": rows},
+                                  allow_duplicate=allow_duplicate)
+
+    def _check_table(self, current: Record, attributes: dict[str, object]) -> None:
+        """A table Source's shape describes its fixed text, so it changes only with a new Source."""
+        if current.kind == "Source" and "csv" in (current.attributes.get("format"), attributes.get("format")) and any(
+                current.attributes.get(key) != attributes.get(key) for key in ("format", "columns", "rows")):
+            raise ValueError("a table Source's format, columns and rows are fixed with its text; "
+                             "ingest-table a new Source")
+
     def read_source_text(self, source_id: str, *, start_byte: int = 0,
                          end_byte: int | None = None) -> str:
         """Read canonical text or a half-open UTF-8 byte range, without normalization."""
@@ -856,6 +905,9 @@ class RecordStore:
     def set_passages(self, source_id: str, ranges: Iterable[tuple[int, int]]) -> int:
         """Replace passages with a complete, nonoverlapping partition of source bytes."""
         source_key = self._source_key(source_id)
+        if self._db.execute("SELECT json_extract(attributes, '$.format') FROM records WHERE record_key = ?",
+                            (source_key,)).fetchone()[0] == "csv":
+            raise ValueError("a table Source is read by its rows, not searched as a document; it has no passages")
         ranges = tuple((start, end) for start, end in ranges)
         previous_end = 0
         with self._db.blobopen("source_content", "text_utf8", source_key, readonly=True) as content:
@@ -915,6 +967,7 @@ class RecordStore:
             self._check_feature_value(current.kind, attributes or {}, current)
             if current.kind == "Source":
                 self._check_published(attributes)
+                self._check_table(current, attributes or {})
             self._db.execute(
                 """UPDATE records SET text = ?, attributes = ?, author_id = ?, updated_at = ?, as_of = ?
                    WHERE id = ?""",
@@ -991,6 +1044,7 @@ class RecordStore:
             self._check_feature_value(current.kind, {**merged, **changes}, current)
             if current.kind == "Source":
                 self._check_published({**merged, **changes})
+                self._check_table(current, {**merged, **changes})
             self._db.execute(
                 """UPDATE records SET text = ?, attributes = ?, author_id = ?, updated_at = ?, as_of = ?
                    WHERE id = ?""",

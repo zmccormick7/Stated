@@ -110,7 +110,7 @@ Six record types, connected by named links:
 | Record | Holds |
 | --- | --- |
 | **Entity** | A company, facility, product or market. |
-| **Source** | A filing, transcript, release or page, with its text captured so quotes can be checked. |
+| **Source** | A filing, transcript, release or page, with its text captured so quotes can be checked, or a table of structured data released on one date, cited row by row. |
 | **Finding** | A statement to build on or challenge, labelled disclosed, inference or assumption, citing its source. |
 | **Question** | Something unresolved and worth investigating. |
 | **Model** | A driver model of a business. |
@@ -130,6 +130,7 @@ What exists today:
 
 - The CLI, the Python API and five skills, which teach an agent to research the graph, answer a question from it, deepen one company's coverage, design a feature and write a feature's value at a date. The skills work in Claude Code and Codex.
 - Features end to end: definitions, schedules, `run-features`, derived features and the daily `feature-table`. The [oil and gas example](docs/examples/oil-and-gas/) runs three features weekly on 31 producers over 2023 and 2024 from their SEC filings, with the definitions, the exported table and its known limitations.
+- Structured data as Sources: `stated ingest-table FILE.csv` keeps a CSV file byte for byte as one release, public from the date it carries, so a model input or feature value can cite the row it came from. Turning a table's rows into Variables still takes an agent or your own script.
 - The answer page with checked answers, levers, research runs and the notes, pause and finish controls.
 - A base layer covering the 1,000 largest US filers by public float: three years of their 10-Ks, 10-Qs and results releases in full text, each dated and linked to its company for point-in-time reads, and for about 470 of them a coverage pack of the business, segments, key figures, relationships, risks and open questions. The published file, `base-2026.10.01`, predates the quarterly reports and results releases; the next export carries them. Driver models exist for a handful of companies.
 
