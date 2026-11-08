@@ -54,11 +54,12 @@ To look over what a run produced, open `stated ui`: every definition with its sc
 
 ## Use your own agent
 
-Three skills teach an agent the graph. `stated ui` installs them; for any other harness, copy the folders under `stated/skills/` into its skills directory.
+Four skills teach an agent the graph. `stated ui` installs them; for any other harness, copy the folders under `stated/skills/` into its skills directory.
 
 - **stated-research**: find what the graph holds, ingest and cite sources, record findings and revise them as evidence changes; every other skill uses it for its commands.
 - **stated-feature-design**: turn an idea for something to measure into feature definitions whose instructions describe state as of a date rather than forecast, and review existing definitions against the same tests.
 - **stated-state**: produce one feature's value for a subject as of a cutoff date, following the feature definition's instructions over everything a reader on that date could see, or computed by its formula from other features.
+- **stated-model**: maintain a company's driver model as of a cutoff for a dynamic-model feature, whose output is the feature's value.
 
 Point a session at the folder with `STATED_DB=/path/to/research.sqlite` and ask it to use the skill. The [CLI guide](docs/cli.md) covers every command, and the [Python API](docs/python-api.md) is there for agents and tools you write yourself:
 
@@ -96,13 +97,14 @@ Stated is early software. The database format changes without migrations; recrea
 
 What exists today:
 
-- The CLI, the Python API and three skills, which teach an agent to work with the graph, design a feature and write a feature's value at a date. The skills work in Claude Code and Codex.
+- The CLI, the Python API and four skills, which teach an agent to work with the graph, design a feature, write a feature's value at a date and maintain a company's driver model at one. The skills work in Claude Code and Codex.
 - Features end to end: definitions, schedules, `run-features`, derived features and the daily `feature-table`. The [oil and gas example](docs/examples/oil-and-gas/) runs three features weekly on 31 producers over 2023 and 2024 from their SEC filings, with the definitions, the exported table and its known limitations.
 - Structured data as Sources: `stated ingest-table FILE.csv` keeps a CSV file byte for byte as one release, public from the date it carries, so a model input or feature value can cite the row it came from. Turning a table's rows into Variables still takes an agent or your own script.
 - `stated ui`, a local read-only Features view: every definition with its schedule and coverage, each subject's values over time, and the evidence behind each value.
 - A base layer covering the 1,000 largest US filers by public float: three years of their 10-Ks, 10-Qs and results releases in full text, each dated and linked to its company for point-in-time reads, and for about 470 of them a coverage pack of the business, segments, key figures, relationships, risks and open questions. The published file, `base-2026.10.01`, predates the quarterly reports and results releases; the next export carries them. Driver models exist for a handful of companies.
+- Dynamic-model features: a company's driver model kept as of each cutoff, its inputs, drivers and formulas dated by the session that changed them, and its output the feature's value. None has been run at scale yet.
 
-What is being worked on: dynamic-model features, quarterly updates as filings land, runs across many companies and years, and measuring how much hindsight still leaks into values.
+What is being worked on: a first run of a dynamic-model feature against a static template, quarterly updates as filings land, runs across many companies and years, and measuring how much hindsight still leaks into values.
 
 ## Contributing
 

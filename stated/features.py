@@ -180,11 +180,12 @@ def _check(key, instructions, type, units, min, max, categories, formula, author
 
 
 def check_value(attributes: dict[str, object], definition: FeatureDefinition) -> None:
-    """A value carries its definition's key and formula, and is null, a value of its type, or a list of such
-    values over periods."""
+    """A value carries its definition's key, and a derived feature's value its formula; it is null, a value of
+    its type, or a list of such values over periods. A value of a feature without a formula may carry one of its
+    own when it is a dynamic model's output, computed in its Model."""
     if attributes.get("key") != definition.key:
         raise ValueError(f"a value of feature {definition.id} carries key {definition.key!r}, not {attributes.get('key')!r}")
-    if attributes.get("formula") != definition.formula:
+    if definition.formula is not None and attributes.get("formula") != definition.formula:
         raise ValueError(f"a value of feature {definition.id} carries its formula, {definition.formula!r}")
 
     def fits(value: object) -> bool:

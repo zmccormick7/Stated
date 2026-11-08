@@ -461,12 +461,23 @@ class RecordStore:
     def _variables_of(self, record_id: str, *, latest: bool):
         """The Variables a model operation works over, in the formulas' format: each one's attributes with
         its `id`, its `stamp` and its `depends_on` keys within the set. For a Model, the latest version of
-        each key among its Variables; for an Entity, the latest version of each feature about it; for a
+        each key among its Variables; for an Entity, the latest version of each feature about it, a model's
+        output among them taken as a given value; for a
         feature Variable, itself and its inputs, which are the latest version about its Entity of each key
         its formula names when `latest`, else the versions it depends on, taken as given values."""
         record = self.read(self.resolve_id(record_id))
-        if record.kind in ("Model", "Entity"):
-            return record.id, self._members(record, "in_model" if record.kind == "Model" else "about")
+        if record.kind == "Model":
+            return record.id, self._members(record, "in_model")
+        if record.kind == "Entity":
+            # A feature value that is a dynamic model's output is computed by its Model; about the Entity it is
+            # a given value, like any feature an agent wrote.
+            members = self._members(record, "about")
+            in_models = {row[0] for row in self._db.execute(
+                f"""SELECT r.id FROM links l JOIN records r ON r.record_key = l.from_key
+                    WHERE l.relation = 'in_model' AND r.id IN ({", ".join("?" * len(members))})
+                      AND {self._seen('l', link=True)}""", [m["id"] for m in members])} if members else set()
+            return record.id, [{k: v for k, v in m.items() if k != "formula"} if m["id"] in in_models else m
+                               for m in members]
         if record.kind != "Variable":
             raise ValueError(f"{record_id} is a {record.kind}, not a Model, Entity or Variable")
         from .formulas import parse

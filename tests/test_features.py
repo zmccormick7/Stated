@@ -75,13 +75,16 @@ class FeatureDefinitionTests(unittest.TestCase):
                 self.value(feature, value)
         with self.assertRaisesRegex(ValueError, "carries key 'flighty_funding'"):
             self.value(self.funding, 0.4, key="other")
-        with self.assertRaisesRegex(ValueError, "carries its formula"):
-            self.value(self.funding, 0.4, formula="1 - 0.6")
+        derived = self.db.define_feature(author_id="r", key="stable_funding", type="number",
+                                         instructions="One less the flighty share.", formula="1 - flighty_funding")
+        with self.assertRaisesRegex(ValueError, "carries its formula, '1 - flighty_funding'"):
+            self.value(derived, 0.6, formula="1 - 0.4")
+        self.value(self.funding, 0.4, formula="a / b")  # A dynamic model's output carries its own formula.
         with self.assertRaisesRegex(ValueError, "full ID"):
             self.value(self.funding, 0.4, feature=self.funding.id[:8])
         with self.assertRaisesRegex(ValueError, "only a Variable"):
             self.db.create("Finding", text="A finding.", author_id="agent", attributes={"feature": self.funding.id})
-        self.assertEqual(self.db.read_feature(self.funding.id).values, 3)
+        self.assertEqual(self.db.read_feature(self.funding.id).values, 4)
         self.assertEqual(self.db.read_feature(meeting.id).values, 1)
 
     def test_edits_and_versions_of_a_value_stay_within_its_feature(self):

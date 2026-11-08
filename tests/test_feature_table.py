@@ -32,6 +32,33 @@ class FeatureTableTests(unittest.TestCase):
                 "attributes": {"key": definition.key, "feature": definition.id, "value": value}}],
                 links=[{"from_id": "v", "to_id": self.bank, "relation": "about"}]).records["v"]
 
+    def test_a_dynamic_models_output_is_its_features_value(self):
+        with RecordStore(self.path) as db:
+            run_rate = db.define_feature(author_id="r", key="revenue_run_rate", type="number", units="USD millions",
+                                         instructions="Maintain the bank's driver model; the value is its output.")
+        with RecordStore(self.path, as_of="2023-02-15") as db:  # The first session builds the model.
+            built = db.contribute(author_id="agent", records=[
+                {"ref": "m", "kind": "Model", "text": "Bank revenue: earning assets times margin."},
+                {"ref": "assets", "kind": "Variable", "text": "Earning assets", "attributes": {"key": "assets", "role": "input", "value": 1000}},
+                {"ref": "nim", "kind": "Variable", "text": "Net interest margin", "attributes": {"key": "nim", "role": "input", "value": 0.03}},
+                {"ref": "out", "kind": "Variable", "text": "Revenue run-rate", "attributes": {
+                    "key": "revenue_run_rate", "role": "output", "feature": run_rate.id, "formula": "assets * nim"}}],
+                links=[{"from_id": r, "to_id": "m", "relation": "in_model"} for r in ("assets", "nim", "out")]
+                      + [{"from_id": "out", "to_id": r, "relation": "depends_on"} for r in ("assets", "nim")]
+                      + [{"from_id": r, "to_id": self.bank, "relation": "about"} for r in ("m", "out")]).records
+            db.fill_model(built["m"].id, author_id="agent")
+        with RecordStore(self.path, as_of="2023-05-15") as db:  # A later session moves an input and refills.
+            db.patch(built["nim"].id, author_id="agent", attributes={"value": 0.025})
+            filled = db.fill_model(built["m"].id, author_id="agent")
+            self.assertEqual([(f.key, f.value) for f in filled.written], [("revenue_run_rate", 25.0)])
+            # About the Entity the output is a given value: its formula belongs to the model.
+            self.assertEqual(db.check_model(self.bank).checked, ())
+            self.assertEqual(db.fill_model(self.bank, author_id="agent").written, ())
+        with RecordStore(self.path) as db:
+            rows = db.state_rows(entity_id=self.bank, features=["revenue_run_rate"], start="2023-01-01", end="2023-06-30")
+            self.assertEqual([(r.date, r.values["revenue_run_rate"]) for r in rows],
+                             [("2023-02-15", 30.0), ("2023-05-15", 25.0)])
+
     def test_the_table_forward_fills_values_with_when_they_were_dated_and_read(self):
         first = self.value("2023-01-03", self.share, 0.4)
         with RecordStore(self.path, as_of="2023-01-05") as db:
