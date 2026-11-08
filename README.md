@@ -46,6 +46,8 @@ stated feature-table --from 2021-01-04 --feature uninsured_share --out features.
 - **Derive** features that are formulas over other features; Stated computes them, never an agent.
 - **Export** the daily table: one row per subject and day, each feature's value, the date it last changed and the date it was last checked.
 
+Values come from three kinds of feature: **agentic**, read by an agent at the cutoff; **imported**, taken by code from a dated table of structured data such as XBRL financials; and **derived**, computed by formula. A fundamental model is built from them, with agentic and imported inputs and derived outputs. The [feature guide](docs/features.md#kinds-of-features) covers each, and what is built so far.
+
 Run the commands in your research folder, or point `STATED_DB` at its database. A subjects file holds one Entity ID per line. Sources must carry the date they became public and be linked `about` their subject, since a source without a date is never seen at any cutoff.
 
 To look over what a run produced, open Features (▦) in `stated ui`: every definition with its schedule and coverage, then each subject's latest value, when it last changed and was last checked, and how many values are dated on or before the day the instructions were written, which may carry hindsight. A subject opens to its values over time, each opening to the evidence it rests on, with anything a cutoff on the value's date could not have seen marked.
