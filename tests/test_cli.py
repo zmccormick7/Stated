@@ -190,6 +190,21 @@ class CLITests(unittest.TestCase):
                                    payload={"author_id": "agent-b"}, status=1),
                          {"error": f"an identical depends_on link already exists: {links[1]['id']}; patch it instead"})
 
+    def test_table_ingestion_keeps_the_file_and_needs_a_release_date(self):
+        text = "ticker,revenue\r\nACME,193479000\r\n"
+        table_file = self.directory / "revenue.csv"
+        table_file.write_bytes(text.encode("utf-8"))
+        metadata = {"description": "Quarterly revenue", "author_id": "loader"}
+        self.assertEqual(self.call("ingest-table", str(table_file), "--input", "-", payload=metadata, status=1),
+                         {"error": "a table needs attributes.published, the date its release became public: "
+                                   "a reader before then could not have seen any of it"})
+        table = self.call("ingest-table", str(table_file), "--input", "-",
+                          payload=metadata | {"attributes": {"published": "2024-05-02"}})
+        self.assertEqual(table["attributes"], {"published": "2024-05-02", "format": "csv",
+                                               "columns": ["ticker", "revenue"], "rows": 1})
+        self.assertEqual(self.call("source-text", table["id"]), text)
+        self.call("chunk", table["id"], status=1)
+
     def test_exact_source_ingestion_and_context(self):
         text = "A€🙂Z\r\nGrid approval is pending.\n"
         source_file = self.directory / "filing.txt"

@@ -228,6 +228,11 @@ def _parser():
     ingest.add_argument("source_file", nargs="?", help="Path to the extracted text file, or to a PDF")
     ingest.add_argument("--url", help="Fetch this HTML or plain-text page or PDF and ingest its text instead of a file; "
                                       "records url and retrieved_at in the Source's attributes.")
+    tabular = command("ingest-table", "ingest_table",
+                      "Ingest a CSV file as a Source: one release of structured data, public from attributes.published, "
+                      "kept byte for byte so a Variable cites its row. No model sees it and it is not chunked.",
+                      payload="description, author_id, attributes with published (a date) and any others")
+    tabular.add_argument("table_file", help="Path to the UTF-8 CSV file, with a header row")
     source = command("source-text", "read_source_text", "Read source text as a JSON string; offsets are UTF-8 bytes.", "source_id")
     source.add_argument("--start-byte", type=int, default=0)
     source.add_argument("--end-byte", type=int)
@@ -493,6 +498,8 @@ def main(argv=None):
                 if not isinstance(payload.get("attributes") or {}, dict):
                     raise ValueError("attributes must be a JSON object")
                 payload["attributes"] = {"url": page.url, "retrieved_at": page.retrieved_at} | (payload.get("attributes") or {})
+        if method == "ingest_table":
+            options["table_text"] = Path(options.pop("table_file")).read_bytes().decode("utf-8")
         if (subjects_file := options.pop("subjects_file", None)) is not None:
             lines = Path(subjects_file).read_text(encoding="utf-8").splitlines()
             options["subject_ids"] = (options["subject_ids"] or []) + [
