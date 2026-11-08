@@ -12,8 +12,6 @@ from .context import OpenRouterContextWriter, write_document_context
 from .fetch import contact, fetch_page, pdf_text
 from .store import RecordStore
 from .reranking import OpenRouterReranker
-from .answers import check_answer
-from .recall import recall
 from .retrieval import retrieve
 
 
@@ -58,7 +56,7 @@ def _parser():
     export.add_argument("--version", required=True, help="Version label recorded in the file, such as 2026.09.30.")
     command("attach-layer", "attach_layer",
             "Attach a published layer file read-only, or update an attached layer to the file's version.", "path")
-    command("create", "create", "Create an Entity, Source, Finding, Question, Model or Variable.",
+    command("create", "create", "Create an Entity, Source, Finding, Model or Variable.",
             "kind", payload=record)
     command("get", "read", "Read a current record.", "record_id")
     command("update", "update", "Replace a record's text and attributes in full.",
@@ -96,25 +94,12 @@ def _parser():
     walk.add_argument("--per-record", dest="per_record_limit", type=int, default=50,
                       help="Maximum links followed from any one record.")
     walk.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
-    rec = command("recall", "recall", "Assemble connected research for a question: records with paths, cited evidence, "
-                  "disagreements and open Questions.", "query")
-    rec.add_argument("--seed", dest="seeds", action="append", default=[], metavar="RECORD_ID",
-                     help="Start from this record as well as search hits; repeatable.")
-    rec.add_argument("--max-records", type=int, default=40)
-    rec.add_argument("--max-chars", type=int, default=24000,
-                     help="Drop the lowest-ranked records until compact output fits (default 24000).")
-    rec.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     command("relations", "relation_usage", "Count links by relation and the record kinds they connect.")
     check = command("check-model", "check_model",
                     "Evaluate each formula from stored values and compare: a Model's outputs, an Entity's features, "
                     "or one feature Variable against what it depends on.", "model_id")
     check.add_argument("--tolerance", type=float, default=1e-4,
                        help="Relative difference allowed between a stored value and its formula (default 1e-4).")
-    scenario = command("evaluate-model", "evaluate_model",
-                       "Recompute a model's formulas with some Variables set to other values; nothing is written.",
-                       "model_id")
-    scenario.add_argument("--set", dest="overrides", action="append", type=_where_item, metavar="KEY=VALUE",
-                          help="Hold a Variable at VALUE, a number or a JSON list for a row; repeatable.")
     command("fill-model", "fill_model",
             "Store each formula's exact value where the stored value differs, for a Model, an Entity's features "
             "or one feature Variable; a changed value becomes a new version.", "model_id", payload="author_id")
@@ -191,15 +176,10 @@ def _parser():
             "writing it again.", "value_id", payload="author_id, optional expires (a date)")
     features = command("features", "list_features", "List the current feature definitions by key.")
     features.add_argument("--replaced", action="store_true", help="Include definitions that were replaced.")
-    command("check-answer", "check_answer",
-            "Check an answer document against the graph: its sources, quotes and every charted figure.",
-            payload="an answer document: title, body, optional sources and blocks")
-    ui = command("ui", "ui", "Run the local answer UI for this workspace until interrupted.")
+    ui = command("ui", "ui", "Run the local Features view for this workspace until interrupted.")
     ui.add_argument("--port", type=int, default=8765)
     ui.add_argument("--harness", default="claude-code", choices=["claude-code", "codex"],
-                    help="The coding agent that answers (default: claude-code).")
-    ui.add_argument("--model", help="With --harness codex: the model to pass to codex exec.")
-    ui.add_argument("--effort", dest="reasoning_effort", help="With --harness codex: the model_reasoning_effort to set.")
+                    help="The coding agent to install the bundled skills for (default: claude-code).")
     ui.add_argument("--base", metavar="FILE", help="A published base layer file to attach, or to update to.")
     ui.add_argument("--contact", metavar="TEXT", help="Your name and email, kept beside the database and sent only to "
                                                       "SEC.gov, which requires one to fetch filings.")
@@ -274,8 +254,7 @@ def _run_features(path, options, cutoff):
     """Run a feature's pending sessions, printing each session's result to stderr as it ends and the run's
     summary to stdout."""
     from .feature_runs import derive_features, run_features
-    from .ui.harness import ClaudeCode, Codex
-    from .ui.server import install_skills
+    from .harness import ClaudeCode, Codex, install_skills
     try:
         if cutoff:
             raise ValueError(f"{options['command']} runs without a cutoff; it works at each date in turn")
@@ -397,57 +376,6 @@ def _shape(method, result):
     return result
 
 
-def _clip(text, limit):
-    return text if len(text) <= limit else text[:limit - 1] + "…"
-
-
-def _recall(db, options):
-    """Compact by default, so the whole bundle fits in an agent's view; --full returns everything."""
-    full, max_chars = options.pop("full"), options.pop("max_chars")
-    if max_chars < 2000:
-        raise ValueError("max_chars must be at least 2000")
-    result = recall(db, options.pop("query"), **options)
-    if full:
-        return result
-    shown = {r.record.id for r in result.records}
-    records = []
-    for r in result.records:
-        item = _preview(r.record, edits=False)  # Edit details would crowd out records.
-        if r.path:  # Reached by walking: shorter text, and how it was reached.
-            item["text"] = _clip(r.record.text, 100)
-            # via names a record in this bundle, so a short prefix is enough to match it or pass it back.
-            item |= {"via": r.entry_id[:8], "path": [link.relation for link in r.path]}
-        else:
-            item["entry_channels"] = list(r.channels)
-        records.append(item)
-    evidence, cited = [], set()
-    for item in result.evidence:  # One quote per record keeps the bundle small.
-        if not cited.issuperset(item.record_ids):
-            cited.update(item.record_ids)
-            evidence.append({"source_id": item.source_id, "start_byte": item.start_byte, "end_byte": item.end_byte,
-                             "quote": _clip(item.quote, 240), "record_ids": [i[:8] for i in item.record_ids]})
-    frontier = [db.read(record_id) for record_id in result.frontier[:10]]
-    bundle = {"records": records,
-            "evidence": evidence,
-            "issues": {"links": [{"from_id": l.from_id, "to_id": l.to_id, "relation": l.relation,
-                                  "explanation": _clip(l.explanation, 200)} for l in result.issue_links],
-                       "open_questions": [{"id": q.id, "text": _clip(q.text, 120), "status": q.attributes.get("status", "open")}
-                                          for q in result.open_questions if q.id not in shown]},
-            "frontier": [{"id": f.id, "kind": f.kind, "text": _clip(f.text, 80)} for f in frontier],
-            "coverage": result.coverage | {"evidence_omitted": len(result.evidence) - len(evidence),
-                                           "frontier_omitted": result.coverage["frontier_omitted"]
-                                           + max(0, len(result.frontier) - 10), "dropped_for_size": 0}}
-    # A hard size cap, so the bundle stays readable however large the graph grows.
-    while len(json.dumps(bundle, default=asdict)) > max_chars and len(bundle["records"]) > 1:
-        dropped = bundle["records"].pop()["id"]
-        kept = {r["id"] for r in bundle["records"]}
-        bundle["evidence"] = [e for e in bundle["evidence"] if set(e["record_ids"]) != {dropped[:8]}]
-        bundle["issues"]["links"] = [l for l in bundle["issues"]["links"] if {l["from_id"], l["to_id"]} & kept]
-        bundle["coverage"]["dropped_for_size"] += 1
-        bundle["coverage"]["truncated"] = True
-    return bundle
-
-
 def main(argv=None):
     options = vars(_parser().parse_args(argv))
     given, as_of = options.pop("db"), options.pop("as_of")
@@ -455,8 +383,7 @@ def main(argv=None):
     if options["method"] == "ui":
         from .ui.server import serve
         try:
-            return serve(given, harness_name=options["harness"], port=options["port"], model=options["model"],
-                         reasoning_effort=options["reasoning_effort"], base=options["base"],
+            return serve(given, harness_name=options["harness"], port=options["port"], base=options["base"],
                          contact=options["contact"], open_browser=options["open_browser"])
         except (OSError, ValueError, sqlite3.Error) as error:
             print(json.dumps({"error": str(error)}), file=sys.stderr)
@@ -464,9 +391,8 @@ def main(argv=None):
     path = Path(given or "research.sqlite")
     if options["method"] in ("run_features", "derive_features"):
         return _run_features(path, options, fixed or as_of)
-    for name in ("where", "overrides"):
-        if options.get(name) is not None:
-            options[name] = dict(options[name])
+    if options.get("where") is not None:
+        options["where"] = dict(options["where"])
     method = options.pop("method")
     options.pop("command")
     try:
@@ -522,11 +448,7 @@ def main(argv=None):
                     options[name] = db.resolve_id(options[name], link=name == "link_id")
             if "seed_ids" in options:
                 options["seed_ids"] = [db.resolve_id(seed) for seed in options["seed_ids"]]
-            if method == "recall":
-                result = _recall(db, options)
-            elif method == "check_answer":
-                result = check_answer(db, payload)
-            elif method == "search_documents":
+            if method == "search_documents":
                 result = _search_documents(db, options)
             else:
                 full = options.pop("full", True)

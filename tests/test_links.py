@@ -52,15 +52,15 @@ class LinkTests(unittest.TestCase):
         self.assertEqual(self.db.connections(self.c.id, relation="raises").records, {})
 
     def test_list_records_filters_and_pages_in_creation_order(self):
-        question = self.db.create("Question", text="Q", author_id="bob")
-        self.assertEqual(self.db.list_records().records, (self.a, self.b, self.c, question))
+        model = self.db.create("Model", text="M", author_id="bob")
+        self.assertEqual(self.db.list_records().records, (self.a, self.b, self.c, model))
         self.assertEqual(self.db.list_records(kind="Finding", limit=2).records, (self.a, self.b))
         self.assertTrue(self.db.list_records(kind="Finding", limit=2).has_more)
         self.assertEqual(self.db.list_records(kind="Finding", after=self.b.id),
                          self.db.list_records(kind="Finding", after=self.b.id, limit=1))
         self.assertEqual(self.db.list_records(kind="Finding", after=self.b.id).records, (self.c,))
         self.assertFalse(self.db.list_records(kind="Finding", after=self.b.id).has_more)
-        self.assertEqual(self.db.list_records(author_id="bob").records, (question,))
+        self.assertEqual(self.db.list_records(author_id="bob").records, (model,))
         self.assertEqual(self.db.list_records(author_id="nobody").records, ())
         with self.assertRaises(KeyError):
             self.db.list_records(after="missing")
@@ -70,27 +70,27 @@ class LinkTests(unittest.TestCase):
 
     def test_relation_usage_counts_links_by_relation_and_record_kinds(self):
         self.assertEqual(self.db.relation_usage(), ())
-        question = self.db.create("Question", text="Q", author_id="alice")
+        model = self.db.create("Model", text="M", author_id="alice")
         for from_id, to_id, relation in ((self.a.id, self.b.id, "depends_on"), (self.c.id, self.b.id, "depends_on"),
-                                         (self.a.id, question.id, "raises"), (question.id, self.c.id, "depends_on"),
-                                         (question.id, self.a.id, "answered_by")):
+                                         (self.a.id, model.id, "raises"), (model.id, self.c.id, "depends_on"),
+                                         (model.id, self.a.id, "answered_by")):
             self.db.create_link(from_id, to_id, relation, author_id="alice")
         usage = [(u.relation, u.from_kind, u.to_kind, u.links) for u in self.db.relation_usage()]
-        self.assertEqual(usage, [("answered_by", "Question", "Finding", 1), ("depends_on", "Finding", "Finding", 2),
-                                 ("depends_on", "Question", "Finding", 1), ("raises", "Finding", "Question", 1)])
-        link = self.db.connections(question.id, relation="depends_on").links[0]
+        self.assertEqual(usage, [("answered_by", "Model", "Finding", 1), ("depends_on", "Finding", "Finding", 2),
+                                 ("depends_on", "Model", "Finding", 1), ("raises", "Finding", "Model", 1)])
+        link = self.db.connections(model.id, relation="depends_on").links[0]
         self.db.update_link(link.id, from_id=self.a.id, to_id=self.b.id, relation="updates", author_id="bob")
         self.assertIn(("updates", "Finding", "Finding", 1),
                       [(u.relation, u.from_kind, u.to_kind, u.links) for u in self.db.relation_usage()])
-        self.assertNotIn("Question", {u.from_kind for u in self.db.relation_usage() if u.relation == "depends_on"})
+        self.assertNotIn("Model", {u.from_kind for u in self.db.relation_usage() if u.relation == "depends_on"})
 
     def test_list_records_where_matches_attribute_type_and_value(self):
-        make = lambda text, **attributes: self.db.create("Question", text=text, author_id="a", attributes=attributes)
+        make = lambda text, **attributes: self.db.create("Finding", text=text, author_id="a", attributes=attributes)
         open_q, answered, number, integer, flag, empty = (
             make("Open", status="open", owner="nvda"), make("Answered", status="answered"),
             make("Float", value=0.45), make("Integer", value=1), make("Flag", value=True), make("Null", value=None))
         text_one = make("Text one", value="1")
-        where = lambda **conditions: [r.text for r in self.db.list_records(kind="Question", where=conditions).records]
+        where = lambda **conditions: [r.text for r in self.db.list_records(kind="Finding", where=conditions).records]
         self.assertEqual(where(status="open"), ["Open"])
         self.assertEqual(where(status="open", owner="nvda"), ["Open"])
         self.assertEqual(where(status="open", owner="mu"), [])

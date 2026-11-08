@@ -15,7 +15,7 @@ stated = "stated.cli:main"
 include = ["stated*"]
 
 [tool.setuptools.package-data]
-stated = ["schema.sql", "ui/schema.sql", "ui/static/*", "skills/*/SKILL.md"]
+stated = ["schema.sql", "ui/static/*", "skills/*/SKILL.md"]
 
 [project.optional-dependencies]
 cli = ["tiktoken>=0.12,<1", "pypdf>=5,<7"]

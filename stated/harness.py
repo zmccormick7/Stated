@@ -1,10 +1,10 @@
-"""Run a prompt through the user's own coding agent, headless, and report what it does."""
+"""Run a prompt through the user's own coding agent, headless, and install the bundled skills it follows."""
 
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -50,15 +50,30 @@ def _failure(message: str, now: datetime | None = None) -> HarnessError:
     return UsageLimit(message, None)
 
 
-@dataclass(frozen=True)
-class Reply:
-    text: str  # The agent's final message.
-    session_id: str | None  # Pass back to continue the same conversation.
-    denied: tuple[str, ...]  # Tools refused under the workspace's permission settings.
-
-
 ALLOWED_TOOLS = ("Bash(stated:*)", "Read", "Write")
-WEB_TOOLS = ("WebSearch", "WebFetch")
+
+SKILLS = Path(__file__).resolve().parent / "skills"
+# Skills no longer bundled, under their current names and the names from before the product was renamed
+# Stated; an install removes these copies so agents see one set.
+RETIRED_SKILLS = ("stated-answer", "stated-go-deeper", "premisedb-answer", "premisedb-feature-design", "premisedb-go-deeper",
+                  "premisedb-research", "premisedb-state")
+
+
+def install_skills(harness, source: Path = SKILLS) -> list[str]:
+    """Copy the bundled skills into the harness's skills directory, replacing older copies; returns the
+    skills that were written or updated. The same file copy the README describes, done by the program."""
+    written = []
+    for directory in harness.skills_directories():
+        for name in RETIRED_SKILLS:
+            if (directory / name / "SKILL.md").is_file():
+                shutil.rmtree(directory / name)
+        for skill in sorted(source.glob("*/SKILL.md")):
+            target = directory / skill.parent.name / "SKILL.md"
+            if not target.is_file() or target.read_bytes() != skill.read_bytes():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(skill, target)
+                written.append(skill.parent.name)
+    return written
 
 
 class _Deadline:
@@ -96,16 +111,12 @@ class ClaudeCode:
         """Where Claude Code loads personal skills from, as the README's install step describes."""
         return (Path.home() / ".claude" / "skills",)
 
-    def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None, web: bool = False,
-            timeout: float | None = None, on_progress=lambda text: None, writable=()) -> Reply:
-        # `writable` is for sandboxed harnesses; Claude Code's own CLI tool writes the database itself.
-        # The least the product needs: its own CLI, files in the workspace, and the web when the turn's
-        # effort calls for outside sources. Everything else follows the user's own settings, so a tool
-        # they have not allowed is refused as usual.
+    def run(self, prompt: str, *, cwd, env=None, timeout: float | None = None, writable=()) -> str:
+        """The agent's final message. `writable` is for sandboxed harnesses; Claude Code's own CLI tool
+        writes the database itself. The least the product needs: its own CLI and files in the workspace.
+        Everything else follows the user's own settings, so a tool they have not allowed is refused as usual."""
         command = [self.executable, "-p", prompt, "--output-format", "stream-json", "--verbose",
-                   "--allowedTools", *ALLOWED_TOOLS, *(WEB_TOOLS if web else ())]
-        if session_id:
-            command += ["--resume", session_id]
+                   "--allowedTools", *ALLOWED_TOOLS]
         try:
             process = subprocess.Popen(command, cwd=cwd, env=env, stdout=subprocess.PIPE,
                                        stderr=subprocess.STDOUT, text=True, encoding="utf-8")
@@ -119,13 +130,7 @@ class ClaudeCode:
                 except ValueError:
                     other.append(line.strip())
                     continue
-                if not isinstance(event, dict):
-                    continue
-                if event.get("type") == "assistant":
-                    for item in (event.get("message") or {}).get("content") or []:
-                        if isinstance(item, dict) and item.get("type") == "tool_use":
-                            on_progress(_describe(item))
-                elif event.get("type") == "result":
+                if isinstance(event, dict) and event.get("type") == "result":
                     result = event
         status = process.returncode
         if deadline.passed:
@@ -135,9 +140,7 @@ class ClaudeCode:
             raise _failure(f"{self.executable} exited with status {status}: {detail}")
         if result.get("is_error"):
             raise _failure(str(result.get("result") or "the agent reported an error"))
-        denied = tuple(dict.fromkeys(str(d.get("tool_name")) for d in result.get("permission_denials") or []
-                                     if isinstance(d, dict)))
-        return Reply(str(result.get("result") or ""), result.get("session_id"), denied)
+        return str(result.get("result") or "")
 
 
 class Codex:
@@ -154,24 +157,21 @@ class Codex:
         """Where Codex loads personal skills from, as the README's install step describes."""
         return (Path.home() / ".agents" / "skills",)
 
-    def run(self, prompt: str, *, cwd, env=None, session_id: str | None = None, web: bool = False,
-            timeout: float | None = None, on_progress=lambda text: None, writable=()) -> Reply:
-        # workspace-write: the least that lets SQLite open the workspace database (in `cwd`, or in a folder
-        # given in `writable`); the rest is the user's config.
+    def run(self, prompt: str, *, cwd, env=None, timeout: float | None = None, writable=()) -> str:
+        """The agent's final message. workspace-write is the least that lets SQLite open the workspace
+        database (in `cwd`, or in a folder given in `writable`); the rest is the user's config."""
         options = ["--json", "--skip-git-repo-check", "-s", "workspace-write"] + (["-m", self.model] if self.model else []) + (
-            ["-c", f'model_reasoning_effort="{self.reasoning_effort}"'] if self.reasoning_effort else []) + (
-            ["-c", 'web_search="live"', "-c", "sandbox_workspace_write.network_access=true"] if web else []) + [
+            ["-c", f'model_reasoning_effort="{self.reasoning_effort}"'] if self.reasoning_effort else []) + [
             part for folder in writable for part in ("--add-dir", str(folder))]
         with tempfile.TemporaryDirectory() as directory:
             last = Path(directory) / "last.txt"
-            command = [self.executable, "exec", *options, "-o", str(last)] + (
-                ["resume", session_id, prompt] if session_id else [prompt])
+            command = [self.executable, "exec", *options, "-o", str(last), prompt]
             try:
                 process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                            stderr=subprocess.PIPE, text=True, encoding="utf-8")
             except OSError as error:
                 raise HarnessError(f"Could not start {self.executable}: {error}") from None
-            thread, finished, errors = session_id, False, []
+            finished, errors = False, []
             with process, _Deadline(process, timeout) as deadline:
                 for line in process.stdout:
                     try:
@@ -180,14 +180,8 @@ class Codex:
                         continue
                     if not isinstance(event, dict):
                         continue
-                    kind, item = event.get("type"), event.get("item") or {}
-                    if kind == "thread.started":
-                        thread = event.get("thread_id") or thread
-                    elif kind == "item.started" and item.get("type") == "command_execution":
-                        on_progress(_shell(item.get("command") or ""))
-                    elif kind == "item.completed" and item.get("type") == "web_search" and item.get("query"):
-                        on_progress(_shorten(f"Web: {item['query']}"))
-                    elif kind == "turn.completed":
+                    kind = event.get("type")
+                    if kind == "turn.completed":
                         finished = True
                     elif kind in ("turn.failed", "error"):
                         errors.append(str(event.get("message") or (event.get("error") or {}).get("message") or kind))
@@ -197,30 +191,8 @@ class Codex:
             if not finished:
                 detail = "; ".join(errors) or stderr.strip().splitlines()[-1:] and stderr.strip().splitlines()[-1] or "no result"
                 raise _failure(f"{self.executable} exited with status {process.returncode}: {detail}")
-            text = last.read_text(encoding="utf-8") if last.is_file() else ""
-        return Reply(text, thread, ())
+            return last.read_text(encoding="utf-8") if last.is_file() else ""
 
 
 _OVERTIME = "The agent ran well past the time it was given and was stopped."
-
-
-def _shorten(text: str) -> str:
-    text = " ".join(text.split())
-    return text if len(text) <= 160 else text[:159] + "…"
-
-
-def _shell(command: str) -> str:
-    """A progress line for a Codex shell command, without the wrapper it runs commands through."""
-    for prefix in ("/bin/zsh -lc ", "/bin/bash -lc ", "bash -lc ", "zsh -lc "):
-        if command.startswith(prefix):
-            command = command[len(prefix):].strip("'\"")
-    return _shorten(f"Shell: {command}")
-
-
-def _describe(tool_use: dict) -> str:
-    """One line for the progress display: what the agent says it is doing, or the call itself."""
-    given = tool_use.get("input") or {}
-    detail = next((given[key] for key in ("description", "command", "skill", "file_path", "pattern", "query", "url")
-                   if isinstance(given.get(key), str) and given[key].strip()), "")
-    return _shorten(" ".join(f"{tool_use.get('name', 'tool')}: {detail}".split()).rstrip(": "))
 

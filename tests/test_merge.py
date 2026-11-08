@@ -26,7 +26,7 @@ class MergeTests(unittest.TestCase):
             self.dup = db.create("Entity", text="Related Digital, developer of the Frontier campus", author_id="b",
                                  attributes={"aliases": ["Related"]}).id
             self.finding = db.create("Finding", text="Related built the Frontier campus.", author_id="b").id
-            self.question = db.create("Question", text="Who finances Related?", author_id="b").id
+            self.question = db.create("Finding", text="Who finances Related?", author_id="b").id
             db.create_link(self.finding, self.dup, "about", author_id="b")  # Moves.
             db.create_link(self.dup, self.question, "raises", author_id="b")  # Moves.
             db.create_link(self.finding, self.keep, "about", author_id="a")  # Already there: the duplicate's is dropped.

@@ -182,7 +182,9 @@ class SourceSegment:
     document_context: DocumentContext | None = None
 
 
-KINDS = ("Entity", "Source", "Finding", "Question", "Model", "Variable")
+KINDS = ("Entity", "Source", "Finding", "Model", "Variable")
+# Kinds that layers published earlier may hold and that are still read, but no longer written.
+RETIRED_KINDS = ("Question",)
 # A new record named by its contribute ref inside text or an explanation, replaced by the record's ID.
 _REF = re.compile(r"\{ref:([^{}]+)\}")
 # Characters that extracted text often swaps for one another, used only to suggest a corrected quote.
@@ -241,7 +243,7 @@ def _date(value: str):
 
 
 def _check_kind(kind: str | None) -> None:
-    if kind is not None and kind not in KINDS:
+    if kind is not None and kind not in KINDS + RETIRED_KINDS:
         raise ValueError("kind must be a record kind or None")
 
 
@@ -344,17 +346,9 @@ class RecordStore:
         model_id, variables = self._variables_of(model_id, latest=False)
         return check_model(variables, model_id, tolerance=tolerance)
 
-    def evaluate_model(self, model_id: str, overrides: dict[str, object] | None = None) -> "ModelEvaluation":
-        """Recompute the formulas with some Variables set to other values; nothing is written. The ID names a
-        Model, an Entity (its features) or a feature Variable (computed from the latest version of each
-        input about its Entity)."""
-        from .formulas import evaluate_model
-        model_id, variables = self._variables_of(model_id, latest=True)
-        return evaluate_model(variables, model_id, overrides)
-
     def fill_model(self, model_id: str, *, author_id: str) -> ModelFill:
         """Store each formula's value where the stored value is not exactly that, results flowing through
-        dependent formulas as in evaluate_model. The ID names a Model, an Entity (every feature about it, each
+        dependent formulas. The ID names a Model, an Entity (every feature about it, each
         computed from the latest version of its inputs) or one feature Variable. A Variable with no value yet
         that this store may edit is filled in place, linked `depends_on` the input versions used; any other
         gets a new version: the same attributes with the new value, carrying its `in_model` or `about` link,
@@ -467,12 +461,23 @@ class RecordStore:
     def _variables_of(self, record_id: str, *, latest: bool):
         """The Variables a model operation works over, in the formulas' format: each one's attributes with
         its `id`, its `stamp` and its `depends_on` keys within the set. For a Model, the latest version of
-        each key among its Variables; for an Entity, the latest version of each feature about it; for a
+        each key among its Variables; for an Entity, the latest version of each feature about it, a model's
+        output among them taken as a given value; for a
         feature Variable, itself and its inputs, which are the latest version about its Entity of each key
         its formula names when `latest`, else the versions it depends on, taken as given values."""
         record = self.read(self.resolve_id(record_id))
-        if record.kind in ("Model", "Entity"):
-            return record.id, self._members(record, "in_model" if record.kind == "Model" else "about")
+        if record.kind == "Model":
+            return record.id, self._members(record, "in_model")
+        if record.kind == "Entity":
+            # A feature value that is a dynamic model's output is computed by its Model; about the Entity it is
+            # a given value, like any feature an agent wrote.
+            members = self._members(record, "about")
+            in_models = {row[0] for row in self._db.execute(
+                f"""SELECT r.id FROM links l JOIN records r ON r.record_key = l.from_key
+                    WHERE l.relation = 'in_model' AND r.id IN ({", ".join("?" * len(members))})
+                      AND {self._seen('l', link=True)}""", [m["id"] for m in members])} if members else set()
+            return record.id, [{k: v for k, v in m.items() if k != "formula"} if m["id"] in in_models else m
+                               for m in members]
         if record.kind != "Variable":
             raise ValueError(f"{record_id} is a {record.kind}, not a Model, Entity or Variable")
         from .formulas import parse
@@ -503,7 +508,8 @@ class RecordStore:
 
     def _versions(self, members_sql: str, parameters: tuple):
         """Reduce a query for Variables (record_key, id, attributes, as_of) to the latest version per key,
-        each in the formulas' format."""
+        each in the formulas' format, leaving out a key whose latest version is retired: a driver dropped
+        from its model as of that version's date."""
         rows = self._db.execute(
             f"""WITH members AS (
                     SELECT *, row_number() OVER (PARTITION BY coalesce(json_extract(attributes, '$.key'), id)
@@ -514,7 +520,8 @@ class RecordStore:
                         JOIN records d ON d.record_key = dl.to_key
                         WHERE dl.from_key = v.record_key AND dl.relation = 'depends_on'
                           AND d.record_key IN (SELECT record_key FROM members)) AS depends_on
-                FROM members v WHERE v.recency = 1 ORDER BY v.record_key""", parameters).fetchall()
+                FROM members v WHERE v.recency = 1 AND coalesce(json_extract(v.attributes, '$.retired'), 0) = 0
+                ORDER BY v.record_key""", parameters).fetchall()
         return [json.loads(row["attributes"]) | {"id": row["id"], "stamp": row["as_of"], "depends_on": [
             key for key in json.loads(row["depends_on"]) if key is not None]} for row in rows]
 
@@ -957,7 +964,7 @@ class RecordStore:
         attributes, source_ids = self._cite(attributes, citations)
         encoded = self._encode(attributes)
         current = self.read(record_id)  # A missing or unseen record is reported before anything is written.
-        if self._value_changed(current, attributes or {}):
+        if self._is_new_version(current, attributes or {}):
             return self._write_version(current, text=text, attributes=attributes or {}, source_ids=source_ids,
                                        author_id=author_id)
         with self._db:
@@ -978,11 +985,15 @@ class RecordStore:
         return record
 
     @staticmethod
-    def _value_changed(current: Record, attributes: dict[str, object]) -> bool:
-        """A Variable's value changes when it had one and the new attributes give a different one. Setting a
-        value where there was none is not a change."""
-        return (current.kind == "Variable" and current.attributes.get("value") is not None
-                and attributes.get("value") != current.attributes.get("value"))
+    def _is_new_version(current: Record, attributes: dict[str, object]) -> bool:
+        """A Variable is written as a new version when what it says as of a date changes: a value it had or a
+        formula it had is given another, or it is retired from its model or brought back. Setting a value or a
+        formula where there was none is not a change."""
+        if current.kind != "Variable":
+            return False
+        before, after = current.attributes, attributes
+        return any(before.get(name) is not None and after.get(name) != before.get(name) for name in ("value", "formula")) \
+            or bool(after.get("retired")) != bool(before.get("retired"))
 
     def _write_version(self, current: Record, *, text: str, attributes: dict[str, object],
                        source_ids: tuple[str, ...], author_id: str) -> Record:
@@ -1033,7 +1044,7 @@ class RecordStore:
             raise ValueError("an attribute cannot be both set and removed")
         current = self.read(record_id)
         merged = {key: value for key, value in current.attributes.items() if key not in remove} | changes
-        if self._value_changed(current, merged):
+        if self._is_new_version(current, merged):
             return self._write_version(current, text=current.text if text is None else text, attributes=merged,
                                        source_ids=source_ids, author_id=author_id)
         with self._db:
@@ -1533,6 +1544,8 @@ class RecordStore:
 
     def _insert_record(self, kind: str, text: str, encoded: str, author_id: str,
                        record_id: str | None = None) -> Record:
+        if kind in RETIRED_KINDS:
+            raise ValueError(f"{kind} records are no longer written; record what the documents say as a Finding")
         self._check_feature_value(kind, json.loads(encoded))
         record_id = record_id or str(uuid4())
         self._db.execute(

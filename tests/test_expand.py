@@ -14,7 +14,7 @@ class ExpandTests(unittest.TestCase):
         make = lambda kind, text: self.db.create(kind, text=text, author_id="a")
         self.entity, self.finding, self.variable, self.question, self.other = (
             make("Entity", "PowerFrame"), make("Finding", "Backlog may slip"), make("Variable", "FY28 revenue"),
-            make("Question", "Can customers defer?"), make("Finding", "Grid delays"))
+            make("Finding", "Can customers defer?"), make("Finding", "Grid delays"))
         link = lambda a, b, relation: self.db.create_link(a.id, b.id, relation, author_id="a")
         self.about = link(self.finding, self.entity, "about")
         self.depends = link(self.variable, self.finding, "depends_on")

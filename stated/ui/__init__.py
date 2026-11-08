@@ -1,6 +1,1 @@
-"""The answer UI: threads of questions, answered by the user's own coding agent working in the workspace."""
-
-from .harness import ClaudeCode, Codex, HarnessError, Reply, UsageLimit
-from .threads import ThreadStore, run_turn
-
-__all__ = ["ClaudeCode", "Codex", "HarnessError", "Reply", "ThreadStore", "UsageLimit", "run_turn"]
+"""The Features view: a local, read-only page of feature definitions, values and their evidence."""

@@ -70,7 +70,7 @@ class FeatureTests(unittest.TestCase):
         then.create_link(loose.id, self.bank.id, "about", author_id="agent")
         self.assertEqual(then.check_model(loose.id).checked[0].problems, ("names Variables not in the model: total_deposits",))
         with self.assertRaisesRegex(ValueError, "not a Model, Entity or Variable"):
-            then.check_model(then.create("Question", text="Which bank?", author_id="agent").id)
+            then.check_model(then.create("Finding", text="Which bank?", author_id="agent").id)
 
     def test_fill_model_on_an_entity_derives_every_feature_from_the_latest_inputs(self):
         then = self.at("2022-11-07")
@@ -95,7 +95,6 @@ class FeatureTests(unittest.TestCase):
         # The earlier date reads the earlier state, untouched.
         self.assertEqual(then.read(f["uninsured_share"].id).attributes["value"], 150000 / 176819)
         self.assertEqual(then.fill_model(self.bank.id, author_id="agent").written, ())
-        self.assertEqual({v.key: v.value for v in later.evaluate_model(self.bank.id, {"total_deposits": 200000}).variables}["uninsured_share"], 165400 / 200000)
 
     def test_state_rows_give_change_points_per_entity(self):
         then = self.at("2022-11-07")

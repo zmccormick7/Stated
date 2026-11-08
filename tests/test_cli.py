@@ -37,13 +37,13 @@ class CLITests(unittest.TestCase):
         return {"author_id": record["author_id"], "updated_at": record["updated_at"], "as_of": record["as_of"],
                 "layer": record["layer"]}
 
-    def test_recall_and_revision_across_processes(self):
+    def test_records_and_revision_across_processes(self):
         text = "PowerFrame's backlog may slip.\n€5 and $HOME stay literal."
         data = {"text": text, "attributes": {"basis": "inference"}, "author_id": "agent-a"}
         payload_file = self.directory / "finding.json"
         payload_file.write_text(json.dumps(data), encoding="utf-8")
         finding = self.call("create", "Finding", "--input", str(payload_file))
-        question = self.create("Question", "Could grid delays cause deferrals?")
+        question = self.create("Entity", "Grid operator (fictional)")
         link = self.call("link", finding["id"], question["id"], "raises", "--input", "-",
                          payload={"author_id": "agent-a", "explanation": "Investigate customer timing."})
         linked = {"id": finding["id"], "kind": "Finding", "text": finding["text"], "basis": "inference"}
@@ -60,10 +60,10 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("connections", question["id"], "--full"),
                          {"links": [link], "has_more": False, "records": [finding]})
         self.assertEqual(self.call("connections", question["id"], "--direction", "out")["links"], [])
-        self.assertEqual(self.call("list", "--kind", "Question", "--author", "agent-a", "--full"),
+        self.assertEqual(self.call("list", "--kind", "Entity", "--author", "agent-a", "--full"),
                          {"records": [question], "has_more": False})
         self.assertEqual(self.call("list", "--after", finding["id"], "--limit", "1"),
-                         {"records": [{"id": question["id"], "kind": "Question", "text": question["text"],
+                         {"records": [{"id": question["id"], "kind": "Entity", "text": question["text"],
                                        **self.edits(question)}],
                           "has_more": False})
         self.assertEqual(self.call("list", "--where", "basis=inference")["records"], [preview])
@@ -78,7 +78,7 @@ class CLITests(unittest.TestCase):
         self.assertEqual((full["reached"][1]["record"], full["reached"][1]["path"]), (finding, [link]))
         self.assertEqual(self.run_cli("expand", question["id"], "--depth", "3").returncode, 2)
         self.assertEqual(self.call("relations"),
-                         {"relations": [{"relation": "raises", "from_kind": "Finding", "to_kind": "Question", "links": 1}]})
+                         {"relations": [{"relation": "raises", "from_kind": "Finding", "to_kind": "Entity", "links": 1}]})
         relabelled = self.call("patch-link", link["id"], "--input", "-", payload={"author_id": "agent-b", "relation": "qualifies"})
         self.assertEqual((relabelled["relation"], relabelled["explanation"]), ("qualifies", link["explanation"]))
         changed = self.call("update", finding["id"], "--input", "-",
@@ -101,7 +101,7 @@ class CLITests(unittest.TestCase):
         result = self.call("contribute", "--input", "-", payload={
             "author_id": "agent-a",
             "records": [{"ref": "f", "kind": "Finding", "text": "Backlog may slip."},
-                        {"ref": "q", "kind": "Question", "text": "Can customers defer?"}],
+                        {"ref": "q", "kind": "Finding", "text": "Can customers defer?"}],
             "links": [{"from_id": "f", "to_id": entity["id"], "relation": "about"},
                       {"from_id": "f", "to_id": "q", "relation": "raises"}]})
         self.assertEqual(sorted(result["records"]), ["f", "q"])
@@ -125,50 +125,9 @@ class CLITests(unittest.TestCase):
             **preview, "basis": "inference", "author_id": "agent-b", "created_by": "agent-a", "updated_at": edited["updated_at"],
             "layer": "workspace"})
 
-    def test_recall_returns_records_evidence_and_issues(self):
-        text = "A€ backlog note. Customers may defer deliveries."
-        source_file = self.directory / "note.txt"
-        source_file.write_bytes(text.encode("utf-8"))
-        source = self.call("ingest", str(source_file), "--input", "-", payload={"description": "Note", "author_id": "agent-a"})
-        finding = self.call("create", "Finding", "--input", "-", payload={
-            "text": "Backlog may slip.", "author_id": "agent-a", "attributes": {"basis": "disclosed"},
-            "citations": [{"source_id": source["id"], "quote": "Customers may defer deliveries."}]})
-        question = self.create("Question", "Can customers defer?")
-        self.call("link", finding["id"], question["id"], "raises", "--input", "-", payload={"author_id": "agent-a"})
-        result = self.call("recall", "backlog", "--max-records", "5")
-        entry, walked = result["records"]
-        self.assertEqual(entry, {"id": finding["id"], "kind": "Finding", "text": "Backlog may slip.", "basis": "disclosed",
-                                 "citations": 1, "entry_channels": ["search"]})
-        self.assertEqual(walked, {"id": question["id"], "kind": "Question", "text": "Can customers defer?",
-                                  "via": finding["id"][:8], "path": ["raises"]})
-        self.assertEqual(result["evidence"], [{"source_id": source["id"], "start_byte": 19, "end_byte": 50,
-                                               "quote": "Customers may defer deliveries.", "record_ids": [finding["id"][:8]]}])
-        self.assertEqual((result["issues"], result["frontier"]), ({"links": [], "open_questions": []}, []))
-        seeded = self.call("recall", "nothing", "--seed", question["id"][:8], "--max-records", "1")
-        self.assertEqual(seeded["records"][0]["id"], question["id"])
-        self.assertEqual(seeded["frontier"], [{"id": finding["id"], "kind": "Finding", "text": "Backlog may slip."}])
-        self.assertTrue(seeded["coverage"]["truncated"])
-        self.assertEqual(seeded["issues"]["open_questions"], [])  # The Question is already a record.
-        full = self.call("recall", "backlog", "--full")
-        self.assertEqual(full["records"][0]["record"], finding)
-        self.call("contribute", "--input", "-", payload={"author_id": "agent-a", "records": [
-            {"ref": str(n), "kind": "Finding", "text": f"Deferral clause {n}. " * 10} for n in range(12)], "links": [
-            {"from_id": finding["id"][:8], "to_id": str(n), "relation": "depends_on"} for n in range(12)] + [
-            {"from_id": str(n), "to_id": str((n + 1) % 12), "relation": "qualifies", "explanation": "Terms vary. " * 15}
-            for n in range(12)]})
-        small = self.call("recall", "backlog", "--max-chars", "2000")
-        self.assertLessEqual(len(json.dumps(small)), 2000)
-        self.assertGreater(small["coverage"]["dropped_for_size"], 0)
-        self.assertTrue(small["coverage"]["truncated"])
-        self.assertEqual(small["records"][0]["id"], finding["id"])
-        kept = {r["id"] for r in small["records"]}
-        self.assertTrue(small["issues"]["links"])
-        self.assertTrue(all({l["from_id"], l["to_id"]} & kept for l in small["issues"]["links"]))  # Dropped with records.
-        self.assertEqual(self.run_cli("recall", "backlog", "--max-chars", "100").returncode, 1)
-
     def test_connection_limits_and_link_updates(self):
         finding = self.create("Finding", "Capacity depends on power.")
-        question = self.create("Question", "Is power available?")
+        question = self.create("Finding", "Is power available?")
         links = [self.call("link", finding["id"], question["id"], relation, "--input", "-",
                            payload={"author_id": "agent-a"}) for relation in ("raises", "depends_on")]
         self.assertEqual(self.call("connections", finding["id"], "--limit", "1", "--full"),
@@ -182,7 +141,7 @@ class CLITests(unittest.TestCase):
         self.assertEqual(self.call("get-link", changed["id"]), changed)
         listed = self.call("links", "--since", changed["updated_at"], "--relation", "concerns")
         self.assertEqual(listed, {"links": [changed | {"from": {"id": finding["id"], "kind": "Finding", "text": finding["text"]},
-                                                       "to": {"id": question["id"], "kind": "Question", "text": question["text"]}}],
+                                                       "to": {"id": question["id"], "kind": "Finding", "text": question["text"]}}],
                                   "has_more": False})
         self.assertEqual(self.call("links", "--created-by", "agent-a", "--after", links[0]["id"][:8], "--full"),
                          {"links": links[1:], "has_more": False})
@@ -284,7 +243,7 @@ class CLITests(unittest.TestCase):
                          ("base", "2026.09.30", 1, {}))
         self.assertEqual([layer["name"] for layer in self.call("layers")["layers"]], ["fund", "base"])
         self.assertEqual(self.call("search", "PowerFrame")["records"][0]["layer"], "base")
-        self.assertEqual(self.create("Question", "Which plants?")["layer"], "fund")
+        self.assertEqual(self.create("Finding", "Which plants?")["layer"], "fund")
 
     def test_check_model_reports_each_output_formula(self):
         model = self.create("Model", "Revenue model")
@@ -302,27 +261,6 @@ class CLITests(unittest.TestCase):
         self.assertEqual(result["checked"], [{"key": "revenue", "stored": [11400, 13680], "computed": [11400, 13680],
                                               "matches": True, "exact": True, "problems": []}])
         self.assertIn("not a Model", self.call("check-model", self.create("Finding", "x")["id"], status=1)["error"])
-        scenario = self.call("evaluate-model", model["id"][:8], "--set", "price=600", "--set", "gw=[10, 24]")
-        self.assertEqual(scenario["overrides"], {"price": 600, "gw": [10, 24]})
-        self.assertEqual(scenario["variables"][-1], {"key": "revenue", "role": "output", "stored": [11400, 13680],
-                                                     "value": [6000, 14400], "changed": True})
-        self.assertFalse(any(v["changed"] for v in self.call("evaluate-model", model["id"])["variables"]))
-        self.assertIn("not in the model", self.call("evaluate-model", model["id"], "--set", "tariff=1", status=1)["error"])
-
-    def test_check_answer_reports_problems_without_failing(self):
-        finding = self.create("Finding", "Two customers were 22% and 14% of revenue.")
-        answer = {"title": "Two customers were 36% of revenue.", "body": "One was 22%. [1]",
-                  "sources": [{"record": finding["id"][:8]}],
-                  "blocks": [{"type": "chart", "unit": "%", "rows": [{"label": "2026", "parts": [
-                      {"label": "Largest", "record": finding["id"], "value": 22, "as_written": "22%"}]}]}]}
-        result = self.call("check-answer", "--input", "-", payload=answer)
-        self.assertEqual((result["ok"], result["problems"]), (True, []))
-        self.assertEqual(result["answer"]["sources"], [{"record": finding["id"], "kind": "Finding",
-                                                        "text": "Two customers were 22% and 14% of revenue."}])
-        answer["blocks"][0]["rows"][0]["parts"][0] |= {"value": 24, "as_written": "24%"}
-        result = self.call("check-answer", "--input", "-", payload=answer)
-        self.assertEqual((result["ok"], result["answer"]), (False, None))
-        self.assertIn('"24%" does not appear', result["problems"][0])
 
     def test_only_init_creates_a_database(self):
         self.path = self.directory / "typo.sqlite"

@@ -100,8 +100,8 @@ def fetch_page(url: str, *, contact: str | None = None, open_url=urlopen) -> Pag
     """Download an HTML or plain-text page or a PDF and return its text. SEC.gov refuses requests that do not say
     who is asking, so it needs `contact` (a name and email), which is sent to SEC.gov and nowhere else."""
     if os.environ.get("STATED_FETCH", "").strip() == "0":
-        raise ValueError("fetching from the web is off for this question: it was asked at an effort that works "
-                         "from the graph alone")
+        raise ValueError("fetching from the web is off in this session: it reads only what the graph holds "
+                         "(STATED_FETCH=0)")
     parts = urlparse(url if isinstance(url, str) else "")
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise ValueError("url must be an http or https address")

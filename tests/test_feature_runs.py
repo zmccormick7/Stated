@@ -12,7 +12,7 @@ from stated import feature_runs
 from stated.cli import main
 from stated.features import _latest
 from stated.feature_runs import run_features
-from stated.ui.harness import HarnessError, Reply, UsageLimit
+from stated.harness import HarnessError, UsageLimit
 
 
 class FakeHarness:
@@ -24,11 +24,11 @@ class FakeHarness:
     def __init__(self, db_path, script):
         self.db_path, self.script, self.calls = db_path, script, []
 
-    def run(self, prompt, *, cwd, env, web, writable, timeout):
+    def run(self, prompt, *, cwd, env, writable, timeout):
         subject = prompt.split("(Entity ")[1].split(")")[0]
         features = re.findall(r"^- (\w+) \(definition ([\w-]+)\)$", prompt, re.M)
         day = env["STATED_AS_OF"]
-        self.calls.append((subject, day, tuple(key for key, _ in features), web, env["STATED_FETCH"],
+        self.calls.append((subject, day, tuple(key for key, _ in features), env["STATED_FETCH"],
                            Path(cwd).is_dir(), tuple(writable), prompt))
         action = self.script.get((subject, day), "value")
         if isinstance(action, Exception):
@@ -41,7 +41,7 @@ class FakeHarness:
                         links=[{"from_id": "v", "to_id": subject, "relation": "about"}])
                 elif action == "confirm":
                     db.confirm_value(_latest(db, feature_id, subject).id, author_id="agent")
-        return Reply("done" if action in ("value", "confirm") else "I could not decide.", None, ())
+        return "done" if action in ("value", "confirm") else "I could not decide."
 
 
 class FeatureRunTests(unittest.TestCase):
@@ -76,9 +76,8 @@ class FeatureRunTests(unittest.TestCase):
         harness, result, seen = self.run_with({(self.a, "2023-01-09"): "confirm"}, workers=2)
         for subject in (self.a, self.b):
             self.assertEqual([d for s, d, *_ in harness.calls if s == subject], ["2023-01-02", "2023-01-09", "2023-01-16"])
-        subject, day, keys, web, fetch, folder, writable, prompt = harness.calls[0]
-        self.assertEqual((keys, web, fetch, folder, writable),
-                         (("runnable",), False, "0", True, (self.path.parent.resolve(),)))
+        subject, day, keys, fetch, folder, writable, prompt = harness.calls[0]
+        self.assertEqual((keys, fetch, folder, writable), (("runnable",), "0", True, (self.path.parent.resolve(),)))
         self.assertIn("stated-state", prompt)
         self.assertIn('author_id "feature-run/fake"', prompt)
         self.assertEqual((result.remaining, len(result.sessions), all(s.done and s.session for s in result.sessions)),

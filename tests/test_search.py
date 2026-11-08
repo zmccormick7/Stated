@@ -31,7 +31,7 @@ class SearchTests(unittest.TestCase):
         self.create("Utility approval", kind="Entity")
         finding = self.create("Utility approval", attributes={"basis": "disclosed"})
         self.assertEqual(self.db.search_records("utility", kind="Finding", limit=1), (finding,))
-        self.assertEqual(self.db.search_records("utility", kind="Question"), ())
+        self.assertEqual(self.db.search_records("utility", kind="Model"), ())
         result = self.db.search_records("utility", kind="Finding")[0]
         result.attributes["basis"] = "edited locally"
         self.assertEqual(self.db.read(finding.id), finding)

@@ -46,14 +46,12 @@ class VariableValue:
     key: str
     role: object
     stored: object  # The Variable's stored value.
-    value: object  # Under the overrides: the override, the formula's result, or the stored value.
-    changed: bool  # Whether the overrides moved it.
+    value: object  # The formula's result, or the stored value when there is no formula.
 
 
 @dataclass(frozen=True)
 class ModelEvaluation:
     model_id: str
-    overrides: dict[str, object]
     variables: tuple[VariableValue, ...]  # Variables without a formula first, then formulas in dependency order.
     without_formula: tuple[str, ...]  # Output keys that keep their stored value because they have no formula.
 
@@ -331,27 +329,13 @@ def _by_key(variables):
     return by_key
 
 
-def evaluate_model(variables: list[dict[str, object]], model_id: str,
-                   overrides: dict[str, object] | None = None) -> ModelEvaluation:
-    """Recompute the model's formulas with some Variables set to other values.
-
-    Unlike `check_model`, results flow through: each formula reads the recomputed values of the
-    Variables it names. An override replaces a Variable's value and must have the stored value's shape
-    (a number, or a list of the same length); an overridden output is held there and its formula is
-    skipped. Nothing is written. A formula that cannot be evaluated raises ValueError naming its key.
+def evaluate_model(variables: list[dict[str, object]], model_id: str) -> ModelEvaluation:
+    """Compute the model's formulas from its stored inputs, results flowing through: unlike `check_model`,
+    each formula reads the computed values of the Variables it names, in dependency order. Nothing is
+    written; `fill_model` stores the results. A formula that cannot be evaluated raises ValueError naming
+    its key, as do formulas that depend on each other in a cycle.
     """
     by_key = _by_key(variables)
-    overrides = {} if overrides is None else overrides
-    if not isinstance(overrides, dict):
-        raise ValueError("overrides must map Variable keys to values")
-    for key, value in overrides.items():
-        if key not in by_key:
-            raise ValueError(f"override names a Variable not in the model: {key}")
-        stored = by_key[key].get("value")
-        _check_value(key, value)
-        if stored is not None and (isinstance(value, list) != isinstance(stored, list) or (
-                isinstance(value, list) and len(value) != len(stored))):
-            raise ValueError(f"override for {key} must have the stored value's shape")
     periods = {key: v["periods"] for key, v in by_key.items() if isinstance(v.get("periods"), list)}
     formulas = {}
     for key, variable in by_key.items():
@@ -360,38 +344,30 @@ def evaluate_model(variables: list[dict[str, object]], model_id: str,
                 formulas[key] = parse(variable["formula"])[1] - {key}
             except ValueError as error:
                 raise ValueError(f"{key}: {error}") from None
+    values = {key: v.get("value") for key, v in by_key.items()}
+    order, state = [], {}
 
-    def run(held):
-        values = {key: v.get("value") for key, v in by_key.items()} | held
-        order, state = [], {}
+    def visit(key, path):
+        if state.get(key) == "done" or key not in formulas:
+            return
+        if state.get(key) == "open":
+            raise ValueError(f"formulas depend on each other in a cycle: {', '.join(path[path.index(key):])}")
+        state[key] = "open"
+        for name in sorted(formulas[key]):
+            visit(name, path + [key])
+        state[key] = "done"
+        order.append(key)
 
-        def visit(key, path):
-            if state.get(key) == "done" or key not in formulas or key in held:
-                return
-            if state.get(key) == "open":
-                raise ValueError(f"formulas depend on each other in a cycle: {', '.join(path[path.index(key):])}")
-            state[key] = "open"
-            for name in sorted(formulas[key]):
-                visit(name, path + [key])
-            state[key] = "done"
-            order.append(key)
-
-        for key in formulas:
-            visit(key, [])
-        for key in order:
-            names = formulas[key]
-            try:
-                values[key] = evaluate(by_key[key]["formula"], {n: values[n] for n in names if n in values},
-                                       periods=periods, target=periods.get(key), self_key=key)
-            except (ValueError, ZeroDivisionError, TypeError) as error:
-                raise ValueError(f"{key}: {error}") from None
-        return values, order
-
-    baseline, order = run({})
-    values, _ = run(dict(overrides))
+    for key in formulas:
+        visit(key, [])
+    for key in order:
+        names = formulas[key]
+        try:
+            values[key] = evaluate(by_key[key]["formula"], {n: values[n] for n in names if n in values},
+                                   periods=periods, target=periods.get(key), self_key=key)
+        except (ValueError, ZeroDivisionError, TypeError) as error:
+            raise ValueError(f"{key}: {error}") from None
     keys = [key for key in by_key if key not in order] + order
     return ModelEvaluation(
-        model_id, dict(overrides),
-        tuple(VariableValue(key, by_key[key].get("role"), by_key[key].get("value"), values[key],
-                            not matches(baseline[key], values[key], tolerance=1e-12)) for key in keys),
+        model_id, tuple(VariableValue(key, by_key[key].get("role"), by_key[key].get("value"), values[key]) for key in keys),
         tuple(key for key, v in by_key.items() if v.get("role") == "output" and v.get("formula") is None))
