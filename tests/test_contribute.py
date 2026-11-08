@@ -31,7 +31,7 @@ class ContributeTests(unittest.TestCase):
             records=[{"ref": "f1", "kind": "Finding", "text": "Deliveries can slip.",
                       "attributes": {"basis": "disclosed"},
                       "citations": [{"source_id": self.source.id, "quote": "defer deliveries"}]},
-                     {"ref": "q1", "kind": "Question", "text": "Could grid delays trigger deferrals?"}],
+                     {"ref": "q1", "kind": "Finding", "text": "Could grid delays trigger deferrals?"}],
             links=[{"from_id": "f1", "to_id": self.company.id, "relation": "about"},
                    {"from_id": "f1", "to_id": "q1", "relation": "raises", "explanation": "Timing risk."}])
         self.assertIsInstance(result, Contribution)
@@ -49,7 +49,7 @@ class ContributeTests(unittest.TestCase):
         result = self.db.contribute(author_id="agent", records=[
             {"ref": "f1", "kind": "Finding", "text": "Deferrals raise {ref:q1}; this is {ref:f1}.",
              "attributes": {"note": "{ref:q1} stays literal"}},
-            {"ref": "q1", "kind": "Question", "text": "Will deferrals grow?"}],
+            {"ref": "q1", "kind": "Entity", "text": "Will deferrals grow?"}],
             links=[{"from_id": "f1", "to_id": "q1", "relation": "raises", "explanation": "See {ref:q1} and {ref:f1}."}])
         finding, question = result.records["f1"], result.records["q1"]
         self.assertEqual(finding.text, f"Deferrals raise {question.id}; this is {finding.id}.")

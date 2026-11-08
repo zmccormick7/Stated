@@ -12,7 +12,6 @@ from .context import OpenRouterContextWriter, write_document_context
 from .fetch import contact, fetch_page, pdf_text
 from .store import RecordStore
 from .reranking import OpenRouterReranker
-from .recall import recall
 from .retrieval import retrieve
 
 
@@ -57,7 +56,7 @@ def _parser():
     export.add_argument("--version", required=True, help="Version label recorded in the file, such as 2026.09.30.")
     command("attach-layer", "attach_layer",
             "Attach a published layer file read-only, or update an attached layer to the file's version.", "path")
-    command("create", "create", "Create an Entity, Source, Finding, Question, Model or Variable.",
+    command("create", "create", "Create an Entity, Source, Finding, Model or Variable.",
             "kind", payload=record)
     command("get", "read", "Read a current record.", "record_id")
     command("update", "update", "Replace a record's text and attributes in full.",
@@ -95,14 +94,6 @@ def _parser():
     walk.add_argument("--per-record", dest="per_record_limit", type=int, default=50,
                       help="Maximum links followed from any one record.")
     walk.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
-    rec = command("recall", "recall", "Assemble connected research for a question: records with paths, cited evidence, "
-                  "disagreements and open Questions.", "query")
-    rec.add_argument("--seed", dest="seeds", action="append", default=[], metavar="RECORD_ID",
-                     help="Start from this record as well as search hits; repeatable.")
-    rec.add_argument("--max-records", type=int, default=40)
-    rec.add_argument("--max-chars", type=int, default=24000,
-                     help="Drop the lowest-ranked records until compact output fits (default 24000).")
-    rec.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
     command("relations", "relation_usage", "Count links by relation and the record kinds they connect.")
     check = command("check-model", "check_model",
                     "Evaluate each formula from stored values and compare: a Model's outputs, an Entity's features, "
@@ -390,57 +381,6 @@ def _shape(method, result):
     return result
 
 
-def _clip(text, limit):
-    return text if len(text) <= limit else text[:limit - 1] + "…"
-
-
-def _recall(db, options):
-    """Compact by default, so the whole bundle fits in an agent's view; --full returns everything."""
-    full, max_chars = options.pop("full"), options.pop("max_chars")
-    if max_chars < 2000:
-        raise ValueError("max_chars must be at least 2000")
-    result = recall(db, options.pop("query"), **options)
-    if full:
-        return result
-    shown = {r.record.id for r in result.records}
-    records = []
-    for r in result.records:
-        item = _preview(r.record, edits=False)  # Edit details would crowd out records.
-        if r.path:  # Reached by walking: shorter text, and how it was reached.
-            item["text"] = _clip(r.record.text, 100)
-            # via names a record in this bundle, so a short prefix is enough to match it or pass it back.
-            item |= {"via": r.entry_id[:8], "path": [link.relation for link in r.path]}
-        else:
-            item["entry_channels"] = list(r.channels)
-        records.append(item)
-    evidence, cited = [], set()
-    for item in result.evidence:  # One quote per record keeps the bundle small.
-        if not cited.issuperset(item.record_ids):
-            cited.update(item.record_ids)
-            evidence.append({"source_id": item.source_id, "start_byte": item.start_byte, "end_byte": item.end_byte,
-                             "quote": _clip(item.quote, 240), "record_ids": [i[:8] for i in item.record_ids]})
-    frontier = [db.read(record_id) for record_id in result.frontier[:10]]
-    bundle = {"records": records,
-            "evidence": evidence,
-            "issues": {"links": [{"from_id": l.from_id, "to_id": l.to_id, "relation": l.relation,
-                                  "explanation": _clip(l.explanation, 200)} for l in result.issue_links],
-                       "open_questions": [{"id": q.id, "text": _clip(q.text, 120), "status": q.attributes.get("status", "open")}
-                                          for q in result.open_questions if q.id not in shown]},
-            "frontier": [{"id": f.id, "kind": f.kind, "text": _clip(f.text, 80)} for f in frontier],
-            "coverage": result.coverage | {"evidence_omitted": len(result.evidence) - len(evidence),
-                                           "frontier_omitted": result.coverage["frontier_omitted"]
-                                           + max(0, len(result.frontier) - 10), "dropped_for_size": 0}}
-    # A hard size cap, so the bundle stays readable however large the graph grows.
-    while len(json.dumps(bundle, default=asdict)) > max_chars and len(bundle["records"]) > 1:
-        dropped = bundle["records"].pop()["id"]
-        kept = {r["id"] for r in bundle["records"]}
-        bundle["evidence"] = [e for e in bundle["evidence"] if set(e["record_ids"]) != {dropped[:8]}]
-        bundle["issues"]["links"] = [l for l in bundle["issues"]["links"] if {l["from_id"], l["to_id"]} & kept]
-        bundle["coverage"]["dropped_for_size"] += 1
-        bundle["coverage"]["truncated"] = True
-    return bundle
-
-
 def main(argv=None):
     options = vars(_parser().parse_args(argv))
     given, as_of = options.pop("db"), options.pop("as_of")
@@ -514,9 +454,7 @@ def main(argv=None):
                     options[name] = db.resolve_id(options[name], link=name == "link_id")
             if "seed_ids" in options:
                 options["seed_ids"] = [db.resolve_id(seed) for seed in options["seed_ids"]]
-            if method == "recall":
-                result = _recall(db, options)
-            elif method == "search_documents":
+            if method == "search_documents":
                 result = _search_documents(db, options)
             else:
                 full = options.pop("full", True)

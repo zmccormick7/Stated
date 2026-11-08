@@ -42,7 +42,7 @@ A change to a Variable's `value` is not an edit but a new version. When `patch` 
 
 This is a filter on evidence dates and stamps, not a reconstruction: earlier contents are not kept. Reads of a record, link or Source the cutoff hides raise `KeyError` saying so, as does a write at a cutoff that would cite or link one; `search_records`, `search_documents`, `list_records`, `list_links`, `connections`, `expand`, `cited_by`, `relation_usage` and the model checks leave hidden rows out. `as_of` must be a `YYYY-MM-DD` date or `None`.
 
-What a reader at a date sees is not rewritten from another date. A record or link written at a cutoff (its `as_of` is earlier than the date of its `updated_at`) can be edited only by a store opened at that cutoff, and one written without a cutoff only by a store without one; `update`, `patch`, `update_link`, `patch_link` and `merge` raise `ValueError` otherwise, saying to add a record and link it `updates` or `supersedes`. A live edit of a live record restamps it to the day, so it is seen from then on. Entities are exempt, being always seen. `recall` treats a record with an incoming `supersedes` link as retired, with or without a retired status, since a record written at another cutoff cannot have its status changed. At a cutoff, `create("Source", ...)`, `ingest_source` and edits of a Source require `attributes.published`, a date on or before the cutoff. `read_document_context` returns `None` and `search_documents` segments carry no `document_context` at a cutoff: a summary is written on the day it is generated, whatever its document's date.
+What a reader at a date sees is not rewritten from another date. A record or link written at a cutoff (its `as_of` is earlier than the date of its `updated_at`) can be edited only by a store opened at that cutoff, and one written without a cutoff only by a store without one; `update`, `patch`, `update_link`, `patch_link` and `merge` raise `ValueError` otherwise, saying to add a record and link it `updates` or `supersedes`. A live edit of a live record restamps it to the day, so it is seen from then on. Entities are exempt, being always seen. At a cutoff, `create("Source", ...)`, `ingest_source` and edits of a Source require `attributes.published`, a date on or before the cutoff. `read_document_context` returns `None` and `search_documents` segments carry no `document_context` at a cutoff: a summary is written on the day it is generated, whatever its document's date.
 
 ## Layers
 
@@ -86,12 +86,12 @@ The walk reads one consistent snapshot. Unbounded recursion and path finding are
 
 ```python
 with RecordStore("research.sqlite") as db:
-    page = db.list_records(kind="Question", author_id="alice", limit=100)
+    page = db.list_records(kind="Finding", author_id="alice", limit=100)
     while page.has_more:
-        page = db.list_records(kind="Question", author_id="alice", after=page.records[-1].id)
+        page = db.list_records(kind="Finding", author_id="alice", after=page.records[-1].id)
 ```
 
-`list_records` returns a `RecordPage` of current records in creation order, optionally filtered by exact `kind`, `author_id` (the last editor), `created_by`, `since` (a UTC ISO date or time; keeps records created or edited then or later) and `where`, a dict of top-level attribute values that must all match. `where` values are strings, finite numbers, booleans or `None`, and match only the same JSON type: `1`, `1.0`, `True` and `"1"` are distinct, and `None` matches an explicit null, not a missing key. Pass the last returned ID as `after` to continue; `has_more` reports whether more matching records follow. The default limit is 100 and the maximum is 1,000. Invalid kinds, limits or author types raise `ValueError`, and an unknown `after` ID raises `KeyError`. Records created after a page is read appear on later pages.
+`list_records` returns a `RecordPage` of current records in creation order, optionally filtered by exact `kind`, `author_id` (the last editor), `created_by`, `since` (a UTC ISO date or time; keeps records created or edited then or later) and `where`, a dict of top-level attribute values that must all match. `where` values are strings, finite numbers, booleans or `None`, and match only the same JSON type: `1`, `1.0`, `True` and `"1"` are distinct, and `None` matches an explicit null, not a missing key. Pass the last returned ID as `after` to continue; `has_more` reports whether more matching records follow. The default limit is 100 and the maximum is 1,000. Invalid kinds, limits or author types raise `ValueError` (the retired `Question` kind, which layers published before its retirement may still hold, can be listed but not written), and an unknown `after` ID raises `KeyError`. Records created after a page is read appear on later pages.
 
 `list_links(relation=None, author_id=None, created_by=None, since=None, after=None, limit=100)` pages through current links the same way and returns a `LinkPage` of `links` and `has_more`. `since` keeps links created or edited at or after the given UTC time, so an agent can see the connections others have added to the graph; `after` takes a link ID or unique prefix.
 
@@ -111,7 +111,7 @@ The language: numbers, keys, `+ - * / **`, unary minus, comparisons (chained all
 
 ## Define a feature
 
-A feature definition holds the instructions an agent follows to produce one feature's value for a subject as of a date, and the type of that value. Definitions are procedures, not knowledge, so they are kept in their own table rather than as records: they never appear in search or recall, and every cutoff reads them alike.
+A feature definition holds the instructions an agent follows to produce one feature's value for a subject as of a date, and the type of that value. Definitions are procedures, not knowledge, so they are kept in their own table rather than as records: they never appear in search, and every cutoff reads them alike.
 
 ```python
 with RecordStore("research.sqlite") as db:
@@ -149,38 +149,6 @@ A derived feature, a definition with a `formula`, is never written by an agent. 
 ## The Features view
 
 `stated ui` serves a read-only page of the workspace's features. `stated.ui.server.make_server(db_path, port=0)` builds the same `ThreadingHTTPServer` for tests. `GET /api/status` gives the workspace folder and its layers. `GET /api/features`, `GET /api/features/KEY` and `GET /api/features/KEY/subjects/ID` return `feature_coverage()`, `feature_subjects(KEY)` and `feature_series(KEY, ID)` as JSON, KEY being a key or definition ID. `GET /api/records/ID` returns a record with its citations and one hop of connections, each carrying `seen_from`, the date a cutoff first sees it, so a value's evidence can be checked against its date. The page itself is served under `/`.
-
-## Recall connected research
-
-```python
-from stated import RecordStore, recall
-
-with RecordStore("research.sqlite") as db:
-    result = recall(db, "utility approval construction", seeds=[company.id])
-    for item in result.records:
-        print(item.score, item.record.text, [link.relation for link in item.path])
-    for evidence in result.evidence:
-        print(evidence.quote, evidence.record_ids)
-```
-
-`recall(db, query, seeds=(), max_records=40, entry_limit=10)` assembles connected research in one call, without provider calls.
-
-1. **Entry points.** Record-search hits (up to `entry_limit`) and `seeds` are combined by reciprocal rank fusion, with seeds weighted double.
-2. **Walk.** From each entry point it walks two hops along reasoning relations and one hop along `about`. It does not walk `in_layer` or `supported_by`.
-3. **Scoring.** A reached record scores its entry point's score times `RELATION_WEIGHTS[relation] × HOP_DISCOUNT` per hop, keeping the best path. Records whose `status` attribute is `superseded` or `retracted` are walked through but never selected or listed on the frontier; `coverage["retired"]` counts them. The top `max_records` (1–100) become `records`, as `Recalled(record, score, entry_id, channels, path)`.
-
-The result is a `Recall`:
-
-| Field | Contents |
-| --- | --- |
-| `records` | The selected records, best first. |
-| `evidence` | The deduplicated cited ranges of selected records with their quotes. Older citations without quotes are read from the source by byte range. |
-| `issue_links` | `contradicts`, `qualifies`, `updates` and `supersedes` links touching selected records. |
-| `open_questions` | Questions with status `open` or `partly_answered`, linked to selected records through reasoning relations, or selected themselves. |
-| `frontier` | Up to 50 records reached but not selected, then records whose links were capped. |
-| `coverage` | Counts and whether the result is truncated. |
-
-Each step reads the current graph separately, so concurrent writes may appear partially.
 
 ## Search for a starting point
 
@@ -251,10 +219,11 @@ with RecordStore("research.sqlite") as db:
             {"ref": "f1", "kind": "Finding", "text": "Construction waits on utility approval.",
              "attributes": {"basis": "disclosed"},
              "citations": [{"source_id": source.id, "quote": "Utility approval is required"}]},
-            {"ref": "q1", "kind": "Question", "text": "How long does utility approval take?"},
+            {"ref": "f2", "kind": "Finding", "text": "Construction cannot start until {ref:f1} is resolved.",
+             "attributes": {"basis": "inference"}},
         ],
         links=[{"from_id": "f1", "to_id": company.id, "relation": "about"},
-               {"from_id": "f1", "to_id": "q1", "relation": "raises"}],
+               {"from_id": "f2", "to_id": "f1", "relation": "depends_on"}],
     )
     finding = result.records["f1"]
 ```
@@ -440,14 +409,13 @@ Passages from one Source must not overlap or repeat, and text must match declare
 
 ## What the graph remembers
 
-The store supports six record types:
+The store supports five record types:
 
 | Record type | What it represents | Examples |
 | --- | --- | --- |
 | **Entity** | Something research refers to repeatedly, with a stable identity across investigations. | A company, product, facility, commodity or regulation. |
 | **Source** | Material used as evidence, with enough provenance to identify the document and locate the relevant passage. | A filing, transcript, analyst note or interview record. |
 | **Finding** | A statement or conclusion from an investigation, with its supporting evidence or reasoning. | A supply relationship, business mechanism, estimate or scenario assumption. |
-| **Question** | An unresolved issue worth investigating, connected to the understanding it could change. | Whether a customer can postpone contractual deliveries. |
 | **Model** | A financial model whose implementation can live in an external tool. | An Excel forecast or a Python valuation model. |
 | **Variable** | An identifiable input, intermediate value or output within a model, connected to its research basis. | A capacity assumption, utilization estimate or revenue forecast for a specified period. |
 
@@ -455,9 +423,7 @@ These are lightweight labels on a common record structure: a stable ID, a type, 
 
 **Findings are independently addressable.** A finding about a supply relationship connects to the supplier, customer and product, as well as its evidence. Other findings can depend on it, challenge it or revise it. Disclosed facts, agent interpretations and scenario assumptions remain distinguishable.
 
-**Questions preserve useful uncertainty.** Identifying which unknown could change a conclusion is valuable research. A question gives later agents somewhere to contribute partial answers, attach evidence and connect a finding that resolves it. Several investigations can share the same question.
-
-**Models connect numbers to understanding.** A Variable can link a modeled assumption to the Findings supporting it and the Questions that could change it. Calculations remain in the user's modeling tool. Links point to current records; agents reassess their meaning when assumptions change. Model runs and past assumption values are outside the current ontology.
+**Models connect numbers to understanding.** A Variable can link a modeled assumption to the Findings supporting it. Calculations remain in the user's modeling tool. Links point to current records; agents reassess their meaning when assumptions change. Model runs and past assumption values are outside the current ontology.
 
 For example, in a hypothetical investigation:
 
@@ -465,8 +431,7 @@ For example, in a hypothetical investigation:
 - **Source S1:** A filing disclosing their supply relationship, with a reference to the relevant passage.
 - **Finding F1:** Supplier A supplies Product P to Customer B. It connects to those entities and is supported by S1.
 - **Finding F2:** Customer B's project delay could affect Supplier A's revenue. This inference depends on F1 and the customer's ability to postpone deliveries.
-- **Question Q1:** Can Customer B postpone contractual deliveries? It concerns the supply relationship and matters to F2.
 
-A later agent researching the contracts can answer Q1 and revisit F2. A source that challenges F1 can prompt a review of the findings that depend on it.
+A later agent that finds the contract terms can revisit F2. A source that challenges F1 can prompt a review of the findings that depend on it.
 
 Records store current understanding, its last editor and a last-edited timestamp. Updates replace previous contents. Disagreements can remain explicit as separate Findings connected to one another. Later investigations build on the current graph.

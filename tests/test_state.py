@@ -70,7 +70,7 @@ class FeatureTests(unittest.TestCase):
         then.create_link(loose.id, self.bank.id, "about", author_id="agent")
         self.assertEqual(then.check_model(loose.id).checked[0].problems, ("names Variables not in the model: total_deposits",))
         with self.assertRaisesRegex(ValueError, "not a Model, Entity or Variable"):
-            then.check_model(then.create("Question", text="Which bank?", author_id="agent").id)
+            then.check_model(then.create("Finding", text="Which bank?", author_id="agent").id)
 
     def test_fill_model_on_an_entity_derives_every_feature_from_the_latest_inputs(self):
         then = self.at("2022-11-07")

@@ -30,7 +30,7 @@ class LayerTests(unittest.TestCase):
     def test_new_rows_belong_to_the_named_writable_layer(self):
         self.assertEqual(self.db.layers(), (Layer("base", "", True),))
         finding = self.db.create("Finding", text="Backlog may slip.", author_id="a")
-        question = self.db.create("Question", text="Which customers can defer?", author_id="a")
+        question = self.db.create("Finding", text="Which customers can defer?", author_id="a")
         link = self.db.create_link(finding.id, question.id, "raises", author_id="a")
         self.assertEqual((finding.layer, self.db.read(finding.id).layer, link.layer), ("base", "base", "base"))
         self.assertEqual(self.db.search_records("backlog")[0].layer, "base")
@@ -71,7 +71,7 @@ class LayerTests(unittest.TestCase):
         challenge = self.db.create("Finding", text="Customers rarely defer.", author_id="b",
                                    citations=[{"source_id": source.id, "quote": "may be"}])
         contradiction = self.db.create_link(challenge.id, finding.id, "contradicts", author_id="b")
-        question = self.db.contribute(author_id="b", records=[{"ref": "q", "kind": "Question", "text": "Who defers?"}],
+        question = self.db.contribute(author_id="b", records=[{"ref": "q", "kind": "Finding", "text": "Who defers?"}],
                                       links=[{"from_id": finding.id, "to_id": "q", "relation": "raises"}])
         self.assertEqual((challenge.layer, contradiction.layer, question.records["q"].layer,
                           question.links[0].layer), ("base", "base", "base", "base"))
@@ -112,7 +112,7 @@ class ExportTests(unittest.TestCase):
                                       attributes={"basis": "disclosed"},
                                       citations=[{"source_id": self.terms.id, "quote": "rescheduled"},
                                                  {"source_id": self.call.id, "quote": "deferrals"}])
-        self.question = self.db.create("Question", text="Who defers?", author_id="b")
+        self.question = self.db.create("Finding", text="Who defers?", author_id="b")
         self.raises = self.db.create_link(self.finding.id, self.question.id, "raises", author_id="b",
                                           explanation="Open.")
 
@@ -145,7 +145,7 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(published._db.execute("SELECT count(*) FROM passages").fetchone()[0], 1)
             # Sealed: nothing can be added to a published file.
             with self.assertRaises(sqlite3.IntegrityError):
-                published.create("Question", text="Later", author_id="c")
+                published.create("Finding", text="Later", author_id="c")
 
     def test_export_is_deterministic_and_refuses_to_overwrite(self):
         first = self.db.export_layer(self.directory / "one.sqlite", version="1")
@@ -191,8 +191,8 @@ class AttachTests(unittest.TestCase):
         self.publisher.set_document_context(self.terms.id, title="Delivery terms", summary="", author_id="p")
         self.finding = self.publisher.create("Finding", text="Backlog may slip.", author_id="p",
                                              citations=[{"source_id": self.terms.id, "quote": "rescheduled"}])
-        self.dropped = self.publisher.create("Question", text="Dropped later.", author_id="p")
-        self.orphan = self.publisher.create("Question", text="Dropped later, unlinked.", author_id="p")
+        self.dropped = self.publisher.create("Finding", text="Dropped later.", author_id="p")
+        self.orphan = self.publisher.create("Finding", text="Dropped later, unlinked.", author_id="p")
         self.raises = self.publisher.create_link(self.finding.id, self.dropped.id, "raises", author_id="p")
         self.v1 = self.directory / "base-1.sqlite"
         self.publisher.export_layer(self.v1, version="1")
@@ -233,7 +233,7 @@ class AttachTests(unittest.TestCase):
         key_before = self.subscriber._record_key(self.finding.id)
         # Version 2: the finding is revised, one question is added, two are dropped, the raises link changes.
         self.publisher.patch(self.finding.id, author_id="p", text="Backlog may slip a quarter.")
-        added = self.publisher.create("Question", text="Added in version 2.", author_id="p")
+        added = self.publisher.create("Finding", text="Added in version 2.", author_id="p")
         self.publisher.patch_link(self.raises.id, author_id="p", to_id=added.id)
         sql = self.publisher._db
         for record in (self.dropped, self.orphan):

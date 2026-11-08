@@ -182,7 +182,9 @@ class SourceSegment:
     document_context: DocumentContext | None = None
 
 
-KINDS = ("Entity", "Source", "Finding", "Question", "Model", "Variable")
+KINDS = ("Entity", "Source", "Finding", "Model", "Variable")
+# Kinds that layers published earlier may hold and that are still read, but no longer written.
+RETIRED_KINDS = ("Question",)
 # A new record named by its contribute ref inside text or an explanation, replaced by the record's ID.
 _REF = re.compile(r"\{ref:([^{}]+)\}")
 # Characters that extracted text often swaps for one another, used only to suggest a corrected quote.
@@ -241,7 +243,7 @@ def _date(value: str):
 
 
 def _check_kind(kind: str | None) -> None:
-    if kind is not None and kind not in KINDS:
+    if kind is not None and kind not in KINDS + RETIRED_KINDS:
         raise ValueError("kind must be a record kind or None")
 
 
@@ -1533,6 +1535,8 @@ class RecordStore:
 
     def _insert_record(self, kind: str, text: str, encoded: str, author_id: str,
                        record_id: str | None = None) -> Record:
+        if kind in RETIRED_KINDS:
+            raise ValueError(f"{kind} records are no longer written; record what the documents say as a Finding")
         self._check_feature_value(kind, json.loads(encoded))
         record_id = record_id or str(uuid4())
         self._db.execute(

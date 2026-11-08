@@ -104,21 +104,6 @@ class PointInTimeTests(unittest.TestCase):
         self.assertIsNone(then.read_document_context(self.annual.id))
         self.assertEqual([s.document_context for s in then.search_documents("deposits")], [None])
 
-    def test_a_record_is_retired_at_a_later_cutoff_by_a_supersedes_link(self):
-        from stated import recall
-        then = self.at("2023-02-24")
-        first = then.create("Finding", text="Deposits were stable.", author_id="agent", attributes={"basis": "inference"})
-        then.create_link(first.id, self.bank.id, "about", author_id="agent")
-        later = self.at("2023-03-01")
-        corrected = later.create("Finding", text="Deposits were not stable.", author_id="agent",
-                                 attributes={"basis": "inference"})
-        later.create_link(corrected.id, first.id, "supersedes", author_id="agent", explanation="Newer reading.")
-        later.create_link(corrected.id, self.bank.id, "about", author_id="agent")
-        self.assertEqual({r.record.id for r in recall(then, "deposits stable").records}, {first.id, self.bank.id})
-        result = recall(later, "deposits stable")
-        self.assertEqual({r.record.id for r in result.records}, {corrected.id, self.bank.id})
-        self.assertEqual(result.coverage["retired"], 1)
-
     def test_sources_are_seen_from_their_publication_date(self):
         with self.assertRaisesRegex(KeyError, "not visible as of 2023-02-23"):
             self.at("2023-02-23").read(self.annual.id)
@@ -159,8 +144,8 @@ class PointInTimeTests(unittest.TestCase):
         then = self.at("2023-02-24")
         finding = then.create("Finding", text="Uninsured deposits were 96% of the total.", author_id="agent",
                               attributes={"basis": "inference"})
-        question = then.create("Question", text="How fast could deposits leave?", author_id="agent")
-        then.create_link(finding.id, question.id, "raises", author_id="agent")
+        model = then.create("Model", text="Deposit outflow model", author_id="agent")
+        then.create_link(finding.id, model.id, "raises", author_id="agent")
         then.create_link(finding.id, self.bank.id, "about", author_id="agent")
         self.assertEqual(self.at("1999-01-01").read(self.bank.id), self.bank)  # Entities are always seen.
         before = self.at("2023-02-23")
@@ -168,8 +153,8 @@ class PointInTimeTests(unittest.TestCase):
         self.assertEqual(before.connections(self.bank.id).links, ())
         for store in (then, self.at("2023-03-01"), self.live):
             reached = {r.record.id for r in store.expand([self.bank.id], depth=2).reached}
-            self.assertEqual(reached, {self.bank.id, finding.id, question.id})
-            self.assertEqual([q.id for q in store.list_records(kind="Question").records], [question.id])
+            self.assertEqual(reached, {self.bank.id, finding.id, model.id})
+            self.assertEqual([m.id for m in store.list_records(kind="Model").records], [model.id])
 
     def test_links_need_their_stamp_and_both_ends(self):
         then = self.at("2023-02-24")

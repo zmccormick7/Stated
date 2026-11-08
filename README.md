@@ -56,7 +56,7 @@ To look over what a run produced, open `stated ui`: every definition with its sc
 
 Four skills teach an agent the graph. `stated ui` installs them; for any other harness, copy the folders under `stated/skills/` into its skills directory.
 
-- **stated-research**: recall what the graph holds, contribute findings with exact citations, and revise understanding as evidence changes.
+- **stated-research**: find what the graph holds, ingest and cite sources, record findings and revise them as evidence changes; every other skill uses it for its commands.
 - **stated-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
 - **stated-feature-design**: turn an idea for something to measure into feature definitions whose instructions describe state as of a date rather than forecast, and review existing definitions against the same tests.
 - **stated-state**: produce one feature's value for a subject as of a cutoff date, following the feature definition's instructions over everything a reader on that date could see, or computed by its formula from other features.
@@ -64,29 +64,28 @@ Four skills teach an agent the graph. `stated ui` installs them; for any other h
 Point a session at the folder with `STATED_DB=/path/to/research.sqlite` and ask it to use the skill. The [CLI guide](docs/cli.md) covers every command, and the [Python API](docs/python-api.md) is there for agents and tools you write yourself:
 
 ```python
-from stated import RecordStore, recall
+from stated import RecordStore
 
-with RecordStore("research.sqlite") as db:
-    for found in recall(db, "customer concentration").records:
-        print(found.record.kind, found.record.text[:80])
+with RecordStore("research.sqlite", as_of="2024-03-31") as db:
+    for record in db.search_records("customer concentration", kind="Finding"):
+        print(record.as_of, record.text[:80])
 ```
 
 Document search and the model-written document summaries use OpenRouter; set `OPENROUTER_API_KEY` in the agent's environment to turn them on.
 
 ## How the graph is organised
 
-Six record types, connected by named links:
+Five record types, connected by named links:
 
 | Record | Holds |
 | --- | --- |
 | **Entity** | A company, facility, product or market. |
 | **Source** | A filing, transcript, release or page, with its text captured so quotes can be checked, or a table of structured data released on one date, cited row by row. |
 | **Finding** | A statement to build on or challenge, labelled disclosed, inference or assumption, citing its source. |
-| **Question** | Something unresolved and worth investigating. |
 | **Model** | A driver model of a business. |
 | **Variable** | A model input or output, or a feature value, with its value, units, periods and the evidence it rests on. |
 
-Links such as `about`, `supported_by`, `depends_on`, `contradicts` and `raises` carry the reasoning: a Variable depends on a Finding, which is supported by a Source and raises a Question. Models are checked with `stated check-model`, which recomputes every output's formula from the stored inputs, and evaluated with overrides for the levers on the answer page.
+Links such as `about`, `supported_by`, `depends_on`, `updates` and `contradicts` carry the reasoning: a Variable depends on a Finding, which is supported by a Source. Models are checked with `stated check-model`, which recomputes every output's formula from the stored inputs, and evaluated with overrides for the levers on the answer page.
 
 The graph is layered. A **base layer** is a published, read-only graph that any research folder can attach and later update; your own layer holds what your agents add on top, including corrections to base records. Knowledge belongs to the folder, not to any one conversation or harness: a fresh session, on either harness, picks up exactly where the last one left off.
 
@@ -98,7 +97,7 @@ Stated is early software. The database format changes without migrations; recrea
 
 What exists today:
 
-- The CLI, the Python API and five skills, which teach an agent to research the graph, answer a question from it, deepen one company's coverage, design a feature and write a feature's value at a date. The skills work in Claude Code and Codex.
+- The CLI, the Python API and four skills, which teach an agent to work with the graph, deepen one company's coverage, design a feature and write a feature's value at a date. The skills work in Claude Code and Codex.
 - Features end to end: definitions, schedules, `run-features`, derived features and the daily `feature-table`. The [oil and gas example](docs/examples/oil-and-gas/) runs three features weekly on 31 producers over 2023 and 2024 from their SEC filings, with the definitions, the exported table and its known limitations.
 - Structured data as Sources: `stated ingest-table FILE.csv` keeps a CSV file byte for byte as one release, public from the date it carries, so a model input or feature value can cite the row it came from. Turning a table's rows into Variables still takes an agent or your own script.
 - `stated ui`, a local read-only Features view: every definition with its schedule and coverage, each subject's values over time, and the evidence behind each value.

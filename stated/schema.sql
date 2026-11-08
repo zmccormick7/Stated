@@ -15,6 +15,7 @@ CREATE UNIQUE INDEX layers_one_writable ON layers (writable) WHERE writable = 1;
 CREATE TABLE records (
     record_key INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
+    -- Question is retired: layers published before it was still hold such records, which are read but not written.
     kind TEXT NOT NULL CHECK (kind IN
         ('Entity', 'Source', 'Finding', 'Question', 'Model', 'Variable')),
     text TEXT NOT NULL,

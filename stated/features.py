@@ -2,7 +2,7 @@
 a date, and the type of that value.
 
 A definition is a procedure, not knowledge about the world, so it lives in its own table rather than among
-the graph's records: every cutoff reads it alike, and it never appears in search or recall. A value is a
+the graph's records: every cutoff reads it alike, and it never appears in search. A value is a
 Variable whose `feature` attribute names the definition it was made under; Stated keeps the value within
 the definition's type and nothing more. A definition can be edited until a value names it; after that, new
 instructions are a new definition that `replaces` it, so each value stays tied to the instructions that

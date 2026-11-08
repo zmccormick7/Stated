@@ -17,6 +17,18 @@ class RecordStoreTests(unittest.TestCase):
         self.store = RecordStore(self.path)
         self.addCleanup(self.store.close)
 
+    def test_questions_are_read_but_no_longer_written(self):
+        for write in (lambda: self.store.create("Question", text="Will it ramp?", author_id="alice"),
+                      lambda: self.store.contribute(author_id="alice", records=[
+                          {"ref": "q", "kind": "Question", "text": "Will it ramp?"}])):
+            with self.assertRaisesRegex(ValueError, "Question records are no longer written"):
+                write()
+        with closing(sqlite3.connect(self.path)) as sql, sql:  # As a layer published before Questions were retired.
+            sql.execute("""INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, as_of, layer_key)
+                           VALUES ('q-1', 'Question', 'Will it ramp?', '{}', 'a', 'a', '2026-10-01', '2026-10-01', 1)""")
+        self.assertEqual(self.store.read("q-1").kind, "Question")
+        self.assertEqual([r.id for r in self.store.list_records(kind="Question").records], ["q-1"])
+
     def test_update_replaces_contents_and_survives_reopening(self):
         original = self.store.create("Finding", text="Ramp in June", author_id="alice",
                                      attributes={"basis": "estimate"})
