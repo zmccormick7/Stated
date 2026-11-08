@@ -12,7 +12,6 @@ from .context import OpenRouterContextWriter, write_document_context
 from .fetch import contact, fetch_page, pdf_text
 from .store import RecordStore
 from .reranking import OpenRouterReranker
-from .answers import check_answer
 from .recall import recall
 from .retrieval import retrieve
 
@@ -191,15 +190,10 @@ def _parser():
             "writing it again.", "value_id", payload="author_id, optional expires (a date)")
     features = command("features", "list_features", "List the current feature definitions by key.")
     features.add_argument("--replaced", action="store_true", help="Include definitions that were replaced.")
-    command("check-answer", "check_answer",
-            "Check an answer document against the graph: its sources, quotes and every charted figure.",
-            payload="an answer document: title, body, optional sources and blocks")
-    ui = command("ui", "ui", "Run the local answer UI for this workspace until interrupted.")
+    ui = command("ui", "ui", "Run the local Features view for this workspace until interrupted.")
     ui.add_argument("--port", type=int, default=8765)
     ui.add_argument("--harness", default="claude-code", choices=["claude-code", "codex"],
-                    help="The coding agent that answers (default: claude-code).")
-    ui.add_argument("--model", help="With --harness codex: the model to pass to codex exec.")
-    ui.add_argument("--effort", dest="reasoning_effort", help="With --harness codex: the model_reasoning_effort to set.")
+                    help="The coding agent to install the bundled skills for (default: claude-code).")
     ui.add_argument("--base", metavar="FILE", help="A published base layer file to attach, or to update to.")
     ui.add_argument("--contact", metavar="TEXT", help="Your name and email, kept beside the database and sent only to "
                                                       "SEC.gov, which requires one to fetch filings.")
@@ -274,8 +268,7 @@ def _run_features(path, options, cutoff):
     """Run a feature's pending sessions, printing each session's result to stderr as it ends and the run's
     summary to stdout."""
     from .feature_runs import derive_features, run_features
-    from .ui.harness import ClaudeCode, Codex
-    from .ui.server import install_skills
+    from .harness import ClaudeCode, Codex, install_skills
     try:
         if cutoff:
             raise ValueError(f"{options['command']} runs without a cutoff; it works at each date in turn")
@@ -455,8 +448,7 @@ def main(argv=None):
     if options["method"] == "ui":
         from .ui.server import serve
         try:
-            return serve(given, harness_name=options["harness"], port=options["port"], model=options["model"],
-                         reasoning_effort=options["reasoning_effort"], base=options["base"],
+            return serve(given, harness_name=options["harness"], port=options["port"], base=options["base"],
                          contact=options["contact"], open_browser=options["open_browser"])
         except (OSError, ValueError, sqlite3.Error) as error:
             print(json.dumps({"error": str(error)}), file=sys.stderr)
@@ -524,8 +516,6 @@ def main(argv=None):
                 options["seed_ids"] = [db.resolve_id(seed) for seed in options["seed_ids"]]
             if method == "recall":
                 result = _recall(db, options)
-            elif method == "check_answer":
-                result = check_answer(db, payload)
             elif method == "search_documents":
                 result = _search_documents(db, options)
             else:

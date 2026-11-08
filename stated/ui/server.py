@@ -1,4 +1,5 @@
-"""A local HTTP server for the answer UI: threads of questions, answered by the user's own agent."""
+"""A local HTTP server for the Features view: feature definitions, their values and the evidence behind them,
+read-only."""
 
 from functools import partial
 from http import HTTPStatus
@@ -6,86 +7,29 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from dataclasses import asdict
 import json
 from pathlib import Path
-import shutil
-import sys
 import threading
 import webbrowser
 from urllib.parse import unquote, urlparse
 
+from ..harness import SKILLS, ClaudeCode, Codex, install_skills
 from ..store import RecordStore
-from .harness import ClaudeCode, Codex
-from .threads import AGENTS, DEFAULT_AGENTS, DEFAULT_EFFORT, EFFORTS, RUN_EFFORTS, ThreadStore, run_turn, written_since
 
 STATIC = Path(__file__).with_name("static")
 HARNESSES = {"claude-code": ClaudeCode, "codex": Codex}
 _TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 
 
-SKILLS = Path(__file__).resolve().parents[1] / "skills"
-# The skills' names before the product was renamed Stated; an install removes these copies so agents see one set
-RETIRED_SKILLS = ("premisedb-answer", "premisedb-feature-design", "premisedb-go-deeper", "premisedb-research", "premisedb-state")
-
-
-def install_skills(harness, source: Path = SKILLS) -> list[str]:
-    """Copy the bundled skills into the harness's skills directory, replacing older copies; returns the
-    skills that were written or updated. The same file copy the README describes, done by the program."""
-    written = []
-    for directory in harness.skills_directories():
-        for name in RETIRED_SKILLS:
-            if (directory / name / "SKILL.md").is_file():
-                shutil.rmtree(directory / name)
-        for skill in sorted(source.glob("*/SKILL.md")):
-            target = directory / skill.parent.name / "SKILL.md"
-            if not target.is_file() or target.read_bytes() != skill.read_bytes():
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(skill, target)
-                written.append(skill.parent.name)
-    return written
-
-
 class App:
-    """The state behind the handler: the workspace, its thread store and the harness that answers."""
+    """The state behind the handler: the workspace it reads."""
 
-    def __init__(self, db_path: str | Path, *, harness):
+    def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path).resolve()
-        self.store = ThreadStore(self.db_path.with_name(self.db_path.stem + ".threads.sqlite"))
-        self.harness = harness
-        self.resume()
-
-    def resume(self) -> None:
-        """Pick up what the last run of the app left mid-answer: a research run carries on from its queue
-        with the time it has left; a single-session turn cannot be resumed and is marked failed."""
-        for turn in self.store.unfinished():
-            if turn["effort"] in RUN_EFFORTS:
-                threading.Thread(target=run_turn, args=(self.store, turn["id"]),
-                                 kwargs={"db_path": self.db_path, "harness": self.harness}, daemon=True).start()
-            else:
-                self.store.finish_turn(turn["id"], error="Stated was stopped while this question was being answered.")
-
-    def evaluate(self, model_id: str, overrides) -> dict:
-        """A model's values with some Variables held at other values; the lever block calls this as it moves."""
-        with RecordStore(self.db_path) as db:
-            result = db.evaluate_model(model_id, overrides)
-        return {"values": {v.key: v.value for v in result.variables},
-                "changed": [v.key for v in result.variables if v.changed]}
 
     def status(self) -> dict:
-        """What the page shows before the first question: the folder, the layers and whether the agent is there."""
+        """What the page's foot shows: the folder and the layers."""
         with RecordStore(self.db_path) as db:
             layers = [{"name": l.name, "version": l.version, "writable": l.writable} for l in db.layers()]
-        return {"workspace": str(self.db_path.parent), "database": str(self.db_path), "layers": layers,
-                "harness": self.harness.name,
-                "harness_found": shutil.which(getattr(self.harness, "executable", self.harness.name)) is not None}
-
-    def thread(self, thread_id: str) -> dict:
-        """A thread with its turns; a research run still going gets a live count of what it has added."""
-        thread = self.store.thread(thread_id)
-        if any(turn["status"] == "running" and turn["effort"] in RUN_EFFORTS for turn in thread["turns"]):
-            with RecordStore(self.db_path) as db:
-                for turn in thread["turns"]:
-                    if turn["status"] == "running" and turn["effort"] in RUN_EFFORTS:
-                        turn["written"] = written_since(db, turn["started_at"])
-        return thread
+        return {"workspace": str(self.db_path.parent), "database": str(self.db_path), "layers": layers}
 
     def features(self) -> list:
         """The current feature definitions, each with how many subjects have a value and the latest value's date."""
@@ -138,24 +82,6 @@ class App:
                 "attributes": {k: v for k, v in record.attributes.items() if k != "citations"},
                 "citations": citations, "connections": connections, "has_more": found.has_more}
 
-    def ask(self, thread_id: str | None, question: str, effort=None, agents=None) -> dict:
-        """Start a turn and answer it in the background; one turn at a time per thread. `effort` is the
-        minutes the user gives it; `agents` is how many workers a research run has at a time."""
-        effort = DEFAULT_EFFORT if effort is None else effort
-        if isinstance(effort, bool) or effort not in (*EFFORTS, *RUN_EFFORTS):
-            raise ValueError(f"effort must be one of {', '.join(map(str, (*EFFORTS, *RUN_EFFORTS)))} minutes")
-        agents = (DEFAULT_AGENTS if agents is None else agents) if effort in RUN_EFFORTS else 1
-        if isinstance(agents, bool) or agents not in AGENTS:
-            raise ValueError(f"agents must be one of {', '.join(map(str, AGENTS))}")
-        if thread_id is None:
-            thread_id = self.store.create_thread(question, harness=self.harness.name)
-        elif any(turn["status"] == "running" for turn in self.store.thread(thread_id)["turns"]):
-            raise ValueError("this thread is still answering the previous question")
-        turn_id = self.store.start_turn(thread_id, question, effort, agents)
-        threading.Thread(target=run_turn, args=(self.store, turn_id),
-                         kwargs={"db_path": self.db_path, "harness": self.harness}, daemon=True).start()
-        return {"thread_id": thread_id, "turn_id": turn_id}
-
 
 def _preview(record) -> dict:
     """What a linked record shows as a chip: its kind, the start of its text, and its status, key and value."""
@@ -180,13 +106,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._file(path[8:])
         if path == "/api/status":
             return self._json(self.app.status())
-        if path == "/api/threads":
-            return self._json(self.app.store.threads())
-        if path.startswith("/api/threads/"):
-            try:
-                return self._json(self.app.thread(path[13:]))
-            except KeyError:
-                return self._error(HTTPStatus.NOT_FOUND, "no such thread")
         if path == "/api/features":
             return self._json(self.app.features())
         if path.startswith("/api/features/"):
@@ -206,32 +125,6 @@ class Handler(BaseHTTPRequestHandler):
             except (KeyError, ValueError):
                 return self._error(HTTPStatus.NOT_FOUND, "no such record")
         self._error(HTTPStatus.NOT_FOUND, "not found")
-
-    def do_POST(self):
-        path = urlparse(self.path).path
-        try:
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
-            if not isinstance(body, dict):
-                raise ValueError("the request body must be a JSON object")
-            if path == "/api/threads":
-                self._json(self.app.ask(None, body.get("question"), body.get("effort"), body.get("agents")), HTTPStatus.CREATED)
-            elif path.startswith("/api/threads/") and path.endswith("/turns"):
-                self._json(self.app.ask(path[13:-6], body.get("question"), body.get("effort"), body.get("agents")),
-                           HTTPStatus.CREATED)
-            elif path.startswith("/api/turns/") and path.endswith("/control"):
-                self.app.store.control(int(path[11:-8]), body.get("action"))
-                self._json({"ok": True})
-            elif path.startswith("/api/turns/") and path.endswith("/notes"):
-                self.app.store.add_note(int(path[11:-6]), body.get("text"))
-                self._json({"ok": True}, HTTPStatus.CREATED)
-            elif path.startswith("/api/models/") and path.endswith("/evaluate"):
-                self._json(self.app.evaluate(path[12:-9], body.get("overrides")))
-            else:
-                self._error(HTTPStatus.NOT_FOUND, "not found")
-        except KeyError as error:
-            self._error(HTTPStatus.NOT_FOUND, f"not found: {error.args[0] if error.args else ''}")
-        except (ValueError, TypeError) as error:
-            self._error(HTTPStatus.BAD_REQUEST, str(error))
 
     def _file(self, name):
         path = STATIC / name
@@ -254,9 +147,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def make_server(db_path, *, harness, host="127.0.0.1", port=0) -> ThreadingHTTPServer:
+def make_server(db_path, *, host="127.0.0.1", port=0) -> ThreadingHTTPServer:
     """A server bound to localhost; port 0 picks a free one. Call serve_forever() to run it."""
-    return ThreadingHTTPServer((host, port), partial(Handler, App(db_path, harness=harness)))
+    return ThreadingHTTPServer((host, port), partial(Handler, App(db_path)))
 
 
 DEFAULT_WORKSPACE = Path.home() / "Stated"
@@ -288,14 +181,12 @@ def prepare_workspace(db_path: Path | None, *, base: Path | None = None) -> tupl
     return db_path, notes
 
 
-def serve(db_path=None, *, harness_name="claude-code", port=8765, model=None, reasoning_effort=None, base=None,
-          contact=None, open_browser=True) -> int:
-    """Run the answer UI until interrupted, setting the workspace up on first run; returns the exit status."""
+def serve(db_path=None, *, harness_name="claude-code", port=8765, base=None, contact=None, open_browser=True) -> int:
+    """Run the Features view until interrupted, setting the workspace up on first run and installing the bundled
+    skills for the harness that feature runs use; returns the exit status."""
     if harness_name not in HARNESSES:
         raise ValueError(f"unknown harness {harness_name}; choose from {', '.join(HARNESSES)}")
-    if harness_name != "codex" and (model or reasoning_effort):
-        raise ValueError("--model and --effort apply to the codex harness")
-    harness = Codex(model=model, reasoning_effort=reasoning_effort) if harness_name == "codex" else ClaudeCode()
+    harness = HARNESSES[harness_name]()
     if not SKILLS.is_dir():
         raise ValueError(f"the bundled skills are missing from {SKILLS}")
     db_path, notes = prepare_workspace(None if db_path is None else Path(db_path), base=None if base is None else Path(base))
@@ -308,11 +199,8 @@ def serve(db_path=None, *, harness_name="claude-code", port=8765, model=None, re
         print(f"Saved your contact in {db_path.with_name('contact.txt')}; it is sent only to SEC.gov")
     if written := install_skills(harness):
         print(f"Installed the {' and '.join(written)} skill(s) for {harness.name} in {harness.skills_directories()[0]}")
-    if shutil.which(harness.executable) is None:  # Both real harnesses have one.
-        print(f"{harness.name} is not installed ({harness.executable} not found on PATH); install it and sign in, "
-              f"then ask a question.", file=sys.stderr)
     try:
-        server = make_server(db_path, harness=harness, port=port)
+        server = make_server(db_path, port=port)
     except OSError as error:
         if error.errno in (48, 98):  # Address in use, on macOS and Linux.
             raise ValueError(f"Port {port} is already in use, perhaps by another `stated ui`. "

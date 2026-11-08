@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 
-[Install](#install) · [Build features](#build-features) · [Ask a question](#ask-a-question) · [Use your own agent](#use-your-own-agent) · [How the graph is organised](#how-the-graph-is-organised) · [Status](#status) · [CLI](docs/cli.md) · [Python API](docs/python-api.md) · [Feature guide](docs/features.md) · [Base layer](docs/base-layer.md)
+[Install](#install) · [Build features](#build-features) · [Use your own agent](#use-your-own-agent) · [How the graph is organised](#how-the-graph-is-organised) · [Status](#status) · [CLI](docs/cli.md) · [Python API](docs/python-api.md) · [Feature guide](docs/features.md) · [Base layer](docs/base-layer.md)
 
 ## Install
 
@@ -17,7 +17,7 @@ pipx install "stated[cli] @ git+https://github.com/zmccormick7/Stated.git"
 stated ui
 ```
 
-The first run creates a research folder at `~/Stated`, installs the bundled skills for your agent, and opens the app in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `stated ui --base base-2026.10.01.sqlite`. The [base layer guide](docs/base-layer.md) covers what it holds and what it leaves out: it is a starting point, and an edge is more likely to come from the data you bring.
+The first run creates a research folder at `~/Stated`, installs the bundled skills for your agent, and opens the Features view in your browser. To start from the published base layer instead of an empty graph, run it once with the base file: `stated ui --base base-2026.10.01.sqlite`. The [base layer guide](docs/base-layer.md) covers what it holds and what it leaves out: it is a starting point, and an edge is more likely to come from the data you bring.
 
 To work on Stated itself, clone the repository anywhere but `~/Stated`, which the app uses for research, and install it in editable mode (`python -m pip install -e '.[cli]'` inside a virtual environment); `stated` then runs from your checkout.
 
@@ -50,45 +50,13 @@ Values come from three kinds of feature: **agentic**, read by an agent at the cu
 
 Run the commands in your research folder, or point `STATED_DB` at its database. A subjects file holds one Entity ID per line. Sources must carry the date they became public and be linked `about` their subject, since a source without a date is never seen at any cutoff.
 
-To look over what a run produced, open Features (▦) in `stated ui`: every definition with its schedule and coverage, then each subject's latest value, when it last changed and was last checked, and how many values are dated on or before the day the instructions were written, which may carry hindsight. A subject opens to its values over time, each opening to the evidence it rests on, with anything a cutoff on the value's date could not have seen marked.
-
-## Ask a question
-
-`stated ui` runs a small local web app on your machine, next to your research folder: a Python server and a plain web page, with nothing hosted elsewhere. The page holds threads of questions and their answers, like a chat, in a sidebar on the left. The answers come from your own Claude Code or Codex, which the app runs in your research folder each time you ask.
-
-Type a question and pick an effort beside the Ask button:
-
-| Effort | What the agent does |
-| --- | --- |
-| 1 minute | Answers from what the graph already holds. |
-| 5 minutes | Looks through the graph, adds what it learns to your layer, and answers. |
-| 20 minutes | Also reads outside sources: SEC filings, releases, transcripts, pages and PDFs. |
-| 1, 3 or 8 hours | A research run: plans pieces of work, has fresh sessions do them in parallel, and reports. You can pause it, finish it early or add a note to steer it. |
-
-An answer is a one-line headline, a body as long as the question needs, numbered sources, and where they help a chart, a quote, a flow of who gets what, or a lever you can drag to move a model's input and watch its output. Every figure on the page is checked against the record it cites before the answer is shown.
-
-The agent runs headless in your research folder with your own login and settings. Stated adds only what it needs: permission to run `stated`, to read and write files there, and, from 20 minutes up, to use the web. To let it fetch filings from SEC.gov, which requires a contact, run `stated ui --contact "Your Name you@example.com"` once; the contact is kept beside the database and sent nowhere else.
-
-## Scaling research
-
-A question that takes a minute is answered by one session. A brief that takes a day is answered by many: a research run breaks the work into pieces, gives each piece to a fresh session, runs as many sessions at once as you choose, and keeps going until the queue is empty or the time is up. Nothing about the run limits its size. A run of eight hours with ten agents is the same loop as a run of one hour with one, and the next run starts from everything the last one left in the graph.
-
-This is test-time compute scaling applied to research. More compute at the moment of asking buys a better answer, as it does when a model reasons longer before replying. The difference is where the compute goes. A model's reasoning is discarded when its answer is returned; a research run's work is written into the graph as findings, sources, questions and model inputs, each cited and checkable, so it compounds. The hundredth question about a company starts from the work of the first ninety-nine, and so does every other agent and every other person who uses the same graph.
-
-The pieces are what make the loop work:
-
-- **Sessions are short and fresh.** Each takes one piece of work, starts with no memory of the others, and leaves behind only what it put in the graph. That is what lets the run survive a killed session, a usage limit or a restart: the queue and the graph are the state, and the next session picks them up.
-- **Agents coordinate only through the graph.** There is no messaging between them. A worker sees the list of pieces so it does not repeat one, checks the graph before creating a record, and a review session folds duplicates into the records they repeat.
-- **The budget is yours.** The agents run on your own Claude Code or Codex subscription, and that is the ceiling. A run waits out a usage limit and carries on; using both harnesses spreads the load across two subscriptions.
-
-What this has done so far: a run of 274 company coverage packs, two sessions per company and six at a time, took seven and a half hours and about 40% of one week's Codex limit, and added 6,900 cited findings and 1,300 entities to the base layer. The same loop, pointed at the go-deeper skill, builds driver models with sourced inputs one company at a time.
+To look over what a run produced, open `stated ui`: every definition with its schedule and coverage, then each subject's latest value, when it last changed and was last checked, and how many values are dated on or before the day the instructions were written, which may carry hindsight. A subject opens to its values over time, each opening to the evidence it rests on, with anything a cutoff on the value's date could not have seen marked.
 
 ## Use your own agent
 
-Five skills teach an agent the graph. `stated ui` installs them; for any other harness, copy the folders under `stated/skills/` into its skills directory.
+Four skills teach an agent the graph. `stated ui` installs them; for any other harness, copy the folders under `stated/skills/` into its skills directory.
 
 - **stated-research**: recall what the graph holds, contribute findings with exact citations, and revise understanding as evidence changes.
-- **stated-answer**: return an answer document that passes `stated check-answer`.
 - **stated-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
 - **stated-feature-design**: turn an idea for something to measure into feature definitions whose instructions describe state as of a date rather than forecast, and review existing definitions against the same tests.
 - **stated-state**: produce one feature's value for a subject as of a cutoff date, following the feature definition's instructions over everything a reader on that date could see, or computed by its formula from other features.
@@ -133,7 +101,7 @@ What exists today:
 - The CLI, the Python API and five skills, which teach an agent to research the graph, answer a question from it, deepen one company's coverage, design a feature and write a feature's value at a date. The skills work in Claude Code and Codex.
 - Features end to end: definitions, schedules, `run-features`, derived features and the daily `feature-table`. The [oil and gas example](docs/examples/oil-and-gas/) runs three features weekly on 31 producers over 2023 and 2024 from their SEC filings, with the definitions, the exported table and its known limitations.
 - Structured data as Sources: `stated ingest-table FILE.csv` keeps a CSV file byte for byte as one release, public from the date it carries, so a model input or feature value can cite the row it came from. Turning a table's rows into Variables still takes an agent or your own script.
-- The answer page with checked answers, levers, research runs and the notes, pause and finish controls.
+- `stated ui`, a local read-only Features view: every definition with its schedule and coverage, each subject's values over time, and the evidence behind each value.
 - A base layer covering the 1,000 largest US filers by public float: three years of their 10-Ks, 10-Qs and results releases in full text, each dated and linked to its company for point-in-time reads, and for about 470 of them a coverage pack of the business, segments, key figures, relationships, risks and open questions. The published file, `base-2026.10.01`, predates the quarterly reports and results releases; the next export carries them. Driver models exist for a handful of companies.
 
 What is being worked on: coverage packs for the rest of the top 1,000, driver models with sourced inputs for covered companies through the go-deeper skill, quarterly updates as filings land, runs across many companies and years, and measuring how much hindsight still leaks into values.

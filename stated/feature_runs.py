@@ -24,7 +24,7 @@ import threading
 import time
 
 from .store import RecordStore
-from .ui.harness import HarnessError, UsageLimit
+from .harness import HarnessError, UsageLimit
 
 RETRY_MINUTES = 15  # How long to wait at a usage limit when the harness does not say when it resets.
 _sleep = time.sleep
@@ -205,8 +205,8 @@ def _session(db_path: Path, definitions, subject_id: str, subject: str, day: str
         try:
             with tempfile.TemporaryDirectory() as folder:
                 reply = harness.run(_prompt(definitions, subject_id, subject, day, author), cwd=folder, env=env,
-                                    web=False, writable=(db_path.parent,), timeout=minutes * 60)
-            detail = reply.text.strip()
+                                    writable=(db_path.parent,), timeout=minutes * 60)
+            detail = reply.strip()
             break
         except UsageLimit as limit:
             _sleep(limit.resets_at - time.time() + 30 if limit.resets_at and limit.resets_at > time.time()
