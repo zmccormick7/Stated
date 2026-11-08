@@ -163,8 +163,6 @@ class ModelCheckTests(_ModelCase):
         self.assertEqual((by_key["e"].computed, by_key["e"].exact), ([None, 4], True))
         self.assertEqual((by_key["rounded"].matches, by_key["rounded"].exact, by_key["rounded"].problems),
                          (True, False, ()))
-        held = self.db.evaluate_model(self.model.id, {"a": 3})
-        self.assertEqual({v.key: v.value for v in held.variables}["c"], 6)
 
     def test_dependencies_on_other_models_do_not_count_as_declarations(self):
         other = self.db.create("Model", text="Other", author_id="a")
@@ -192,55 +190,96 @@ class ModelCheckTests(_ModelCase):
         self.assertEqual(self.db.check_model(self.db.create("Model", text="Empty", author_id="a").id).checked, ())
 
 
-class ModelEvaluationTests(_ModelCase):
+class FillModelTests(_ModelCase):
     def build(self):
         self.variable("gw", "input", [20, 20, 24])
         self.variable("price", "input", 570)
         self.variable("margin", "input", 0.25)
         self.variable("revenue", "output", [11400, 11400, 13680], "gw * price", ["gw", "price"])
         self.variable("manual", "output", 5)
-        # Created before the output it reads, and stored stale: evaluation recomputes it in dependency order.
+        # Created before the output it reads, and stored stale: filling computes it in dependency order.
         profit = self.db.create("Variable", text="profit", author_id="a", attributes={
             "key": "profit", "role": "output", "value": [0, 0, 0], "formula": "revenue * margin + manual"})
         self.db.create_link(profit.id, self.model.id, "in_model", author_id="a")
+        for key in ("revenue", "margin", "manual"):
+            self.db.create_link(profit.id, self.variables[key].id, "depends_on", author_id="a")
 
-    def test_overrides_flow_through_dependent_formulas(self):
+    def test_results_flow_through_dependent_formulas(self):
         self.build()
-        base = self.db.evaluate_model(self.model.id[:8])
-        self.assertEqual((base.model_id, base.overrides, base.without_formula), (self.model.id, {}, ("manual",)))
-        self.assertEqual([v.key for v in base.variables], ["gw", "price", "margin", "manual", "revenue", "profit"])
-        by_key = {v.key: v for v in base.variables}
-        self.assertEqual((by_key["profit"].stored, by_key["profit"].value), ([0, 0, 0], [2855.0, 2855.0, 3425.0]))
-        self.assertFalse(any(v.changed for v in base.variables))
+        filled = self.db.fill_model(self.model.id[:8], author_id="a")
+        self.assertEqual([(f.key, f.stored, f.value) for f in filled.written], [("profit", [0, 0, 0], [2855.0, 2855.0, 3425.0])])
+        self.assertTrue(all(c.exact for c in self.db.check_model(self.model.id).checked))
+        self.assertEqual(self.db.fill_model(self.model.id, author_id="a").written, ())
 
-        result = self.db.evaluate_model(self.model.id, {"price": 600, "gw": [10, 20, 24]})
-        by_key = {v.key: v for v in result.variables}
-        self.assertEqual(by_key["revenue"].value, [6000, 12000, 14400])
-        self.assertEqual(by_key["profit"].value, [1505.0, 3005.0, 3605.0])
-        self.assertEqual({v.key for v in result.variables if v.changed}, {"gw", "price", "revenue", "profit"})
-        self.assertEqual((by_key["price"].stored, by_key["price"].value, by_key["price"].role), (570, 600, "input"))
-
-        held = {v.key: v for v in self.db.evaluate_model(self.model.id, {"revenue": [100, 200, 300]}).variables}
-        self.assertEqual((held["revenue"].value, held["profit"].value), ([100, 200, 300], [30.0, 55.0, 80.0]))
-        self.assertEqual(self.db.read(self.variables["price"].id).attributes["value"], 570)  # Nothing is written.
-
-    def test_invalid_evaluations(self):
-        self.build()
-        for overrides, message in (({"tariff": 1}, "not in the model: tariff"), ({"gw": 20}, "stored value's shape"),
-                                   ({"gw": [20, 20]}, "stored value's shape"), ({"price": "600"}, "no numeric value"),
-                                   ([("price", 600)], "must map")):
-            with self.subTest(overrides=overrides), self.assertRaisesRegex(ValueError, message):
-                self.db.evaluate_model(self.model.id, overrides)
+    def test_what_cannot_be_filled(self):
         with self.assertRaisesRegex(ValueError, "not a Model, Entity or Variable"):
-            self.db.evaluate_model(self.db.create("Finding", text="q", author_id="a").id)
-        # A Variable on its own evaluates to its stored value, with whatever it depends on.
-        self.assertEqual([(v.key, v.value) for v in self.db.evaluate_model(self.variables["gw"].id).variables], [("gw", [20, 20, 24])])
+            self.db.fill_model(self.db.create("Finding", text="q", author_id="a").id, author_id="a")
         self.variable("a", "output", 1, "b + 1")
         self.variable("b", "output", 1, "a + 1")
         with self.assertRaisesRegex(ValueError, "cycle: a, b"):
-            self.db.evaluate_model(self.model.id)
+            self.db.fill_model(self.model.id, author_id="a")
         other = self.db.create("Model", text="Other", author_id="a")
         self.variable("ratio", "output", 1, "gw / tariff", model=other)
         with self.assertRaisesRegex(ValueError, "ratio: formula names unknown Variables: gw, tariff"):
-            self.db.evaluate_model(other.id)
+            self.db.fill_model(other.id, author_id="a")
 
+
+class DynamicModelTests(unittest.TestCase):
+    """A company's model maintained at each cutoff: every read at a date sees the model as it stood then."""
+
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = Path(directory.name) / "research.sqlite"
+
+    def at(self, day):
+        store = RecordStore(self.path, as_of=day)
+        self.addCleanup(store.close)
+        return store
+
+    def test_inputs_drivers_and_formulas_change_as_of_their_dates(self):
+        first = self.at("2023-02-15")
+        model = first.contribute(author_id="agent", records=[
+            {"ref": "m", "kind": "Model", "text": "Memory maker revenue: bits shipped times price."},
+            {"ref": "bits", "kind": "Variable", "text": "DRAM bits", "attributes": {"key": "dram_bits", "role": "input", "value": 10}},
+            {"ref": "price", "kind": "Variable", "text": "DRAM price", "attributes": {"key": "dram_price", "role": "input", "value": 3}},
+            {"ref": "rev", "kind": "Variable", "text": "Revenue", "attributes": {
+                "key": "revenue", "role": "output", "value": 30, "formula": "dram_bits * dram_price"}}],
+            links=[{"from_id": r, "to_id": "m", "relation": "in_model"} for r in ("bits", "price", "rev")]
+                  + [{"from_id": "rev", "to_id": r, "relation": "depends_on"} for r in ("bits", "price")]).records
+        later = self.at("2024-05-15")
+        # The company starts reporting a new product line: a driver is added, the formula changes, a price moves
+        # and an old driver is dropped, each as of this date.
+        hbm = later.contribute(author_id="agent", records=[{"ref": "h", "kind": "Variable", "text": "HBM revenue",
+            "attributes": {"key": "hbm_revenue", "role": "input", "value": 12}}],
+            links=[{"from_id": "h", "to_id": model["m"].id, "relation": "in_model"}]).records["h"]
+        old_formula = model["rev"].id
+        rev = later.patch(old_formula, author_id="agent", attributes={"formula": "dram_bits * dram_price + hbm_revenue"})
+        self.assertNotEqual(rev.id, old_formula)  # A changed formula is a new version, linked `updates` the old.
+        later.create_link(rev.id, hbm.id, "depends_on", author_id="agent")
+        later.patch(model["price"].id, author_id="agent", attributes={"value": 4})
+        dropped = later.contribute(author_id="agent", records=[{"ref": "x", "kind": "Variable", "text": "Legacy NOR",
+            "attributes": {"key": "nor_bits", "role": "input", "value": 1}}],
+            links=[{"from_id": "x", "to_id": model["m"].id, "relation": "in_model"}]).records["x"]
+        filled = later.fill_model(model["m"].id, author_id="agent")
+        self.assertEqual([(f.key, f.value) for f in filled.written], [("revenue", 52)])
+        retired = self.at("2024-08-15").patch(dropped.id, author_id="agent", attributes={"retired": True})
+        self.assertNotEqual(retired.id, dropped.id)
+
+        def model_at(day):
+            check = self.at(day).check_model(model["m"].id)
+            return check.inputs, [(c.key, c.stored, c.matches) for c in check.checked]
+
+        self.assertEqual(model_at("2023-06-30"), (2, [("revenue", 30, True)]))
+        self.assertEqual(model_at("2024-06-30"), (4, [("revenue", 52, True)]))
+        self.assertEqual(model_at("2024-09-30")[0], 3)  # The dropped driver is gone from this date on.
+        self.assertEqual(self.at("2023-06-30").read(old_formula).attributes["formula"], "dram_bits * dram_price")
+
+    def test_bringing_a_retired_driver_back_is_a_version_too(self):
+        store = RecordStore(self.path)
+        self.addCleanup(store.close)
+        variable = store.create("Variable", text="x", author_id="a", attributes={"key": "x", "value": 1})
+        retired = store.patch(variable.id, author_id="a", attributes={"retired": True})
+        back = store.patch(retired.id, author_id="a", remove=["retired"])
+        self.assertEqual(len({variable.id, retired.id, back.id}), 3)
+        self.assertEqual(store.patch(back.id, author_id="a", text="x, renamed").id, back.id)  # Text edits in place.

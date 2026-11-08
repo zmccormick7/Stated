@@ -346,17 +346,9 @@ class RecordStore:
         model_id, variables = self._variables_of(model_id, latest=False)
         return check_model(variables, model_id, tolerance=tolerance)
 
-    def evaluate_model(self, model_id: str, overrides: dict[str, object] | None = None) -> "ModelEvaluation":
-        """Recompute the formulas with some Variables set to other values; nothing is written. The ID names a
-        Model, an Entity (its features) or a feature Variable (computed from the latest version of each
-        input about its Entity)."""
-        from .formulas import evaluate_model
-        model_id, variables = self._variables_of(model_id, latest=True)
-        return evaluate_model(variables, model_id, overrides)
-
     def fill_model(self, model_id: str, *, author_id: str) -> ModelFill:
         """Store each formula's value where the stored value is not exactly that, results flowing through
-        dependent formulas as in evaluate_model. The ID names a Model, an Entity (every feature about it, each
+        dependent formulas. The ID names a Model, an Entity (every feature about it, each
         computed from the latest version of its inputs) or one feature Variable. A Variable with no value yet
         that this store may edit is filled in place, linked `depends_on` the input versions used; any other
         gets a new version: the same attributes with the new value, carrying its `in_model` or `about` link,
@@ -505,7 +497,8 @@ class RecordStore:
 
     def _versions(self, members_sql: str, parameters: tuple):
         """Reduce a query for Variables (record_key, id, attributes, as_of) to the latest version per key,
-        each in the formulas' format."""
+        each in the formulas' format, leaving out a key whose latest version is retired: a driver dropped
+        from its model as of that version's date."""
         rows = self._db.execute(
             f"""WITH members AS (
                     SELECT *, row_number() OVER (PARTITION BY coalesce(json_extract(attributes, '$.key'), id)
@@ -516,7 +509,8 @@ class RecordStore:
                         JOIN records d ON d.record_key = dl.to_key
                         WHERE dl.from_key = v.record_key AND dl.relation = 'depends_on'
                           AND d.record_key IN (SELECT record_key FROM members)) AS depends_on
-                FROM members v WHERE v.recency = 1 ORDER BY v.record_key""", parameters).fetchall()
+                FROM members v WHERE v.recency = 1 AND coalesce(json_extract(v.attributes, '$.retired'), 0) = 0
+                ORDER BY v.record_key""", parameters).fetchall()
         return [json.loads(row["attributes"]) | {"id": row["id"], "stamp": row["as_of"], "depends_on": [
             key for key in json.loads(row["depends_on"]) if key is not None]} for row in rows]
 
@@ -959,7 +953,7 @@ class RecordStore:
         attributes, source_ids = self._cite(attributes, citations)
         encoded = self._encode(attributes)
         current = self.read(record_id)  # A missing or unseen record is reported before anything is written.
-        if self._value_changed(current, attributes or {}):
+        if self._is_new_version(current, attributes or {}):
             return self._write_version(current, text=text, attributes=attributes or {}, source_ids=source_ids,
                                        author_id=author_id)
         with self._db:
@@ -980,11 +974,15 @@ class RecordStore:
         return record
 
     @staticmethod
-    def _value_changed(current: Record, attributes: dict[str, object]) -> bool:
-        """A Variable's value changes when it had one and the new attributes give a different one. Setting a
-        value where there was none is not a change."""
-        return (current.kind == "Variable" and current.attributes.get("value") is not None
-                and attributes.get("value") != current.attributes.get("value"))
+    def _is_new_version(current: Record, attributes: dict[str, object]) -> bool:
+        """A Variable is written as a new version when what it says as of a date changes: a value it had or a
+        formula it had is given another, or it is retired from its model or brought back. Setting a value or a
+        formula where there was none is not a change."""
+        if current.kind != "Variable":
+            return False
+        before, after = current.attributes, attributes
+        return any(before.get(name) is not None and after.get(name) != before.get(name) for name in ("value", "formula")) \
+            or bool(after.get("retired")) != bool(before.get("retired"))
 
     def _write_version(self, current: Record, *, text: str, attributes: dict[str, object],
                        source_ids: tuple[str, ...], author_id: str) -> Record:
@@ -1035,7 +1033,7 @@ class RecordStore:
             raise ValueError("an attribute cannot be both set and removed")
         current = self.read(record_id)
         merged = {key: value for key, value in current.attributes.items() if key not in remove} | changes
-        if self._value_changed(current, merged):
+        if self._is_new_version(current, merged):
             return self._write_version(current, text=current.text if text is None else text, attributes=merged,
                                        source_ids=source_ids, author_id=author_id)
         with self._db:

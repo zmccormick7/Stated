@@ -100,11 +100,6 @@ def _parser():
                     "or one feature Variable against what it depends on.", "model_id")
     check.add_argument("--tolerance", type=float, default=1e-4,
                        help="Relative difference allowed between a stored value and its formula (default 1e-4).")
-    scenario = command("evaluate-model", "evaluate_model",
-                       "Recompute a model's formulas with some Variables set to other values; nothing is written.",
-                       "model_id")
-    scenario.add_argument("--set", dest="overrides", action="append", type=_where_item, metavar="KEY=VALUE",
-                          help="Hold a Variable at VALUE, a number or a JSON list for a row; repeatable.")
     command("fill-model", "fill_model",
             "Store each formula's exact value where the stored value differs, for a Model, an Entity's features "
             "or one feature Variable; a changed value becomes a new version.", "model_id", payload="author_id")
@@ -396,9 +391,8 @@ def main(argv=None):
     path = Path(given or "research.sqlite")
     if options["method"] in ("run_features", "derive_features"):
         return _run_features(path, options, fixed or as_of)
-    for name in ("where", "overrides"):
-        if options.get(name) is not None:
-            options[name] = dict(options[name])
+    if options.get("where") is not None:
+        options["where"] = dict(options["where"])
     method = options.pop("method")
     options.pop("command")
     try:

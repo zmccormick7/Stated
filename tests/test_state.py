@@ -95,7 +95,6 @@ class FeatureTests(unittest.TestCase):
         # The earlier date reads the earlier state, untouched.
         self.assertEqual(then.read(f["uninsured_share"].id).attributes["value"], 150000 / 176819)
         self.assertEqual(then.fill_model(self.bank.id, author_id="agent").written, ())
-        self.assertEqual({v.key: v.value for v in later.evaluate_model(self.bank.id, {"total_deposits": 200000}).variables}["uninsured_share"], 165400 / 200000)
 
     def test_state_rows_give_change_points_per_entity(self):
         then = self.at("2022-11-07")

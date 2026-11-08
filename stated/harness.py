@@ -55,7 +55,7 @@ ALLOWED_TOOLS = ("Bash(stated:*)", "Read", "Write")
 SKILLS = Path(__file__).resolve().parent / "skills"
 # Skills no longer bundled, under their current names and the names from before the product was renamed
 # Stated; an install removes these copies so agents see one set.
-RETIRED_SKILLS = ("stated-answer", "premisedb-answer", "premisedb-feature-design", "premisedb-go-deeper",
+RETIRED_SKILLS = ("stated-answer", "stated-go-deeper", "premisedb-answer", "premisedb-feature-design", "premisedb-go-deeper",
                   "premisedb-research", "premisedb-state")
 
 

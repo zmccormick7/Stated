@@ -54,10 +54,9 @@ To look over what a run produced, open `stated ui`: every definition with its sc
 
 ## Use your own agent
 
-Four skills teach an agent the graph. `stated ui` installs them; for any other harness, copy the folders under `stated/skills/` into its skills directory.
+Three skills teach an agent the graph. `stated ui` installs them; for any other harness, copy the folders under `stated/skills/` into its skills directory.
 
 - **stated-research**: find what the graph holds, ingest and cite sources, record findings and revise them as evidence changes; every other skill uses it for its commands.
-- **stated-go-deeper**: take a company past its standard coverage by building a driver model, turning its unsourced inputs into a research list, and working that list from filings and transcripts.
 - **stated-feature-design**: turn an idea for something to measure into feature definitions whose instructions describe state as of a date rather than forecast, and review existing definitions against the same tests.
 - **stated-state**: produce one feature's value for a subject as of a cutoff date, following the feature definition's instructions over everything a reader on that date could see, or computed by its formula from other features.
 
@@ -82,10 +81,10 @@ Five record types, connected by named links:
 | **Entity** | A company, facility, product or market. |
 | **Source** | A filing, transcript, release or page, with its text captured so quotes can be checked, or a table of structured data released on one date, cited row by row. |
 | **Finding** | A statement to build on or challenge, labelled disclosed, inference or assumption, citing its source. |
-| **Model** | A driver model of a business. |
+| **Model** | A company's driver model, its inputs and formulas dated by the cutoff each was written at. |
 | **Variable** | A model input or output, or a feature value, with its value, units, periods and the evidence it rests on. |
 
-Links such as `about`, `supported_by`, `depends_on`, `updates` and `contradicts` carry the reasoning: a Variable depends on a Finding, which is supported by a Source. Models are checked with `stated check-model`, which recomputes every output's formula from the stored inputs, and evaluated with overrides for the levers on the answer page.
+Links such as `about`, `supported_by`, `depends_on`, `updates` and `contradicts` carry the reasoning: a Variable depends on a Finding, which is supported by a Source. Models are checked with `stated check-model`, which recomputes every output's formula from the stored inputs as they stood at the session's cutoff.
 
 The graph is layered. A **base layer** is a published, read-only graph that any research folder can attach and later update; your own layer holds what your agents add on top, including corrections to base records. Knowledge belongs to the folder, not to any one conversation or harness: a fresh session, on either harness, picks up exactly where the last one left off.
 
@@ -97,13 +96,13 @@ Stated is early software. The database format changes without migrations; recrea
 
 What exists today:
 
-- The CLI, the Python API and four skills, which teach an agent to work with the graph, deepen one company's coverage, design a feature and write a feature's value at a date. The skills work in Claude Code and Codex.
+- The CLI, the Python API and three skills, which teach an agent to work with the graph, design a feature and write a feature's value at a date. The skills work in Claude Code and Codex.
 - Features end to end: definitions, schedules, `run-features`, derived features and the daily `feature-table`. The [oil and gas example](docs/examples/oil-and-gas/) runs three features weekly on 31 producers over 2023 and 2024 from their SEC filings, with the definitions, the exported table and its known limitations.
 - Structured data as Sources: `stated ingest-table FILE.csv` keeps a CSV file byte for byte as one release, public from the date it carries, so a model input or feature value can cite the row it came from. Turning a table's rows into Variables still takes an agent or your own script.
 - `stated ui`, a local read-only Features view: every definition with its schedule and coverage, each subject's values over time, and the evidence behind each value.
 - A base layer covering the 1,000 largest US filers by public float: three years of their 10-Ks, 10-Qs and results releases in full text, each dated and linked to its company for point-in-time reads, and for about 470 of them a coverage pack of the business, segments, key figures, relationships, risks and open questions. The published file, `base-2026.10.01`, predates the quarterly reports and results releases; the next export carries them. Driver models exist for a handful of companies.
 
-What is being worked on: coverage packs for the rest of the top 1,000, driver models with sourced inputs for covered companies through the go-deeper skill, quarterly updates as filings land, runs across many companies and years, and measuring how much hindsight still leaks into values.
+What is being worked on: dynamic-model features, quarterly updates as filings land, runs across many companies and years, and measuring how much hindsight still leaks into values.
 
 ## Contributing
 
