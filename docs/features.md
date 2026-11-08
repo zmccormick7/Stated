@@ -33,6 +33,25 @@ Definitions are procedures, not knowledge, so they live beside the graph rather 
 
 The [stated-state skill](../stated/skills/stated-state/SKILL.md) teaches an agent to produce one value: given a feature, a subject and a cutoff, read what is visible, write the value or leave the previous one standing, and leave derived features to Stated.
 
+## Kinds of features
+
+A feature's kind is what produces its values. There are three:
+
+| Kind | Who writes the values | From what | Built |
+| --- | --- | --- | --- |
+| **Agentic** | An agent session at each scheduled date's cutoff, following the instructions. | The documents and tables visible at the cutoff. | Yes: `schedule-feature` and `run-features`. |
+| **Imported** | Code, from the rows of a table Source, each value citing its row and stamped with the table's publication date. | Structured data: XBRL financials, market and alternative data. | Partly: `ingest-table` keeps each release as a dated Source; for now your own script writes the values from its rows, with the store opened at the release date. |
+| **Derived** | Stated, from a `formula` over other features. | The latest value of each input. | Yes: `derive-features`, which `run-features` also does. |
+
+An imported feature is defined like any other, its instructions saying which dataset and field its values come from, but with no schedule and no formula, so `run-features` never gives it to an agent. Use one whenever the figure already exists as structured data: reading revenue out of a 10-Q's prose is slower and less reliable than taking it from the filing's XBRL, and the agents' time is better spent on what only reading can produce.
+
+### Models built from features
+
+A fundamental model is not a kind of feature but a pattern built from them.
+
+- **Static models.** A model you define: agentic and imported features for its inputs and derived features for its outputs, with one structure for every subject in its scope, such as a template for oil producers (production, realized price and unit cost, with cash margin derived from them) and another for subscription software. Its outputs land in the feature table like any other feature, and calibrating them, such as how much of its guidance a company has delivered, is done on that table in your own code, on an expanding window. Choosing the template is a researcher's choice like choosing any feature: a driver you add because you now know it mattered is in-sample for the dates before you added it. This works today.
+- **Dynamic models.** An agentic feature whose instructions maintain each company's own driver model at every cutoff: built from what is visible on the first date and, on each later one, its inputs updated and its structure changed only where the visible record calls for it, as when a company starts reporting a new product line. The structure differs between companies and changes over time, while the feature's value is a standard output read from the model, the same quantity for every company, so values stay comparable. Not supported yet: drivers added at a cutoff (`in_model` links carry their date) and drivers retired at one (`supersedes`) are already point-in-time, but changing an output's formula overwrites it in place, so a model's earlier structure cannot be read back. Writing a formula change as a new version, as a value change already is, would close that.
+
 ## Writing a feature
 
 A feature is a task: the instructions and output type for one agent run on one subject at one date. The best tasks demand a lot of intelligence while giving hindsight nowhere useful to go. Sophistication is not what leaks; dated knowledge is. Knowing what a springing covenant does, how revenue recognition works or what a central bank's conditional language means is the point of using an LLM. Knowing what later happened to this firm, deal or drug is the only thing that leaks.
@@ -119,5 +138,7 @@ The [oil and gas example](examples/oil-and-gas/) goes through every step on real
 ## Not built yet
 
 Measuring residual lookahead, how a feature and the agents producing it behave before and after the agent model's training cutoff, is still being designed; the audits above are, for now, work you do on the exported table.
+
+Writing an imported feature's values from a table's rows takes your own script, and dynamic models need formula changes kept as versions; see [Kinds of features](#kinds-of-features).
 
 Training the predictive model is outside Stated: the feature table is where it starts.
