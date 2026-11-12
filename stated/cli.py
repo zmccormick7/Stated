@@ -85,6 +85,11 @@ def _parser():
     connections.add_argument("--direction", choices=("both", "in", "out"), default="both")
     connections.add_argument("--relation")
     connections.add_argument("--limit", type=int, default=100)
+    sources = command("sources", "sources_about",
+                      "List the Sources about a record, newest publication first.", "record_id")
+    sources.add_argument("--full", action="store_true", help="Return complete records instead of previews.")
+    sources.add_argument("--since", metavar="DATE", help="Only Sources published after this date.")
+    sources.add_argument("--limit", type=int, default=20)
     walk = command("expand", "expand", "Walk links from seed records, one or two hops, reporting each record's path.")
     walk.add_argument("seed_ids", nargs="+", metavar="SEED_ID")
     walk.add_argument("--depth", type=int, choices=(1, 2), default=1)
@@ -321,7 +326,7 @@ def _search_documents(db, options):
     return [{**asdict(excerpt.segment), "token_count": excerpt.token_count} for excerpt in result.excerpts]
 
 
-PREVIEW_ATTRIBUTES = ("basis", "status", "key", "value")
+PREVIEW_ATTRIBUTES = ("basis", "status", "key", "value", "published")
 
 
 def _preview(record, *, edits=True):
@@ -346,7 +351,7 @@ def _compact(db, method, result, options):
     """Previews in place of full records for search, list and expand; linked records previewed on each link."""
     if method == "search_records":
         return [_preview(record) for record in result]
-    if method == "list_records":
+    if method in ("list_records", "sources_about"):
         return {"records": [_preview(record) for record in result.records], "has_more": result.has_more}
     if method == "connections":  # The other end of each link sits beside it, so no second lookup is needed.
         other = lambda link: link.from_id if link.to_id == options["record_id"] else link.to_id

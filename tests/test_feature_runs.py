@@ -109,6 +109,50 @@ class FeatureRunTests(unittest.TestCase):
             check = db._db.execute("SELECT author_id FROM feature_checks").fetchall()
             self.assertEqual({row[0] for row in check}, {"feature-run/fake/no-new-documents"})
 
+    def test_a_session_is_told_which_documents_are_new(self):
+        self.source(self.a, "2022-12-30")
+        self.source(self.a, "2023-01-12")
+        harness, _, _ = self.run_with({}, skip_unchanged=True)
+        prompts = {(s, d): prompt for s, d, *_, prompt in harness.calls}
+        first, later = prompts[(self.a, "2023-01-02")], prompts[(self.a, "2023-01-16")]
+        self.assertIn("has no value yet", first)  # No reading to count from, so the latest documents are listed.
+        self.assertIn("- 2022-12-30: Filing of 2022-12-30 (Source ", first)
+        self.assertNotIn("2023-01-12", first)  # Not yet published at this cutoff.
+        self.assertIn("published since these features were last read (2023-01-09)", later)
+        self.assertIn("- 2023-01-12: Filing of 2023-01-12 (Source ", later)
+        self.assertNotIn("Filing of 2022-12-30", later)  # Read before; only what is new is listed.
+        self.assertIn("Read each of them before you write or confirm a value.", later)
+        self.assertIn("No document about the subject is visible.", prompts[(self.b, "2023-01-02")])
+
+    def test_a_session_with_no_new_document_is_told_so(self):
+        self.source(self.a, "2022-12-30")
+        harness, _, _ = self.run_with({})  # Every date gets a session, new document or not.
+        prompt = next(p for s, d, *_, p in harness.calls if (s, d) == (self.a, "2023-01-09"))
+        self.assertIn("No document about the subject has been published since these features were last read "
+                      "(2023-01-02).", prompt)
+
+    def test_sources_about_a_record_come_newest_first_as_the_cutoff_sees_them(self):
+        for published in ("2023-01-05", "2022-12-30", "2023-01-12"):
+            self.source(self.a, published)
+        self.source(self.b, "2023-01-06")
+        with RecordStore(self.path) as db:
+            undated = db.create("Source", text="Undated note", author_id="setup")
+            db.create_link(undated.id, self.a, "about", author_id="setup")
+            dated = lambda page: [r.attributes.get("published") for r in page.records]
+            self.assertEqual(dated(db.sources_about(self.a)), ["2023-01-12", "2023-01-05", "2022-12-30", None])
+            self.assertEqual(dated(db.sources_about(self.a, since="2023-01-05")), ["2023-01-12"])
+            page = db.sources_about(self.a, limit=2)
+            self.assertEqual((dated(page), page.has_more), (["2023-01-12", "2023-01-05"], True))
+            with self.assertRaisesRegex(ValueError, "since must be a date"):
+                db.sources_about(self.a, since="January")
+        with RecordStore(self.path, as_of="2023-01-06") as db:
+            self.assertEqual(dated(db.sources_about(self.a)), ["2023-01-05", "2022-12-30"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            main(["--db", str(self.path), "sources", self.a, "--since", "2023-01-01", "--limit", "1"])
+        listed = json.loads(out.getvalue())
+        self.assertEqual(([r["published"] for r in listed["records"]], listed["has_more"]), (["2023-01-12"], True))
+
     def test_an_expired_reading_gets_a_session_without_a_new_document(self):
         self.source(self.a, "2022-12-30")
         with RecordStore(self.path, as_of="2023-01-02") as db:

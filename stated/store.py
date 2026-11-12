@@ -1221,6 +1221,24 @@ class RecordStore:
             (json.dumps(list(ids)),))}
         return Connections(links, has_more, {record: found[record] for record in ids})
 
+    def sources_about(self, record_id: str, *, since: str | None = None, limit: int = 20) -> RecordPage:
+        """The Sources linked `about` a record that a read at the cutoff sees, newest publication first and
+        those with no publication date last. `since`, a date, keeps only those published after it.
+
+        has_more reports truncation.
+        """
+        _check_limit(limit)
+        if since is not None and (not isinstance(since, str) or len(since) != 10 or _date(since) is None):
+            raise ValueError("since must be a date, like 2023-02-24, or None")
+        published = "substr(json_extract(r.attributes, '$.published'), 1, 10)"
+        rows = self._db.execute(
+            _RECORD_SELECT + f"""JOIN links a ON a.from_key = r.record_key
+                WHERE r.kind = 'Source' AND a.relation = 'about' AND a.to_key = ? AND {self._seen('r')}
+                  AND (? IS NULL OR {published} > ?)
+                ORDER BY {published} DESC, r.record_key DESC LIMIT ?""",
+            (self._record_key(record_id), since, since, limit + 1)).fetchall()
+        return RecordPage(tuple(self._decode_record(row) for row in rows[:limit]), len(rows) > limit)
+
     def expand(self, seed_ids: Iterable[str], *, depth: int = 1, direction: str = "both",
                relations: Iterable[str] | None = None, limit: int = 100,
                per_record_limit: int = 50) -> Expansion:
