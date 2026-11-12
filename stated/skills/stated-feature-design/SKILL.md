@@ -34,4 +34,11 @@ A value need not be a figure any document states: most useful features are assem
 
 **8. Write it.** `define-feature --input FILE` with `author_id`, `key` (a short snake_case name), `instructions`, `type`, and `units`, `min`, `max`, `categories` or `formula` as they apply. Stated checks the key, the type and its fields, and that a formula parses; it does not check that a formula's keys are other features, so check that yourself. Define features before any values exist, so each definition's `written_at` records that its instructions were fixed in advance.
 
+**9. Group the features into runs.** Every feature named in one `run-features` call that is due for a subject on a date shares one session, so which features you run together decides what each session is asked to do. Run together the features that are one reading: they rest on the same documents and answer parts of one question, such as the low and high of a stated range, or the inputs of a derived feature, which must be written together for their periods to match. Give them the same schedule, so they fall due on the same dates. Run separately:
+- features that read different documents or take different kinds of work, even about the same subject: a session asked for unrelated things reads each of them less carefully;
+- features that apply to different subjects: run each group over the subjects it applies to, rather than have sessions write `null` or `0` for features that cannot apply;
+- features you may want to redo on their own: a definition replaced with new instructions makes its dates due again, and a run of its own redoes only its group. Separate runs can also use different harnesses or models.
+
+Fewer sessions is not the aim. Two runs that each read the same report are better than one session doing two jobs. If saying what a session reads takes more than one sentence, it is more than one run.
+
 When reviewing, report for each definition which test or step it fails and the revision that would pass, and write revisions as new definitions rather than editing one that values name. Finish with each definition's ID, key and type, and a sentence on what it measures.
