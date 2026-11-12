@@ -57,7 +57,7 @@ To look over what a run produced, open `stated ui`: every definition with its sc
 Four skills teach an agent the graph. `stated ui` installs them; for any other harness, copy the folders under `stated/skills/` into its skills directory.
 
 - **stated-research**: find what the graph holds, ingest and cite sources, record findings and revise them as evidence changes; every other skill uses it for its commands.
-- **stated-feature-design**: turn an idea for something to measure into feature definitions whose instructions describe state as of a date rather than forecast, and review existing definitions against the same tests.
+- **stated-feature-design**: turn an idea for something to measure into feature definitions whose instructions describe state as of a date rather than forecast, review existing definitions against the same tests, and decide which features share a run.
 - **stated-state**: produce one feature's value for a subject as of a cutoff date, following the feature definition's instructions over everything a reader on that date could see, or computed by its formula from other features.
 - **stated-model**: maintain a company's driver model as of a cutoff for a dynamic-model feature, whose output is the feature's value.
 
