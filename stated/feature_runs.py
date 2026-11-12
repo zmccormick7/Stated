@@ -4,7 +4,8 @@ value or confirming that its latest value still holds. A feature with no new doc
 since it was last read is confirmed without a session: a document is about a subject when its Source is
 linked `about` the subject's Entity. A reading that says when it expires, the first date it would no longer
 hold with no new document, gets a session on that date instead, and each check made without one carries the
-expiry forward.
+expiry forward. A session is told which documents those are: the ones about the subject published since
+the features due were last read, so that it reads them and does not rely on a search to find them.
 
 Subjects run in parallel, up to the number of workers; each subject's dates run in order, since each session
 starts from the value the one before left. A session that ends without its date done stops that subject's
@@ -27,6 +28,7 @@ from .store import RecordStore
 from .harness import HarnessError, UsageLimit
 
 RETRY_MINUTES = 15  # How long to wait at a usage limit when the harness does not say when it resets.
+NEW_DOCUMENTS = 20  # How many of the documents a session has to read its prompt lists.
 _sleep = time.sleep
 
 
@@ -195,16 +197,47 @@ def _confirm_unchanged(db_path: Path, subject_id: str, subject: str, day: str, d
     return left
 
 
+def _new_documents(db_path: Path, definitions, subject_id: str, day: str) -> str:
+    """What the session is told about the documents it has to read: those about the subject published since
+    the features due were last read, newest first, or the latest ones when a feature has no value yet."""
+    from .features import _latest
+    with RecordStore(db_path, as_of=day) as db:
+        read_on = []
+        for definition in definitions:
+            latest = _latest(db, definition.id, subject_id)
+            check = latest and db._db.execute(
+                "SELECT as_of FROM feature_checks WHERE value_key = ? AND as_of < ? ORDER BY as_of DESC LIMIT 1",
+                (db._record_key(latest.id), day)).fetchone()
+            read_on.append(latest and (check[0] if check else latest.as_of))
+        since = None if None in read_on else min(read_on)
+        page = db.sources_about(subject_id, since=since, limit=NEW_DOCUMENTS)
+    if since is None:
+        heading = "At least one feature has no value yet. The latest documents about the subject, newest first:"
+    else:
+        heading = (f"Documents about the subject published since these features were last read ({since}), "
+                   "newest first:")
+    if not page.records:
+        return ("No document about the subject is visible." if since is None else
+                f"No document about the subject has been published since these features were last read ({since}).")
+    listed = "\n".join(f"- {r.attributes.get('published', 'undated')}: {' '.join(r.text.split())[:160]} "
+                       f"(Source {r.id})" for r in page.records)
+    command = f"stated sources {subject_id}" + ("" if since is None else f" --since {since}")
+    more = f"\nThere are more; `{command}` lists them." if page.has_more else ""
+    return f"{heading}\n{listed}{more}\nRead each of them before you write or confirm a value."
+
+
 def _session(db_path: Path, definitions, subject_id: str, subject: str, day: str, harness, author: str,
              minutes: float) -> SessionResult:
     """One fresh session at the date's cutoff for every feature due then, tried again after a usage limit;
     done when each has a value or a check for the subject on the date afterwards."""
     env = os.environ | {"STATED_DB": str(db_path), "STATED_AS_OF": day, "STATED_FETCH": "0",
                         "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}"}
+    documents = _new_documents(db_path, definitions, subject_id, day)
+    prompt = _prompt(definitions, subject_id, subject, day, author, documents)
     while True:
         try:
             with tempfile.TemporaryDirectory() as folder:
-                reply = harness.run(_prompt(definitions, subject_id, subject, day, author), cwd=folder, env=env,
+                reply = harness.run(prompt, cwd=folder, env=env,
                                     writable=(db_path.parent,), timeout=minutes * 60)
             detail = reply.strip()
             break
@@ -222,11 +255,12 @@ def _session(db_path: Path, definitions, subject_id: str, subject: str, day: str
     return SessionResult(subject_id, subject, day, tuple(d.key for d in definitions), not undone, detail[:2000], True)
 
 
-def _prompt(definitions, subject_id: str, subject: str, day: str, author: str) -> str:
+def _prompt(definitions, subject_id: str, subject: str, day: str, author: str, documents: str) -> str:
     listed = "\n".join(f"- {d.key} (definition {d.id})" for d in definitions)
     return (f"Use the stated-state skill for each feature below, one at a time. This session is at the cutoff "
             f"{day}: every `stated` command reads and writes as of that date. `stated feature ID` shows a "
             f"feature's instructions.\n\nSubject: {subject} (Entity {subject_id}).\nFeatures:\n{listed}\n\n"
+            f"{documents}\n\n"
             f"For each feature, write its value for this subject as of {day}, or, if its latest value still holds, "
             f"confirm it. Use author_id \"{author}\". Finish with one line per feature: its key, then the value's "
             f"ID and value, or the confirmed value's ID.")

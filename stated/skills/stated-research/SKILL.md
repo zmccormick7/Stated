@@ -33,6 +33,7 @@ Find a few entry points, then walk the graph from them. Much of what matters is 
 
 **4. Focus on the records that matter.**
 - `connections ID` shows every link of one record, in both directions, with each relationship's explanation and, under `other`, a preview of the record at the other end.
+- `sources ID` lists the documents about one record, newest publication first; `--since DATE` keeps those published after a date. Use it to see what is new about a company, where a search might miss the latest document.
 - `get ID` shows a record's full contents and citations; fetch only the records whose details you need. Add `--full` to `search`, `list` or `expand` for complete records.
 - Links keep their stored direction: incoming `depends_on` links reveal Findings and model Variables that rest on a record.
 - Inspect each explanation and the connected record before treating it as useful context.
