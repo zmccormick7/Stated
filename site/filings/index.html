@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="SEC filings as clean Markdown: annual and quarterly reports, proxy statements and 8-Ks for the Russell 1000 since 2016, each with the time the SEC accepted it. Free to use.">
+<title>SEC filings as Markdown · Stated</title>
+<link rel="icon" href="../favicon.ico" sizes="32x32">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+html, body { margin: 0; }
+/* The landing page's tokens and manner: one sans at regular weight, mono only for code and values, colour nearly
+   absent. This page is reference, so it is a single reading column under a short inset panel. */
+:root {
+  --bg: #FFFFFF; --fg: #0A0A0C; --muted: #66676D; --faint: #9A9BA1; --rule: #E9EAEE; --band: #F4F4F6;
+  --win: #FFFFFF; --win-rule: #E6E7EB; --win-bar: #FAFAFB; --hl: #ECE5FF; --accent: #6D3DF2;
+  --media: #F2F3F6; --media-ink: #0A0A0C; --media-muted: #50535B;
+  --nav-bg: rgba(255, 255, 255, 0.72); --nav-ink: #0A0A0C; --nav-rule: rgba(10, 10, 12, 0.07);
+  --btn-bg: #0A0A0C; --btn-ink: #FFFFFF; --btn-hover: #26282E;
+  --btn2-bg: rgba(255, 255, 255, 0.75); --btn2-ink: #0A0A0C; --btn2-rule: rgba(10, 10, 12, 0.1); --btn2-hover: #FFFFFF;
+  --sans: "Geist", system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0A0A0C; --fg: #F2F2F4; --muted: #9C9DA4; --faint: #6E6F76; --rule: #1E1F24; --band: #111216;
+    --win: #17181D; --win-rule: #26272E; --win-bar: #1B1C22; --hl: rgba(160, 130, 255, 0.2); --accent: #A98BFF;
+    --media: #0B0F16; --media-ink: #F5F7FA; --media-muted: rgba(245, 247, 250, 0.78);
+    --nav-bg: rgba(255, 255, 255, 0.07); --nav-ink: #F5F7FA; --nav-rule: rgba(255, 255, 255, 0.1);
+    --btn-bg: #FFFFFF; --btn-ink: #0A0A0C; --btn-hover: #E9ECF2;
+    --btn2-bg: rgba(255, 255, 255, 0.1); --btn2-ink: #F5F7FA; --btn2-rule: rgba(255, 255, 255, 0.14); --btn2-hover: rgba(255, 255, 255, 0.16);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0A0A0C; --fg: #F2F2F4; --muted: #9C9DA4; --faint: #6E6F76; --rule: #1E1F24; --band: #111216;
+  --win: #17181D; --win-rule: #26272E; --win-bar: #1B1C22; --hl: rgba(160, 130, 255, 0.2); --accent: #A98BFF;
+  --media: #0B0F16; --media-ink: #F5F7FA; --media-muted: rgba(245, 247, 250, 0.78);
+  --nav-bg: rgba(255, 255, 255, 0.07); --nav-ink: #F5F7FA; --nav-rule: rgba(255, 255, 255, 0.1);
+  --btn-bg: #FFFFFF; --btn-ink: #0A0A0C; --btn-hover: #E9ECF2;
+  --btn2-bg: rgba(255, 255, 255, 0.1); --btn2-ink: #F5F7FA; --btn2-rule: rgba(255, 255, 255, 0.14); --btn2-hover: rgba(255, 255, 255, 0.16);
+  color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 16px; line-height: 1.6;
+  padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 0; -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+
+/* ---------- Top panel ---------- */
+.hero {
+  position: relative; border-radius: 24px; background: var(--media); color: var(--media-ink);
+  display: grid; justify-items: center; text-align: center; padding: 132px 20px 72px;
+}
+.nav {
+  position: absolute; top: 14px; left: 14px; right: 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  height: 56px; padding: 0 8px 0 18px; border-radius: 999px;
+  background: var(--nav-bg); color: var(--nav-ink); box-shadow: inset 0 0 0 1px var(--nav-rule); text-align: left;
+}
+.brand { display: inline-flex; align-items: center; text-decoration: none; }
+.logo {
+  display: block; height: 22px; aspect-ratio: 525 / 120; background-color: currentColor;
+  -webkit-mask: url("../logo.svg") center / contain no-repeat; mask: url("../logo.svg") center / contain no-repeat;
+}
+.nav-mid { display: flex; gap: 32px; font-size: 0.875rem; }
+.nav-mid a, .nav-end a.plain { text-decoration: none; opacity: 0.8; }
+.nav-mid a:hover, .nav-end a.plain:hover, .nav-mid a[aria-current] { opacity: 1; }
+.nav-end { display: flex; align-items: center; gap: 20px; font-size: 0.875rem; }
+.pill { text-decoration: none; background: var(--btn-bg); color: var(--btn-ink); padding: 9px 16px; border-radius: 999px; font-weight: 500; }
+@media (max-width: 760px) { .nav-mid, .nav-end a.plain { display: none; } }
+h1 { margin: 0; max-width: 16ch; font-weight: 400; font-size: clamp(2.4rem, 5vw, 4.25rem); line-height: 1.04; letter-spacing: -0.035em; text-wrap: balance; }
+.lede { margin: 22px 0 0; max-width: 40rem; text-wrap: balance; font-size: clamp(1.05rem, 1.35vw, 1.2rem); color: var(--media-muted); }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 32px; }
+.btn { display: inline-flex; align-items: center; text-decoration: none; font-size: 1rem; font-weight: 500; line-height: 1; padding: 15px 28px; border-radius: 14px; transition: background-color 160ms ease; }
+.btn-light { background: var(--btn-bg); color: var(--btn-ink); }
+.btn-light:hover { background: var(--btn-hover); }
+.btn-glass { background: var(--btn2-bg); color: var(--btn2-ink); box-shadow: inset 0 0 0 1px var(--btn2-rule); }
+.btn-glass:hover { background: var(--btn2-hover); }
+
+/* ---------- Before and after ---------- */
+.pair { max-width: 1160px; margin: 56px auto 0; display: grid; grid-template-columns: 5fr 6fr; gap: 16px; }
+@media (max-width: 900px) { .pair { grid-template-columns: 1fr; } }
+.win { min-width: 0; border-radius: 16px; background: var(--win); box-shadow: inset 0 0 0 1px var(--win-rule); overflow: hidden; }
+.win-bar { padding: 11px 18px; background: var(--win-bar); border-bottom: 1px solid var(--win-rule); font-size: 0.8125rem; color: var(--muted); }
+.win pre { margin: 0; padding: 18px; font-size: 0.75rem; white-space: pre-wrap; border-radius: 0; background: none; box-shadow: none; height: 300px; box-sizing: border-box; }
+.win pre.soup { white-space: pre-wrap; word-break: break-all; color: var(--faint); overflow: hidden; -webkit-mask: linear-gradient(#000 70%, transparent); mask: linear-gradient(#000 70%, transparent); }
+
+/* ---------- Reading column ---------- */
+main { max-width: 760px; margin: 0 auto; padding: 40px clamp(4px, 3vw, 24px) 96px; }
+h2 { margin: 72px 0 0; font-weight: 400; font-size: clamp(1.6rem, 2.4vw, 2.1rem); line-height: 1.15; letter-spacing: -0.03em; scroll-margin-top: 24px; }
+h3 { margin: 40px 0 0; font-weight: 500; font-size: 1.0625rem; letter-spacing: -0.01em; scroll-margin-top: 24px; }
+p, ul { margin: 14px 0 0; }
+p, li { color: var(--muted); }
+p strong, li strong { color: var(--fg); font-weight: 500; }
+ul { padding-left: 1.2em; }
+li + li { margin-top: 6px; }
+main a { text-decoration-color: var(--faint); text-underline-offset: 3px; }
+main a:hover { text-decoration-color: currentColor; }
+code { font-family: var(--mono); font-size: 0.875em; background: var(--band); padding: 0.15em 0.4em; border-radius: 6px; color: var(--fg); }
+pre {
+  margin: 16px 0 0; padding: 16px 18px; border-radius: 14px; background: var(--band); overflow-x: auto;
+  font-family: var(--mono); font-size: 0.8125rem; line-height: 1.65; color: var(--fg); tab-size: 2;
+}
+pre.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+pre .dim { color: var(--faint); }
+pre mark { background: var(--hl); color: inherit; border-radius: 4px; padding: 1px 0; }
+.ways { margin: 28px 0 0; padding: 0; list-style: none; display: grid; gap: 1px; background: var(--rule); border-radius: 16px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--rule); }
+.ways li { margin: 0; background: var(--bg); padding: 16px 20px; display: grid; grid-template-columns: 11rem 1fr; gap: 16px; align-items: baseline; }
+.ways a { color: var(--fg); font-weight: 500; text-decoration: none; }
+.ways a:hover { text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 600px) { .ways li { grid-template-columns: 1fr; gap: 2px; } }
+.table { margin: 20px 0 0; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
+th { text-align: left; font-weight: 500; color: var(--fg); padding: 10px 16px 10px 0; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+td { vertical-align: top; padding: 10px 16px 10px 0; border-bottom: 1px solid var(--rule); color: var(--muted); }
+td:first-child { white-space: nowrap; color: var(--fg); }
+td:last-child, th:last-child { padding-right: 0; }
+
+.footer { max-width: 1160px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px 32px; padding: 28px clamp(4px, 3vw, 40px) 36px; font-size: 0.875rem; color: var(--muted); border-top: 1px solid var(--rule); }
+.footer .brand { color: var(--fg); }
+.footer .logo { height: 18px; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.footer-links a { text-decoration: none; }
+.footer-links a:hover { color: var(--fg); }
+</style>
+</head>
+<body>
+<header class="hero">
+  <nav class="nav">
+    <a class="brand" href="../" aria-label="Stated"><span class="logo" role="img" aria-label="Stated"></span></a>
+    <div class="nav-mid">
+      <a href="../#how">How it works</a>
+      <a href="./" aria-current="page">Filings</a>
+      <a href="https://github.com/zmccormick7/Stated/blob/main/docs/features.md">Docs</a>
+    </div>
+    <div class="nav-end">
+      <a class="plain" href="https://github.com/zmccormick7/Stated">GitHub</a>
+      <a class="pill" href="https://github.com/zmccormick7/Stated#install">Get started</a>
+    </div>
+  </nav>
+  <h1>SEC filings as clean Markdown.</h1>
+  <p class="lede">Annual and quarterly reports, proxy statements and 8-Ks with their press releases, for every Russell 1000 company since 2016. Each one carries the time the SEC accepted it. Free to use, with no key and no sign-up.</p>
+  <div class="actions">
+    <a class="btn btn-light" href="#one">Fetch a filing</a>
+    <a class="btn btn-glass" href="#all">Download everything</a>
+  </div>
+</header>
+
+<div class="pair" aria-label="The same table as filed and as Markdown">
+  <div class="win">
+    <div class="win-bar">As filed · Apple 10-K, fiscal 2024</div>
+    <pre class="soup" aria-hidden="true">&lt;tr&gt;&lt;td colspan="3" style="padding:2px 1pt;text-align:left;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;iPhone&lt;/span&gt;&lt;/td&gt;&lt;td style="border-top:1pt solid #000000;padding:2px 0 2px 1pt;text-align:left;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;$&lt;/span&gt;&lt;/td&gt;&lt;td style="border-top:1pt solid #000000;padding:2px 0;text-align:right;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;201,183&amp;#160;&lt;/span&gt;&lt;/td&gt;&lt;td style="border-top:1pt solid #000000;padding:2px 1pt 2px 0;text-align:right;vertical-align:bottom"/&gt;&lt;td colspan="3" style="padding:0 1pt"/&gt;&lt;td colspan="2" style="border-top:1pt solid #000000;padding:2px 0 2px 1pt;text-align:right;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;&amp;#8212;&amp;#160;&lt;/span&gt;&lt;/td&gt;&lt;td style="border-top:1pt solid #000000;padding:2px 1pt 2px 0;text-align:right;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;%&lt;/span&gt;&lt;/td&gt;&lt;td colspan="3" style="padding:0 1pt"/&gt;&lt;td style="border-top:1pt solid #000000;padding:2px 0 2px 1pt;text-align:left;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;$&lt;/span&gt;&lt;/td&gt;</pre>
+  </div>
+  <div class="win">
+    <div class="win-bar">As Markdown</div>
+<pre>##### Products and Services Performance
+
+The following table shows net sales by category for 2024, 2023 and 2022 (dollars in millions):
+
+|  | 2024 | Change | 2023 | Change | 2022 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| iPhone | $201,183 | —% | $200,583 | (2)% | $205,489 |
+| Mac | 29,984 | 2% | 29,357 | (27)% | 40,177 |
+| iPad | 26,694 | (6)% | 28,300 | (3)% | 29,292 |
+| Wearables, Home and Accessories | 37,005 | (7)% | 39,845 | (3)% | 41,241 |
+| Services (1) | 96,169 | 13% | 85,200 | 9% | 78,129 |
+|   Total net sales | $391,035 | 2% | $383,285 | (3)% | $394,328 |</pre>
+  </div>
+</div>
+
+<main>
+  <p>Filings are written for people and marked up by typesetting software. A table arrives as hundreds of nested tags, with a dollar sign in one cell, the figure in the next and the closing bracket in a third. This set is every filing read through one parser built for them, so a model or a person gets the document itself: tables with their rows and columns, headings that nest the way the filing does, and nothing left out but page numbers and running headers.</p>
+
+  <ul class="ways">
+    <li><a href="#one">One filing</a><span>Fetch its Markdown by address. Any sec.gov address converts.</span></li>
+    <li><a href="#find">Find filings</a><span>A list of each company's documents, or one index of all of them.</span></li>
+    <li><a href="#all">Everything</a><span>One Parquet file per form and year.</span></li>
+  </ul>
+
+  <h2 id="one">One filing</h2>
+  <p>A document's address is the SEC's own path for it, under our host, with <code>.md</code> added.</p>
+<pre class="wrap"><span class="dim">https://www.sec.gov/Archives/</span>edgar/data/320193/000032019324000123/aapl-20240928.htm
+<span class="dim">https://pub-79e533e087c746138a5bdc42f35ef4ae.r2.dev/</span>edgar/data/320193/000032019324000123/aapl-20240928.htm<mark>.md</mark></pre>
+<pre class="wrap">curl https://pub-79e533e087c746138a5bdc42f35ef4ae.r2.dev/edgar/data/320193/000032019324000123/aapl-20240928.htm.md</pre>
+  <p>The reply is plain Markdown under a short header that says what the document is:</p>
+<pre>---
+company: "Apple Inc."
+ticker: "AAPL"
+cik: "0000320193"
+form: "10-K"
+document: "10-K"
+accession: "0000320193-24-000123"
+filed: "2024-11-01"
+accepted: "2024-11-01T10:01:36.000Z"
+source: "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm"
+parser: "0.3.3"
+---</pre>
+  <p>An address we do not hold answers 404. That means the filing is outside what is <a href="#covered">covered</a>, or newer than the set.</p>
+
+  <h2 id="find">Find filings</h2>
+  <h3>By company</h3>
+  <p><code>companies.json</code> lists every company with its SEC number (CIK), ticker and name. <code>companies/&lt;CIK&gt;.json</code> lists one company's documents, oldest first, each with its form, the time it was accepted and its path.</p>
+<pre class="wrap">curl https://pub-79e533e087c746138a5bdc42f35ef4ae.r2.dev/companies/0000320193.json</pre>
+<pre>{
+ "cik": "0000320193",
+ "ticker": "AAPL",
+ "company": "Apple Inc.",
+ "documents": [
+  {
+   "form": "10-K",
+   "document": "10-K",
+   "accession": "0000320193-24-000123",
+   "filed": "2024-11-01",
+   "accepted": "2024-11-01T10:01:36.000Z",
+   "path": "edgar/data/320193/000032019324000123/aapl-20240928.htm.md",
+   "source": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm"
+  }
+ ]
+}</pre>
+  <h3>Across companies</h3>
+  <p><code>index.parquet</code> has a row for every document and no text, so it can be queried where it sits. This asks what Apple had filed by a moment in time:</p>
+<pre>-- DuckDB
+SELECT form, document, accepted, source
+FROM 'https://pub-79e533e087c746138a5bdc42f35ef4ae.r2.dev/index.parquet'
+WHERE cik = '0000320193'
+  AND accepted &lt;= TIMESTAMPTZ '2020-03-31 20:00:00+00'
+ORDER BY accepted;</pre>
+
+  <h2 id="all">Everything</h2>
+  <p>The whole set is one Parquet file per form and year of filing, one row per document, ordered by the time the SEC accepted it. <code>release.json</code> names every file and the last filing date covered.</p>
+<pre>filings/10-K/2016.parquet … 2026.parquet
+filings/10-Q/2016.parquet …
+filings/8-K/2016.parquet …        <span class="dim">an 8-K's exhibits ride with it</span>
+filings/DEF-14A/2016.parquet …
+index.parquet
+release.json</pre>
+<pre class="wrap">curl -O https://pub-79e533e087c746138a5bdc42f35ef4ae.r2.dev/filings/10-K/2024.parquet</pre>
+<pre>import pandas as pd
+
+reports = pd.read_parquet("2024.parquet")
+row = reports.iloc[0]
+print(row["company"], row["accepted"], len(row["text"]))</pre>
+  <p>A client must name itself: the address refuses the default <code>User-Agent</code> of Python's <code>urllib</code>, which <code>pd.read_parquet</code> uses when given a URL. curl, requests, DuckDB and browsers are served as they are.</p>
+  <div class="table">
+    <table>
+      <thead><tr><th>Column</th><th>Type</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><code>id</code></td><td>string</td><td>Accession number and the document's file name. Unique.</td></tr>
+        <tr><td><code>accession</code></td><td>string</td><td>The filing's accession number. An 8-K and its exhibits share one.</td></tr>
+        <tr><td><code>cik</code></td><td>string</td><td>The filer's SEC number, ten digits. Match companies on this.</td></tr>
+        <tr><td><code>ticker</code></td><td>string</td><td>A ticker the company was in the index under. Tickers change and are reused, so treat it as a label.</td></tr>
+        <tr><td><code>company</code></td><td>string</td><td>The filer's name on the SEC's record.</td></tr>
+        <tr><td><code>form</code></td><td>string</td><td><code>10-K</code>, <code>10-Q</code>, <code>8-K</code> or <code>DEF 14A</code>.</td></tr>
+        <tr><td><code>document</code></td><td>string</td><td>The document's type within the filing: the form itself, or <code>EX-99.1</code>, <code>EX-99.2</code> and so on.</td></tr>
+        <tr><td><code>filed</code></td><td>date</td><td>The filing date the SEC gives.</td></tr>
+        <tr><td><code>accepted</code></td><td>timestamp, UTC</td><td>When the SEC accepted the filing.</td></tr>
+        <tr><td><code>source</code></td><td>string</td><td>The document's address on sec.gov.</td></tr>
+        <tr><td><code>parser</code></td><td>string</td><td>The version of the parser that wrote the text.</td></tr>
+        <tr><td><code>text</code></td><td>string</td><td>The document as Markdown. Not in <code>index.parquet</code>, which has <code>characters</code> and <code>file</code> in its place.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="time">Point in time</h2>
+  <p>Every document carries <code>accepted</code>, the moment the SEC took the filing and made it public, in UTC. Use it, not <code>filed</code>, to decide what was known when: a filing accepted after 5:30 pm in New York is given the next business day as its filing date, and a results press release accepted at 4:05 pm was public before the next day's open.</p>
+  <p>The companies are the index's members month by month, not today's list. A company that was acquired or dropped out years ago is here with everything it filed, so a backtest built on this set does not quietly leave out the companies that did not survive.</p>
+
+  <h2 id="covered">What is covered</h2>
+  <div class="table">
+    <table>
+      <thead><tr><th>Form</th><th>What it is</th><th>Documents</th></tr></thead>
+      <tbody>
+        <tr><td><code>10-K</code></td><td>Annual report</td><td>The report itself.</td></tr>
+        <tr><td><code>10-Q</code></td><td>Quarterly report</td><td>The report itself.</td></tr>
+        <tr><td><code>8-K</code></td><td>Current report</td><td>The report and each exhibit 99 filed with it: results press releases, investor letters and other announcements.</td></tr>
+        <tr><td><code>DEF 14A</code></td><td>Proxy statement</td><td>The statement itself.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Companies: every domestic SEC filer that has been a member of the Russell 1000 at any time since 2016, with all of its filings of these forms from 1 January 2016. The set runs one quarter behind and is brought forward regularly.</p>
+
+  <h2 id="made">How the text is made</h2>
+  <p>A parser written for SEC filings reads each document's HTML and decides everything from how the filer marked it up: tags, styles, where cells sit, and the SEC's own inline XBRL tags. It does not go by what the words say. It is deterministic, so the same filing always gives the same Markdown, and each document names the parser version that wrote it.</p>
+  <p><strong>No model rewrites anything.</strong> The words and figures are the filer's. For some tables whose markup gives no sign of which rows are headings, a small model was shown the first rows and asked how many are a title and how many are column headings. Its answer moves the heading line and nothing else.</p>
+  <p>Every document is checked, with no model involved:</p>
+  <ul>
+    <li><strong>Nothing lost.</strong> Each stretch of 60 or more letters and digits in the filing as filed must appear in the Markdown. Every document in the set passes.</li>
+    <li><strong>Figures under the right period.</strong> In filings with inline XBRL, each tagged figure names its period, and a table's figures must agree about time the way the table is laid out.</li>
+  </ul>
+
+  <h2 id="limits">Known limits</h2>
+  <ul>
+    <li>Some tables have no column headings. Most have none in the filing either (lists set in columns, contents pages, forms). Some have headings the markup does not set apart, and those stay as ordinary rows.</li>
+    <li>Images and charts are left out without a marker. Exhibits filed as scans or PDFs are not included.</li>
+    <li>Footnote markers are kept as text and are not linked to their footnotes.</li>
+    <li>Amended filings (10-K/A, 10-Q/A, 8-K/A) and exhibits other than exhibit 99 are not included.</li>
+    <li>Companies that file only foreign forms (20-F, 40-F, 6-K) are not covered.</li>
+  </ul>
+
+  <h2 id="licence">Licence</h2>
+  <p>The filings are public documents from the SEC's EDGAR system, and every document names its address there. The conversion and the compiled set are released under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>: use them for anything, with credit to Stated.</p>
+  <p>Not affiliated with or endorsed by the U.S. Securities and Exchange Commission or FTSE Russell. Russell 1000 is a trademark of its owner and is used here only to say which companies are covered.</p>
+</main>
+
+<footer class="footer">
+  <a class="brand" href="../" aria-label="Stated"><span class="logo" role="img" aria-label="Stated"></span></a>
+  <nav class="footer-links" aria-label="Footer">
+    <a href="../#how">How it works</a>
+    <a href="./">Filings</a>
+    <a href="https://github.com/zmccormick7/Stated/blob/main/docs/features.md">Docs</a>
+    <a href="https://github.com/zmccormick7/Stated">GitHub</a>
+  </nav>
+  <span>Filings data · CC BY 4.0</span>
+</footer>
+</body>
+</html>
