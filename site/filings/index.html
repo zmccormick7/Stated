@@ -88,7 +88,17 @@ h1 { margin: 0; max-width: 16ch; font-weight: 400; font-size: clamp(2.4rem, 5vw,
 .pair { max-width: 1160px; margin: 56px auto 0; display: grid; grid-template-columns: 5fr 6fr; gap: 16px; }
 @media (max-width: 900px) { .pair { grid-template-columns: 1fr; } }
 .win { min-width: 0; border-radius: 16px; background: var(--win); box-shadow: inset 0 0 0 1px var(--win-rule); overflow: hidden; }
-.win-bar { padding: 11px 18px; background: var(--win-bar); border-bottom: 1px solid var(--win-rule); font-size: 0.8125rem; color: var(--muted); }
+.win-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; box-sizing: border-box; padding: 0 18px; background: var(--win-bar); border-bottom: 1px solid var(--win-rule); font-size: 0.8125rem; color: var(--muted); }
+.win { position: relative; }
+.win > input { position: absolute; opacity: 0; pointer-events: none; }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--win-rule); }
+.seg label { padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; line-height: 1.5; cursor: pointer; }
+#filed-page:checked ~ .win-bar label[for="filed-page"], #filed-html:checked ~ .win-bar label[for="filed-html"] { background: var(--fg); color: var(--bg); }
+.win > input:focus-visible ~ .win-bar .seg { outline: 2px solid var(--accent); outline-offset: 2px; }
+.win .page { height: 300px; box-sizing: border-box; padding: 0 10px; background: #FFFFFF; display: none; place-items: center; }
+.win .page img { display: block; max-width: 100%; max-height: 100%; height: auto; width: auto; }
+#filed-page:checked ~ .page { display: grid; }
+#filed-html:not(:checked) ~ pre.soup { display: none; }
 .win pre { margin: 0; padding: 18px; font-size: 0.75rem; white-space: pre-wrap; border-radius: 0; background: none; box-shadow: none; height: 300px; box-sizing: border-box; }
 .win pre.soup { white-space: pre-wrap; word-break: break-all; color: var(--faint); overflow: hidden; -webkit-mask: linear-gradient(#000 70%, transparent); mask: linear-gradient(#000 70%, transparent); }
 
@@ -155,11 +165,14 @@ td:last-child, th:last-child { padding-right: 0; }
 
 <div class="pair" aria-label="The same table as filed and as Markdown">
   <div class="win">
-    <div class="win-bar">As filed · Apple 10-K, fiscal 2024</div>
+    <input type="radio" name="filed" id="filed-page" checked>
+    <input type="radio" name="filed" id="filed-html">
+    <div class="win-bar"><span>As filed · Apple 10-K, fiscal 2024</span><span class="seg"><label for="filed-page">Rendered</label><label for="filed-html">HTML</label></span></div>
+    <div class="page"><img src="apple-10k-net-sales.png" width="560" height="275" alt="The table as it appears in the filing: net sales by category for 2024, 2023 and 2022, with a row each for iPhone, Mac, iPad, Wearables, Home and Accessories, and Services, and a total."></div>
     <pre class="soup" aria-hidden="true">&lt;tr&gt;&lt;td colspan="3" style="padding:2px 1pt;text-align:left;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;iPhone&lt;/span&gt;&lt;/td&gt;&lt;td style="border-top:1pt solid #000000;padding:2px 0 2px 1pt;text-align:left;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;$&lt;/span&gt;&lt;/td&gt;&lt;td style="border-top:1pt solid #000000;padding:2px 0;text-align:right;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;201,183&amp;#160;&lt;/span&gt;&lt;/td&gt;&lt;td style="border-top:1pt solid #000000;padding:2px 1pt 2px 0;text-align:right;vertical-align:bottom"/&gt;&lt;td colspan="3" style="padding:0 1pt"/&gt;&lt;td colspan="2" style="border-top:1pt solid #000000;padding:2px 0 2px 1pt;text-align:right;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;&amp;#8212;&amp;#160;&lt;/span&gt;&lt;/td&gt;&lt;td style="border-top:1pt solid #000000;padding:2px 1pt 2px 0;text-align:right;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;%&lt;/span&gt;&lt;/td&gt;&lt;td colspan="3" style="padding:0 1pt"/&gt;&lt;td style="border-top:1pt solid #000000;padding:2px 0 2px 1pt;text-align:left;vertical-align:bottom"&gt;&lt;span style="color:#000000;font-family:'Helvetica',sans-serif;font-size:9pt;font-weight:400;line-height:100%"&gt;$&lt;/span&gt;&lt;/td&gt;</pre>
   </div>
   <div class="win">
-    <div class="win-bar">As Markdown</div>
+    <div class="win-bar"><span>As Markdown</span></div>
 <pre>##### Products and Services Performance
 
 The following table shows net sales by category for 2024, 2023 and 2022 (dollars in millions):
