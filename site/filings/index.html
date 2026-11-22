@@ -187,8 +187,8 @@ The following table shows net sales by category for 2024, 2023 and 2022 (dollars
   <h2 id="one">One filing</h2>
   <p>A document's address is the SEC's own path for it, under our host, with <code>.md</code> added.</p>
 <pre class="wrap"><span class="dim">https://www.sec.gov/Archives/</span>edgar/data/320193/000032019324000123/aapl-20240928.htm
-<span class="dim">https://pub-79e533e087c746138a5bdc42f35ef4ae.r2.dev/</span>edgar/data/320193/000032019324000123/aapl-20240928.htm<mark>.md</mark></pre>
-<pre class="wrap">curl https://pub-79e533e087c746138a5bdc42f35ef4ae.r2.dev/edgar/data/320193/000032019324000123/aapl-20240928.htm.md</pre>
+<span class="dim">https://data.statedlabs.com/</span>edgar/data/320193/000032019324000123/aapl-20240928.htm<mark>.md</mark></pre>
+<pre class="wrap">curl https://data.statedlabs.com/edgar/data/320193/000032019324000123/aapl-20240928.htm.md</pre>
   <p>The reply is plain Markdown under a short header that says what the document is:</p>
 <pre>---
 company: "Apple Inc."
@@ -207,7 +207,7 @@ parser: "0.3.3"
   <h2 id="find">Find filings</h2>
   <h3>By company</h3>
   <p><code>companies.json</code> lists every company with its SEC number (CIK), ticker and name. <code>companies/&lt;CIK&gt;.json</code> lists one company's documents, oldest first, each with its form, the time it was accepted and its path.</p>
-<pre class="wrap">curl https://pub-79e533e087c746138a5bdc42f35ef4ae.r2.dev/companies/0000320193.json</pre>
+<pre class="wrap">curl https://data.statedlabs.com/companies/0000320193.json</pre>
 <pre>{
  "cik": "0000320193",
  "ticker": "AAPL",
@@ -228,7 +228,7 @@ parser: "0.3.3"
   <p><code>index.parquet</code> has a row for every document and no text, so it can be queried where it sits. This asks what Apple had filed by a moment in time:</p>
 <pre>-- DuckDB
 SELECT form, document, accepted, source
-FROM 'https://pub-79e533e087c746138a5bdc42f35ef4ae.r2.dev/index.parquet'
+FROM 'https://data.statedlabs.com/index.parquet'
 WHERE cik = '0000320193'
   AND accepted &lt;= TIMESTAMPTZ '2020-03-31 20:00:00+00'
 ORDER BY accepted;</pre>
@@ -241,7 +241,7 @@ filings/8-K/2016.parquet …        <span class="dim">an 8-K's exhibits ride wit
 filings/DEF-14A/2016.parquet …
 index.parquet
 release.json</pre>
-<pre class="wrap">curl -O https://pub-79e533e087c746138a5bdc42f35ef4ae.r2.dev/filings/10-K/2024.parquet</pre>
+<pre class="wrap">curl -O https://data.statedlabs.com/filings/10-K/2024.parquet</pre>
 <pre>import pandas as pd
 
 reports = pd.read_parquet("2024.parquet")
