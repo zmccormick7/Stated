@@ -241,13 +241,11 @@ filings/8-K/2016.parquet …        <span class="dim">an 8-K's exhibits ride wit
 filings/DEF-14A/2016.parquet …
 index.parquet
 release.json</pre>
-<pre class="wrap">curl -O https://data.statedlabs.com/filings/10-K/2024.parquet</pre>
 <pre>import pandas as pd
 
-reports = pd.read_parquet("2024.parquet")
+reports = pd.read_parquet("https://data.statedlabs.com/filings/10-K/2024.parquet")
 row = reports.iloc[0]
 print(row["company"], row["accepted"], len(row["text"]))</pre>
-  <p>A client must name itself: the address refuses the default <code>User-Agent</code> of Python's <code>urllib</code>, which <code>pd.read_parquet</code> uses when given a URL. curl, requests, DuckDB and browsers are served as they are.</p>
   <div class="table">
     <table>
       <thead><tr><th>Column</th><th>Type</th><th></th></tr></thead>
