@@ -14,7 +14,8 @@
 <style>
 html, body { margin: 0; }
 /* The landing page's tokens and manner: one sans at regular weight, mono only for code and values, colour nearly
-   absent. This page is reference, so it is a single reading column under a short inset panel. */
+   absent. This page is reference: a plain header with the command that fetches one filing, the same table before
+   and after, then a single reading column. */
 :root {
   --bg: #FFFFFF; --fg: #0A0A0C; --muted: #66676D; --faint: #9A9BA1; --rule: #E9EAEE; --band: #F4F4F6;
   --win: #FFFFFF; --win-rule: #E6E7EB; --win-bar: #FAFAFB; --hl: #ECE5FF; --accent: #6D3DF2;
@@ -53,16 +54,12 @@ body {
 a { color: inherit; }
 a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
 
-/* ---------- Top panel ---------- */
-.hero {
-  position: relative; border-radius: 24px; background: var(--media); color: var(--media-ink);
-  display: grid; justify-items: center; text-align: center; padding: 132px 20px 72px;
-}
+/* ---------- Top: the nav, what this is, and the command that fetches one filing ---------- */
+.top { max-width: 1160px; margin: 0 auto; }
 .nav {
-  position: absolute; top: 14px; left: 14px; right: 14px;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   height: 56px; padding: 0 8px 0 18px; border-radius: 999px;
-  background: var(--nav-bg); color: var(--nav-ink); box-shadow: inset 0 0 0 1px var(--nav-rule); text-align: left;
+  background: var(--band); color: var(--fg); box-shadow: inset 0 0 0 1px var(--rule);
 }
 .brand { display: inline-flex; align-items: center; text-decoration: none; }
 .logo {
@@ -75,17 +72,27 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-
 .nav-end { display: flex; align-items: center; gap: 20px; font-size: 0.875rem; }
 .pill { text-decoration: none; background: var(--btn-bg); color: var(--btn-ink); padding: 9px 16px; border-radius: 999px; font-weight: 500; }
 @media (max-width: 760px) { .nav-mid, .nav-end a.plain { display: none; } }
-h1 { margin: 0; max-width: 16ch; font-weight: 400; font-size: clamp(2.4rem, 5vw, 4.25rem); line-height: 1.04; letter-spacing: -0.035em; text-wrap: balance; }
-.lede { margin: 22px 0 0; max-width: 40rem; text-wrap: balance; font-size: clamp(1.05rem, 1.35vw, 1.2rem); color: var(--media-muted); }
-.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 32px; }
-.btn { display: inline-flex; align-items: center; text-decoration: none; font-size: 1rem; font-weight: 500; line-height: 1; padding: 15px 28px; border-radius: 14px; transition: background-color 160ms ease; }
-.btn-light { background: var(--btn-bg); color: var(--btn-ink); }
-.btn-light:hover { background: var(--btn-hover); }
-.btn-glass { background: var(--btn2-bg); color: var(--btn2-ink); box-shadow: inset 0 0 0 1px var(--btn2-rule); }
-.btn-glass:hover { background: var(--btn2-hover); }
+.intro { padding: 56px 4px 0; }
+h1 { margin: 0; font-weight: 400; font-size: clamp(2.1rem, 3.6vw, 3.1rem); line-height: 1.06; letter-spacing: -0.035em; }
+.lede { margin: 18px 0 0; max-width: 46rem; font-size: clamp(1.02rem, 1.25vw, 1.125rem); color: var(--muted); }
+.cmd {
+  display: flex; align-items: center; gap: 12px; margin-top: 28px; max-width: 920px; box-sizing: border-box;
+  padding: 6px 6px 6px 18px; border-radius: 14px; background: var(--band); box-shadow: inset 0 0 0 1px var(--rule);
+}
+.cmd code { flex: 1; min-width: 0; padding: 8px 0; background: none; border-radius: 0; font-size: 0.8125rem; line-height: 1.5; overflow-wrap: anywhere; }
+.cmd .dim { color: var(--faint); }
+.cmd mark { background: var(--hl); color: inherit; border-radius: 4px; padding: 1px 0; }
+.cmd button {
+  flex: none; border: 0; cursor: pointer; font: inherit; font-size: 0.8125rem; font-weight: 500; line-height: 1;
+  padding: 10px 14px; border-radius: 10px; background: var(--btn-bg); color: var(--btn-ink); transition: background-color 160ms ease;
+}
+.cmd button:hover { background: var(--btn-hover); }
+.cmd button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cmd-note { margin: 12px 0 0; font-size: 0.875rem; color: var(--muted); }
+.cmd-note a { text-decoration-color: var(--faint); text-underline-offset: 3px; }
 
 /* ---------- Before and after ---------- */
-.pair { max-width: 1160px; margin: 56px auto 0; display: grid; grid-template-columns: 5fr 6fr; gap: 16px; }
+.pair { max-width: 1160px; margin: 40px auto 0; display: grid; grid-template-columns: 5fr 6fr; gap: 16px; }
 @media (max-width: 900px) { .pair { grid-template-columns: 1fr; } }
 .win { min-width: 0; border-radius: 16px; background: var(--win); box-shadow: inset 0 0 0 1px var(--win-rule); overflow: hidden; }
 .win-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; box-sizing: border-box; padding: 0 18px; background: var(--win-bar); border-bottom: 1px solid var(--win-rule); font-size: 0.8125rem; color: var(--muted); }
@@ -142,7 +149,7 @@ td:last-child, th:last-child { padding-right: 0; }
 </style>
 </head>
 <body>
-<header class="hero">
+<header class="top">
   <nav class="nav">
     <a class="brand" href="../" aria-label="Stated"><span class="logo" role="img" aria-label="Stated"></span></a>
     <div class="nav-mid">
@@ -155,11 +162,14 @@ td:last-child, th:last-child { padding-right: 0; }
       <a class="pill" href="https://github.com/zmccormick7/Stated#install">Get started</a>
     </div>
   </nav>
-  <h1>SEC filings as clean Markdown.</h1>
-  <p class="lede">Annual and quarterly reports, proxy statements and 8-Ks with their press releases, for every Russell 1000 company since 2016, with timestamps for point-in-time safety. Free to use, with no key and no sign-up.</p>
-  <div class="actions">
-    <a class="btn btn-light" href="#one">Fetch a filing</a>
-    <a class="btn btn-glass" href="#all">Download everything</a>
+  <div class="intro">
+    <h1>SEC filings as clean Markdown.</h1>
+    <p class="lede">Annual and quarterly reports, proxy statements and 8-Ks with their press releases, for every Russell 1000 company since 2016, with timestamps for point-in-time safety. Free to use, with no key and no sign-up.</p>
+    <div class="cmd">
+      <code><span class="dim">curl</span> https://data.statedlabs.com/edgar/data/320193/000032019324000123/aapl-20240928.htm<mark>.md</mark></code>
+      <button type="button" data-copy="curl https://data.statedlabs.com/edgar/data/320193/000032019324000123/aapl-20240928.htm.md" hidden>Copy</button>
+    </div>
+    <p class="cmd-note">That is Apple's 2024 annual report. Every filing in the set is at its sec.gov path with <code>.md</code> added: <a href="#one">how addresses work</a>, or <a href="#all">download everything</a>.</p>
   </div>
 </header>
 
@@ -331,5 +341,17 @@ print(row["company"], row["accepted"], len(row["text"]))</pre>
   </nav>
   <span>Filings data · CC BY 4.0</span>
 </footer>
+<script>
+// The one script on the page: the copy button beside the command. Without it the button stays hidden.
+if (navigator.clipboard) document.querySelectorAll("[data-copy]").forEach(function (button) {
+  button.hidden = false;
+  button.addEventListener("click", function () {
+    navigator.clipboard.writeText(button.dataset.copy).then(function () {
+      button.textContent = "Copied";
+      setTimeout(function () { button.textContent = "Copy"; }, 1500);
+    });
+  });
+});
+</script>
 </body>
 </html>
