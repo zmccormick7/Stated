@@ -284,7 +284,7 @@ print(row["company"], row["accepted"], len(row["text"]))</pre>
   </div>
   <p>Companies: every domestic SEC filer that has been a member of the Russell 1000 at any time since 2016, with all of its filings of these forms from 1 January 2016. The set runs one quarter behind and is brought forward regularly.</p>
 
-  <h2 id="made">How the text is made</h2>
+  <h2 id="parsed">How the text is parsed</h2>
   <p>A parser written for SEC filings reads each document's HTML and decides everything from how the filer marked it up: tags, styles, where cells sit, and the SEC's own inline XBRL tags. It does not go by what the words say. It is deterministic, so the same filing always gives the same Markdown, and each document names the parser version that wrote it.</p>
   <p><strong>No model rewrites anything.</strong> The words and figures are the filer's. For some tables whose markup gives no sign of which rows are headings, a small model was shown the first rows and asked how many are a title and how many are column headings. Its answer moves the heading line and nothing else.</p>
   <p>Every document is checked, with no model involved:</p>
