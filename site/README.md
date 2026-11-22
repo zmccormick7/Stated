@@ -8,4 +8,6 @@ The icons sit beside it. `favicon.svg` and `favicon.ico` (16, 32 and 48 px) use 
 
 `describe-dont-predict.pdf` is the note "Describe, Don't Predict: LLM Agents as Point-in-Time State Builders" (Nov 4, 2026), linked from the backtests section.
 
+`robots.txt` lets every crawler and agent read the whole site, and `sitemap.xml` names its two pages. The file is there so a fetcher that asks for it first gets a plain yes; without it the host answers that request with an error now and then, which a careful fetcher takes as a no.
+
 The companies, filings and values in the page's examples are illustrative.
