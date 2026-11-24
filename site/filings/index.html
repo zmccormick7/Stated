@@ -296,7 +296,7 @@ print(row["company"], row["accepted"], len(row["text"]))</pre>
       </tbody>
     </table>
   </div>
-  <p>Companies: every domestic SEC filer that has been a member of the Russell 1000 at any time since 2016, with all of its filings of these forms from 1 January 2016. The set runs one quarter behind and is brought forward regularly.</p>
+  <p>Companies: every domestic SEC filer that has been a member of the Russell 1000 at any time since 2016, with all of its filings of these forms from 1 January 2016. New filings are added every weekday, within hours of the day's last filing.</p>
 
   <h2 id="parsed">How the text is parsed</h2>
   <p>We wrote a custom parser specifically for SEC filings. It reads each document's HTML and decides everything from how the filer marked it up: tags, styles, where cells sit, and the SEC's own inline XBRL tags. It does not go by what the words say. It is deterministic, so the same filing always gives the same Markdown, and each document names the parser version that wrote it.</p>
