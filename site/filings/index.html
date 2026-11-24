@@ -206,7 +206,7 @@ The following table shows net sales by category for 2024, 2023 and 2022 (dollars
   <p>The reply is plain Markdown under a short header that says what the document is:</p>
 <pre>---
 company: "Apple Inc."
-ticker: "AAPL"
+tickers: ["AAPL"]
 cik: "0000320193"
 form: "10-K"
 document: "10-K"
@@ -214,17 +214,20 @@ accession: "0000320193-24-000123"
 filed: "2024-11-01"
 accepted: "2024-11-01T10:01:36.000Z"
 source: "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm"
-parser: "0.3.3"
+parser: "0.3.4"
 ---</pre>
+  <p>The company name and tickers are the filer's on the filing day, never ones it took later: a filing Facebook made in 2019 says Facebook, not Meta.</p>
   <p>An address we do not hold answers 404. That means the filing is outside what is <a href="#covered">covered</a>, or newer than the set.</p>
 
   <h2 id="find">Find filings</h2>
   <h3>By company</h3>
-  <p><code>companies.json</code> lists every company with its SEC number (CIK), ticker and name. <code>companies/&lt;CIK&gt;.json</code> lists one company's documents, oldest first, each with its form, the time it was accepted and its path.</p>
+  <p><code>companies.json</code> lists every company with its SEC number (CIK) and its name and tickers as of its latest filing. <code>companies/&lt;CIK&gt;.json</code> lists one company's documents, oldest first, each with its form, the time it was accepted and its path.</p>
 <pre class="wrap">curl https://data.statedlabs.com/companies/0000320193.json</pre>
 <pre>{
  "cik": "0000320193",
- "ticker": "AAPL",
+ "tickers": [
+  "AAPL"
+ ],
  "company": "Apple Inc.",
  "documents": [
   {
@@ -267,8 +270,8 @@ print(row["company"], row["accepted"], len(row["text"]))</pre>
         <tr><td><code>id</code></td><td>string</td><td>Accession number and the document's file name. Unique.</td></tr>
         <tr><td><code>accession</code></td><td>string</td><td>The filing's accession number. An 8-K and its exhibits share one.</td></tr>
         <tr><td><code>cik</code></td><td>string</td><td>The filer's SEC number, ten digits. Match companies on this.</td></tr>
-        <tr><td><code>ticker</code></td><td>string</td><td>A ticker the company was in the index under. Tickers change and are reused, so treat it as a label.</td></tr>
-        <tr><td><code>company</code></td><td>string</td><td>The filer's name on the SEC's record.</td></tr>
+        <tr><td><code>tickers</code></td><td>list of strings</td><td>The company's tickers on the filing day, in capitals without punctuation (<code>BRKB</code>): the ones the filing tags on its own cover or, where it tags none, the ones the index held the company under at the month end before. Empty when neither gives one. Tickers change and are reused, so treat them as labels.</td></tr>
+        <tr><td><code>company</code></td><td>string</td><td>The filer's name on the filing day, as the SEC's index lists the filing. A company that later changed its name keeps the old one on its earlier filings.</td></tr>
         <tr><td><code>form</code></td><td>string</td><td><code>10-K</code>, <code>10-Q</code>, <code>8-K</code> or <code>DEF 14A</code>.</td></tr>
         <tr><td><code>document</code></td><td>string</td><td>The document's type within the filing: the form itself, or <code>EX-99.1</code>, <code>EX-99.2</code> and so on.</td></tr>
         <tr><td><code>filed</code></td><td>date</td><td>The filing date the SEC gives.</td></tr>
@@ -314,6 +317,7 @@ print(row["company"], row["accepted"], len(row["text"]))</pre>
     <li>Footnote markers are kept as text and are not linked to their footnotes.</li>
     <li>Amended filings (10-K/A, 10-Q/A, 8-K/A) and exhibits other than exhibit 99 are not included.</li>
     <li>Companies that file only foreign forms (20-F, 40-F, 6-K) are not covered.</li>
+    <li><code>tickers</code> is empty where no ticker is known for the filing day: mostly filings made before filers began tagging their covers, around 2020, by companies that were not in the index that month. It lists only share classes the index has held.</li>
   </ul>
 
   <h2 id="licence">Licence</h2>
