@@ -17,16 +17,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # Two jobs, not one. GitHub can take a moment to list a bundle it has just stored, and a deploy step that asks
+  # for it in the same second is told there is none. A second job starts some seconds later.
+  bundle:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+  deploy:
+    needs: bundle
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
