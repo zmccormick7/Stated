@@ -9,6 +9,7 @@ import io
 from pathlib import Path
 import json
 import math
+from operator import mul
 import re
 import sqlite3
 import unicodedata
@@ -251,6 +252,12 @@ _RECORD_SELECT = """
     SELECT r.id, r.kind, r.text, r.attributes, r.author_id, r.created_by, r.updated_at, r.as_of, y.name AS layer
     FROM records r JOIN layers y ON y.layer_key = r.layer_key
 """
+
+# A passage as a SourceSegment is built from it: its locator and its document's context.
+_SEGMENT_COLUMNS = """r.id AS source_id, p.start_byte, p.end_byte,
+                      c.title, c.summary, c.author_id, c.updated_at, c.provenance"""
+_SEGMENT_JOINS = """JOIN records r ON r.record_key = p.source_key
+               LEFT JOIN document_context c ON c.source_key = p.source_key"""
 
 _LINK_SELECT = """
     SELECT l.id, f.id AS from_id, t.id AS to_id, l.relation,
@@ -701,34 +708,87 @@ class RecordStore:
         """Rank passage headers/bodies; return exact source text with separate context."""
         expression = self._search_expression(query)
         _check_limit(limit)
-        source_keys = None
-        if source_ids is not None:
-            if isinstance(source_ids, (str, bytes)) or not isinstance(source_ids, Iterable):
-                raise ValueError("source_ids must be an iterable of strings or None")
-            ids = tuple(source_ids)
-            if any(not isinstance(source_id, str) for source_id in ids):
-                raise ValueError("source_ids must contain only strings")
-            source_keys = json.dumps([self._source_key(source_id) for source_id in dict.fromkeys(ids)])
+        source_keys = None if source_ids is None else self._source_keys(source_ids)
         if not expression or source_keys == "[]":
             return ()
         rows = self._db.execute(
-            f"""SELECT r.id AS source_id, p.start_byte, p.end_byte,
-                      c.title, c.summary, c.author_id, c.updated_at, c.provenance
+            f"""SELECT {_SEGMENT_COLUMNS}
                FROM passages_fts JOIN passages p ON p.passage_key = passages_fts.rowid
-               JOIN records r ON r.record_key = p.source_key
-               LEFT JOIN document_context c ON c.source_key = p.source_key
+               {_SEGMENT_JOINS}
                WHERE passages_fts MATCH ? AND {self._seen('r')}
                  AND (? IS NULL OR p.source_key IN (SELECT value FROM json_each(?)))
                ORDER BY bm25(passages_fts, 0.5, 1.0), p.source_key, p.ordinal LIMIT ?""",
             (expression, source_keys, source_keys, limit),
         ).fetchall()
-        # Context was captured with the hits; fixed source ranges survive rechunking.
+        return self._segments(rows)
+
+    def _source_keys(self, source_ids: Iterable[str]) -> str:
+        """The keys of these Sources as a JSON list, each once, for a query to search within."""
+        if isinstance(source_ids, (str, bytes)) or not isinstance(source_ids, Iterable):
+            raise ValueError("source_ids must be an iterable of strings or None")
+        ids = tuple(source_ids)
+        if any(not isinstance(source_id, str) for source_id in ids):
+            raise ValueError("source_ids must contain only strings")
+        return json.dumps([self._source_key(source_id) for source_id in dict.fromkeys(ids)])
+
+    def _segments(self, rows: Iterable[sqlite3.Row]) -> tuple[SourceSegment, ...]:
+        # Context was captured with the rows; fixed source ranges survive rechunking.
         return tuple(SourceSegment(
             row["source_id"], row["start_byte"], row["end_byte"],
             self.read_source_text(row["source_id"], start_byte=row["start_byte"],
                                   end_byte=row["end_byte"]),
             self._decode_document_context(row["source_id"], row),
         ) for row in rows)
+
+    def count_passages(self, source_ids: Iterable[str]) -> tuple[int, int]:
+        """How many passages these Sources have that a read at the cutoff sees, and how many of those
+        have an embedding."""
+        return tuple(self._db.execute(
+            f"""SELECT count(*), count(v.passage_key) FROM passages p
+                JOIN records r ON r.record_key = p.source_key
+                LEFT JOIN passage_vectors v ON v.passage_key = p.passage_key
+                WHERE p.source_key IN (SELECT value FROM json_each(?)) AND {self._seen('r')}""",
+            (self._source_keys(source_ids),)).fetchone())
+
+    def every_passage(self, source_ids: Iterable[str]) -> tuple[SourceSegment, ...]:
+        """Every passage of these Sources, in document order: for a search small enough to read whole."""
+        return self._segments(self._db.execute(
+            f"""SELECT {_SEGMENT_COLUMNS} FROM passages p {_SEGMENT_JOINS}
+                WHERE p.source_key IN (SELECT value FROM json_each(?)) AND {self._seen('r')}
+                ORDER BY p.source_key, p.ordinal""", (self._source_keys(source_ids),)).fetchall())
+
+    def nearest_passages(self, vector: bytes, *, source_ids: Iterable[str], limit: int = 10) -> tuple[SourceSegment, ...]:
+        """The passages of these Sources whose embeddings are nearest `vector`, nearest first.
+
+        Every embedding in the Sources is compared exactly; no index is used, which suits one document
+        or one company's documents. `vector` must lie in this database's vector space.
+        """
+        _check_limit(limit)
+        space = self._db.execute("SELECT dimensions FROM vector_space").fetchone()
+        if type(vector) is not bytes or space is None or len(vector) != space["dimensions"]:
+            raise ValueError("vector must be bytes of the length of this database's vector space")
+        query = memoryview(vector).cast("b")
+        rows = self._db.execute(
+            f"""SELECT {_SEGMENT_COLUMNS}, v.vector FROM passages p
+                JOIN passage_vectors v ON v.passage_key = p.passage_key {_SEGMENT_JOINS}
+                WHERE p.source_key IN (SELECT value FROM json_each(?)) AND {self._seen('r')}
+                ORDER BY p.source_key, p.ordinal""", (self._source_keys(source_ids),)).fetchall()
+        scores = [sum(map(mul, query, memoryview(row["vector"]).cast("b"))) for row in rows]
+        nearest = sorted(range(len(rows)), key=lambda n: -scores[n])[:limit]  # Ties keep document order.
+        return self._segments(rows[n] for n in nearest)
+
+    def vector_model(self) -> str | None:
+        """The model whose embeddings this database holds, or None when it holds none."""
+        space = self._db.execute("SELECT model FROM vector_space").fetchone()
+        return space and space["model"]
+
+    def source_ids_about(self, record_id: str) -> tuple[str, ...]:
+        """Every Source linked `about` a record that a read at the cutoff sees: the documents a search
+        of one company covers."""
+        return tuple(row[0] for row in self._db.execute(
+            f"""SELECT r.id FROM records r JOIN links a ON a.from_key = r.record_key
+                WHERE r.kind = 'Source' AND a.relation = 'about' AND a.to_key = ? AND {self._seen('r')}
+                ORDER BY r.record_key""", (self._record_key(record_id),)))
 
     def _rse_intervening_passages(self, candidates: tuple[SourceSegment, ...],
                                 max_segment_passages: int) -> tuple[SourceSegment, ...]:

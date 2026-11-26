@@ -41,7 +41,8 @@ class RetrievalTests(unittest.TestCase):
 
         with patch.object(reranker, "_score", side_effect=inspect):
             result = retrieve(self.db, "needle", source_ids=[self.source.id], reranker=reranker,
-                              count_tokens=len)
+                              count_tokens=len, candidate_limit=3)  # Four passages: too many to read whole here.
+        self.assertEqual(result.stage_one, "keyword")
         excerpt, = result.excerpts
         self.assertEqual(excerpt.segment.text, "".join(self.parts[:3]))
         self.assertEqual(excerpt.token_count, len(excerpt.render()))
@@ -58,7 +59,7 @@ class RetrievalTests(unittest.TestCase):
             offset += len(part)
         self.db.set_passages(source.id, ranges)
         options = dict(source_ids=[source.id], reranker=FixtureReranker(), count_tokens=len,
-                       irrelevant_chunk_penalty=0.05)
+                       irrelevant_chunk_penalty=0.05, candidate_limit=8)
         with patch.object(self.db, "read_source_text", wraps=self.db.read_source_text) as read:
             result = retrieve(self.db, "needle", max_segment_passages=8, **options)
             self.assertEqual(read.call_count, 8)  # Two hits and six intervening passages; no exterior reads.

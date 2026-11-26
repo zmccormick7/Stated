@@ -34,7 +34,7 @@ class CLIRetrievalTests(unittest.TestCase):
                                                   summary="Facility schedule", author_id="agent")
             self.other = db.ingest_source(description="Other", document_text="Grid elsewhere.", author_id="agent")
             db.chunk_source(self.other.id)
-        self.enterContext(patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-only"}))
+        self.enterContext(patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-only", "OPENAI_API_KEY": ""}))
         for key in ("STATED_RERANKER_MODEL", "STATED_TOKEN_ENCODING"):
             os.environ.pop(key, None)
         # A deterministic tokenizer stub; production uses BPE, not byte estimates.
@@ -60,12 +60,14 @@ class CLIRetrievalTests(unittest.TestCase):
             documents = [payload["state"]]
         else:
             documents = [json.loads(document) for document in payload["documents"]]
-        self.assertTrue(all(document["passage"] in (self.parts[0], self.parts[2]) for document in documents))
+        # A search inside one short document hands the reranker every passage, not only those that say "Grid".
+        self.assertTrue(all(document["passage"] in self.parts for document in documents))
         self.assertTrue(all(document["document_context"] == self.context.header for document in documents))
+        score = lambda document: 0.98 if "Grid" in document["passage"] else 0.02
         if endpoint == "alpha/decisions":
-            return {"answers": {"relevance": {"type": "noul", "noul": 0.98}}}
-        self.assertEqual((endpoint, payload["query"], payload["top_n"]), ("v1/rerank", "Grid", 2))
-        return {"results": [{"index": i, "relevance_score": 0.98} for i in reversed(range(2))]}
+            return {"answers": {"relevance": {"type": "noul", "noul": score(documents[0])}}}
+        self.assertEqual((endpoint, payload["query"], payload["top_n"]), ("v1/rerank", "Grid", 3))
+        return {"results": [{"index": i, "relevance_score": score(documents[i])} for i in reversed(range(3))]}
 
     def test_question_runs_full_pipeline_by_default_and_preserves_citations(self):
         for model in (None, *OpenRouterReranker.MODELS):
@@ -102,7 +104,7 @@ class CLIRetrievalTests(unittest.TestCase):
             self.assertEqual(len(self.call("Grid")), 2)
             self.assertEqual(len(self.call("Grid", "--limit", "1")), 1)
             os.environ["STATED_TOKEN_ENCODING"] = "deployment_encoding"
-            self.call("Grid", "--source-id", self.source.id, "--source-id", self.other.id)
+            self.call("Grid")
         self.get_encoding.assert_called_with("deployment_encoding")
 
     def test_empty_results_and_invalid_inputs_make_no_provider_calls(self):
