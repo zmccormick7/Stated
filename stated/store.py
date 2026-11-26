@@ -18,7 +18,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 20
+_SCHEMA_VERSION = 21
 
 
 @dataclass(frozen=True)
@@ -55,6 +55,7 @@ class Layer:
     writable: bool
     content_sha256: str | None = None  # Set for published layers, over their canonical contents.
     exported_at: str | None = None
+    keyword_index: bool = True  # Whether its passages can be found by their words.
 
 
 @dataclass(frozen=True)
@@ -335,10 +336,10 @@ class RecordStore:
     def layers(self) -> tuple[Layer, ...]:
         """The workspace's own layer first, then attached layers in attachment order."""
         rows = self._db.execute(
-            """SELECT name, version, writable, content_sha256, exported_at FROM layers
+            """SELECT name, version, writable, content_sha256, exported_at, keyword_index FROM layers
                ORDER BY writable DESC, layer_key""").fetchall()
         return tuple(Layer(row["name"], row["version"], bool(row["writable"]), row["content_sha256"],
-                           row["exported_at"]) for row in rows)
+                           row["exported_at"], bool(row["keyword_index"])) for row in rows)
 
     def export_layer(self, path: str | Path, *, version: str) -> "LayerExport":
         """Write the workspace's own layer to a new database file as a sealed, published layer."""
@@ -749,6 +750,14 @@ class RecordStore:
                 LEFT JOIN passage_vectors v ON v.passage_key = p.passage_key
                 WHERE p.source_key IN (SELECT value FROM json_each(?)) AND {self._seen('r')}""",
             (self._source_keys(source_ids),)).fetchone())
+
+    def keyword_indexed(self, source_ids: Iterable[str]) -> bool:
+        """Whether every one of these Sources is in a layer with a keyword index, so that a search of them
+        by words covers them all."""
+        return not self._db.execute(
+            """SELECT 1 FROM records r JOIN layers y ON y.layer_key = r.layer_key
+               WHERE r.record_key IN (SELECT value FROM json_each(?)) AND y.keyword_index = 0 LIMIT 1""",
+            (self._source_keys(source_ids),)).fetchone()
 
     def every_passage(self, source_ids: Iterable[str]) -> tuple[SourceSegment, ...]:
         """Every passage of these Sources, in document order: for a search small enough to read whole."""

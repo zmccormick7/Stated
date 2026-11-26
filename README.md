@@ -71,7 +71,7 @@ with RecordStore("research.sqlite", as_of="2024-03-31") as db:
         print(record.as_of, record.text[:80])
 ```
 
-Document search and the model-written document summaries use OpenRouter; set `OPENROUTER_API_KEY` in the agent's environment to turn them on. With `OPENAI_API_KEY` set, `stated chunk` also embeds each passage (OpenAI `text-embedding-3-small`) and stores the vector. A document search inside named documents (`--source-id`) or one company's documents (`--about`) reads every passage when there are 50 or fewer, and otherwise takes the 50 nearest the question by those vectors. A search across everything, or of documents without vectors, still finds passages by their words.
+Document search and the model-written document summaries use OpenRouter; set `OPENROUTER_API_KEY` in the agent's environment to turn them on. With `OPENAI_API_KEY` set, `stated chunk` also embeds each passage (OpenAI `text-embedding-3-small`) and stores the vector. A document search inside named documents (`--source-id`) or one company's documents (`--about`) reads every passage when there are 50 or fewer, and otherwise takes the 50 nearest the question by those vectors. A search across everything, or of documents without vectors, still finds passages by their words. A published layer of very many documents may carry no keyword index (`stated layers` shows which): its documents are searched by scope and embedding only, and a search across everything does not cover them.
 
 ## How the graph is organised
 

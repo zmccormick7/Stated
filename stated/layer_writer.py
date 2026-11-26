@@ -22,9 +22,12 @@ from .store import RecordStore, _date, _refuse_refs
 
 
 class LayerWriter:
-    def __init__(self, path: str | Path, *, name: str, version: str, author_id: str, written: str | None = None):
+    def __init__(self, path: str | Path, *, name: str, version: str, author_id: str, written: str | None = None,
+                 keyword_index: bool = True):
         """Start a layer file at `path`, which must not exist. `written` is the time every row is stamped with
-        (default: now); giving it makes the same inputs produce the same file."""
+        (default: now); giving it makes the same inputs produce the same file. Without `keyword_index` the
+        layer's passages are not indexed by their words, which keeps a very large layer about a third
+        smaller; they are then found by embedding, so every document should be given its vectors."""
         if not isinstance(version, str) or not version.strip():
             raise ValueError("version must be a nonblank string")
         if not isinstance(author_id, str) or not author_id.strip():
@@ -40,6 +43,7 @@ class LayerWriter:
         self._db = self._store._db
         # The file is built once and discarded if the build fails, so each commit need not reach the disk.
         self._db.execute("PRAGMA synchronous = OFF")
+        self._db.execute("UPDATE layers SET keyword_index = ?", (int(bool(keyword_index)),))
         self._sources = self._withheld = 0
 
     def _insert(self, record_id: str, kind: str, text: str, attributes: dict | None, as_of: str) -> int:

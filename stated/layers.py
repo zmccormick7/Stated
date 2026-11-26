@@ -188,7 +188,7 @@ def attach_layer(store, path: str | Path) -> LayerAttachment:
         if published.execute("PRAGMA user_version").fetchone()[0] != _SCHEMA_VERSION:
             raise ValueError(f"{path} does not use schema format {_SCHEMA_VERSION}")
         manifests = published.execute(
-            "SELECT layer_key, name, version, writable, content_sha256 FROM layers").fetchall()
+            "SELECT layer_key, name, version, writable, content_sha256, keyword_index FROM layers").fetchall()
         if len(manifests) != 1 or manifests[0]["writable"] or not manifests[0]["content_sha256"]:
             raise ValueError(f"{path} is not a published layer file: it must hold exactly one sealed layer")
         manifest = manifests[0]
@@ -207,8 +207,8 @@ def attach_layer(store, path: str | Path) -> LayerAttachment:
             raise ValueError(f"a layer named {name!r} is this workspace's own layer")
         existing = db.execute("SELECT layer_key FROM layers WHERE name = ?", (name,)).fetchone()
         if existing is None:
-            key = db.execute("INSERT INTO layers (name, version, writable) VALUES (?, ?, 0)",
-                             (name, version)).lastrowid
+            key = db.execute("INSERT INTO layers (name, version, writable, keyword_index) VALUES (?, ?, 0, ?)",
+                             (name, version, manifest["keyword_index"])).lastrowid
         else:
             key = existing["layer_key"]
         ids = json.dumps([row["id"] for row in snapshot.records])
