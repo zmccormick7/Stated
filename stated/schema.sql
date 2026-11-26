@@ -214,6 +214,27 @@ CREATE TABLE passages (
     UNIQUE (source_key, ordinal)
 );
 
+-- One embedding a passage, for finding passages by meaning: the passage's own text embedded by one model and
+-- stored as one signed byte a dimension (embedding.py). It is derived from fixed source text alone, so it is
+-- never stale; it goes when its passage does.
+CREATE TABLE passage_vectors (
+    passage_key INTEGER PRIMARY KEY REFERENCES passages (passage_key),
+    vector BLOB NOT NULL CHECK (typeof(vector) = 'blob')
+);
+CREATE TRIGGER passage_vectors_follow BEFORE DELETE ON passages BEGIN
+    DELETE FROM passage_vectors WHERE passage_key = old.passage_key;
+END;
+-- Vectors compare only within one model's space, so a database holds one: that of the first vectors written.
+CREATE TABLE vector_space (
+    space INTEGER PRIMARY KEY CHECK (space = 1),
+    model TEXT NOT NULL CHECK (length(trim(model)) > 0),
+    dimensions INTEGER NOT NULL CHECK (dimensions > 0)
+);
+CREATE TRIGGER passage_vectors_space BEFORE INSERT ON passage_vectors
+WHEN length(new.vector) IS NOT (SELECT dimensions FROM vector_space) BEGIN
+    SELECT RAISE(ABORT, 'a passage vector must have the length of this database''s vector space');
+END;
+
 -- Index terms without storing another copy of the document text.
 CREATE VIEW passage_search_content AS
     SELECT p.passage_key, p.source_key,

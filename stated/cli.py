@@ -11,6 +11,7 @@ import sys
 from .context import OpenRouterContextWriter, write_document_context
 from .fetch import contact, fetch_page, pdf_text
 from .store import RecordStore
+from .embedding import OpenAIEmbedder, embed_source
 from .reranking import OpenRouterReranker
 from .retrieval import retrieve
 
@@ -229,7 +230,8 @@ def _parser():
     cited.add_argument("--start-byte", type=int, default=0)
     cited.add_argument("--end-byte", type=int)
     cited.add_argument("--limit", type=int, default=100)
-    chunk = command("chunk", "chunk_source", "Replace passages and return their count; enables document search.", "source_id")
+    chunk = command("chunk", "chunk_source", "Replace passages and return their count; enables document search. "
+                    "With OPENAI_API_KEY set, each passage is also embedded.", "source_id")
     chunk.add_argument("--max-chars", type=int, default=2000)
     documents = command("search-documents", "search_documents", "Find relevant source excerpts for a research question.", "query")
     documents.add_argument("--source-id", dest="source_ids", action="append")
@@ -311,6 +313,20 @@ def _add_document_context(db, source, author_id):
         write_document_context(db, source.id, writer=writer, author_id=author_id)
     except (ValueError, RuntimeError) as error:
         print(json.dumps({"warning": f"Source {source.id} was ingested without document context: {error}"}),
+              file=sys.stderr)
+
+
+def _embed_passages(db, source_id):
+    """Embed a newly chunked Source's passages when OpenAI is configured.
+
+    The passages are already committed, so a failed call only warns; the Source stays searchable by its words.
+    """
+    if not os.environ.get("OPENAI_API_KEY", "").strip():
+        return
+    try:
+        embed_source(db, source_id, embedder=OpenAIEmbedder(os.environ.get("STATED_EMBEDDING_MODEL", "text-embedding-3-small")))
+    except (ValueError, RuntimeError) as error:
+        print(json.dumps({"warning": f"Source {source_id} was chunked without passage embeddings: {error}"}),
               file=sys.stderr)
 
 
@@ -463,6 +479,8 @@ def main(argv=None):
                     result = _compact(db, method, result, options)
                 if method == "ingest_source":
                     _add_document_context(db, result, payload["author_id"])
+                if method == "chunk_source":
+                    _embed_passages(db, options["source_id"])
                 if method == "feature_table":
                     result = _write_table(result, out)
         print(json.dumps(_shape(method, result), default=asdict, allow_nan=False))

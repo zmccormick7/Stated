@@ -126,7 +126,7 @@ class FetchTests(unittest.TestCase):
             path = Path(directory) / "research.sqlite"
             with RecordStore(path):
                 pass
-            env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1]), "OPENROUTER_API_KEY": "",
+            env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1]), "OPENROUTER_API_KEY": "", "OPENAI_API_KEY": "",
                    "STATED_CONTACT": ""}
 
             def call(*arguments, attributes=None):

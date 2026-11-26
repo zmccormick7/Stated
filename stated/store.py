@@ -17,7 +17,7 @@ from uuid import uuid4
 from .chunking import split_ranges
 
 
-_SCHEMA_VERSION = 19
+_SCHEMA_VERSION = 20
 
 
 @dataclass(frozen=True)
@@ -938,6 +938,37 @@ class RecordStore:
                 ((source_key, ordinal, start, end) for ordinal, (start, end) in enumerate(ranges)),
             )
         return len(ranges)
+
+    def set_passage_vectors(self, source_id: str, vectors: Iterable[bytes], *, model: str) -> int:
+        """Store one embedding for each of the Source's passages, in passage order, replacing any it had.
+
+        `model` names the space the vectors lie in. A database holds vectors of one space, the first
+        written, since vectors of different models or lengths cannot be compared.
+        """
+        source_key = self._source_key(source_id)
+        vectors = tuple(vectors)
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError("model must be a nonblank string")
+        if any(type(vector) is not bytes or not vector for vector in vectors) or len({len(v) for v in vectors}) > 1:
+            raise ValueError("vectors must be nonempty bytes of one length")
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            keys = [row[0] for row in self._db.execute(
+                "SELECT passage_key FROM passages WHERE source_key = ? ORDER BY ordinal", (source_key,))]
+            if len(vectors) != len(keys):
+                raise ValueError(f"expected one vector for each of the Source's {len(keys)} passages, got {len(vectors)}")
+            space = self._db.execute("SELECT model, dimensions FROM vector_space").fetchone()
+            if vectors and space is None:
+                self._db.execute("INSERT INTO vector_space (space, model, dimensions) VALUES (1, ?, ?)",
+                                 (model, len(vectors[0])))
+            elif vectors and (space["model"], space["dimensions"]) != (model, len(vectors[0])):
+                raise ValueError(f"this database's passages are embedded with {space['model']} at "
+                                 f"{space['dimensions']} dimensions; vectors of {model} at {len(vectors[0])} "
+                                 "cannot be compared with them")
+            self._db.execute("DELETE FROM passage_vectors WHERE passage_key IN "
+                             "(SELECT passage_key FROM passages WHERE source_key = ?)", (source_key,))
+            self._db.executemany("INSERT INTO passage_vectors (passage_key, vector) VALUES (?, ?)", zip(keys, vectors))
+        return len(vectors)
 
     def read_passages(self, source_id: str, *, start_ordinal: int = 0,
                       limit: int = 100) -> tuple[Passage, ...]:
