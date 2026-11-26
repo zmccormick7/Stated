@@ -71,6 +71,42 @@ class LayerWriterTests(unittest.TestCase):
             finding = mine.create("Finding", text="Sales rose.", author_id="agent", citations=[{"source_id": REPORT, "quote": "Net sales rose."}])
             self.assertEqual(finding.attributes["citations"][0]["source_id"], REPORT)
 
+    def test_a_layer_can_go_without_a_keyword_index_and_is_then_found_by_scope_and_embedding(self):
+        from stated import Embedder
+        from stated.retrieval import candidates
+
+        class Fives(Embedder):
+            model = "test-model"
+
+            def _embed(self, texts):
+                return [[0.0125] * DIMENSIONS for _ in texts]
+
+        class Offline(Fives):
+            def _embed(self, texts):
+                raise RuntimeError("OpenAI HTTP 503")
+
+        self.write(keyword_index=False)
+        with RecordStore(self.path) as base:
+            self.assertEqual(base.search_documents("costs"), ())  # Not found by its words.
+            self.assertEqual(candidates(base, "costs", source_ids=[REPORT])[1], "every passage")  # Few enough to read whole.
+            scope = dict(source_ids=[REPORT], limit=1)
+            self.assertEqual(candidates(base, "costs", embedder=Fives(), **scope)[1], "embedding")
+            with self.assertRaisesRegex(ValueError, "not in the keyword index.*set OPENAI_API_KEY"):
+                candidates(base, "costs", **scope)
+            with self.assertRaisesRegex(ValueError, "1 passages have no embedding"):
+                candidates(base, "letter", embedder=Fives(), source_ids=[REPORT, LETTER], limit=2)
+            with self.assertRaisesRegex(RuntimeError, "OpenAI HTTP 503"):  # No words to fall back on.
+                candidates(base, "costs", embedder=Offline(), **scope)
+        with RecordStore(self.directory / "workspace.sqlite") as mine:
+            mine.attach_layer(self.path)
+            own = mine.ingest_source(description="My note", document_text="Costs fell at Acme.", author_id="agent")
+            mine.chunk_source(own.id)
+            self.assertEqual([(layer.name, layer.keyword_index) for layer in mine.layers()], [("workspace", True), ("base", False)])
+            self.assertEqual([s.source_id for s in mine.search_documents("costs")], [own.id])  # A search of everything covers the workspace's own.
+            self.assertEqual((mine.keyword_indexed([own.id]), mine.keyword_indexed([own.id, REPORT])), (True, False))
+            mine.attach_layer(self.path)  # Attaching again replaces passages the keyword index never held.
+            self.assertEqual(mine.count_passages([REPORT, LETTER])[0], 3)
+
     def test_what_cannot_be_written_is_refused_by_name(self):
         writer = LayerWriter(self.path, name="base", version="1", author_id="builder")
         writer.entity(ACME, "Acme Corp")

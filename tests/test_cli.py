@@ -222,7 +222,7 @@ class CLITests(unittest.TestCase):
         self.path = self.directory / "base.sqlite"
         self.call("init", "--layer", "base")
         self.assertEqual(self.call("layers"), {"layers": [{"name": "base", "version": "", "writable": True,
-                                                             "content_sha256": None, "exported_at": None}]})
+                                                             "content_sha256": None, "exported_at": None, "keyword_index": True}]})
         self.assertEqual(self.create("Entity", "PowerFrame")["layer"], "base")
         self.assertEqual(self.call("init", "--layer", "ignored"), {"database": str(self.path.resolve())})
         self.assertEqual(self.call("layers")["layers"][0]["name"], "base")

@@ -5,6 +5,9 @@ CREATE TABLE layers (
     name TEXT NOT NULL UNIQUE CHECK (length(trim(name)) > 0),
     version TEXT NOT NULL,  -- Empty for the workspace's own layer.
     writable INTEGER NOT NULL CHECK (writable IN (0, 1)),
+    -- Whether the layer's passages are in the keyword index. A layer of very many documents can go without
+    -- one: its passages are then found by their embeddings, inside named documents or one company's.
+    keyword_index INTEGER NOT NULL DEFAULT 1 CHECK (keyword_index IN (0, 1)),
     -- The manifest of a published layer: set on the sealed layer in an exported file and kept when
     -- that file is attached.
     content_sha256 TEXT CHECK (content_sha256 IS NULL OR length(content_sha256) = 64),
@@ -235,12 +238,16 @@ WHEN length(new.vector) IS NOT (SELECT dimensions FROM vector_space) BEGIN
     SELECT RAISE(ABORT, 'a passage vector must have the length of this database''s vector space');
 END;
 
--- Index terms without storing another copy of the document text.
+-- What the keyword index holds: each passage of a layer that has one. Terms are indexed without storing
+-- another copy of the document text. The triggers below index what this view gives, so a passage of a layer
+-- with no keyword index is never indexed.
 CREATE VIEW passage_search_content AS
     SELECT p.passage_key, p.source_key,
            coalesce(c.title || char(10) || c.summary, '') AS header,
            CAST(substr(s.text_utf8, p.start_byte + 1, p.end_byte - p.start_byte) AS TEXT) AS text
     FROM passages p JOIN source_content s ON s.source_key = p.source_key
+    JOIN records r ON r.record_key = p.source_key
+    JOIN layers y ON y.layer_key = r.layer_key AND y.keyword_index = 1
     LEFT JOIN document_context c ON c.source_key = p.source_key;
 
 CREATE VIRTUAL TABLE passages_fts USING fts5(header, text, content='', contentless_delete=1);

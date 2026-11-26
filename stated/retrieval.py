@@ -25,17 +25,28 @@ def candidates(db: RecordStore, query: str, *, source_ids: Iterable[str] | None 
     reads them all, and nothing is lost to a first cut. With more, it takes the nearest by embedding when
     every one of those passages has an embedding of the embedder's model. Otherwise, as for a search of
     everything, passages are found by the query's words. A failed embedding call falls back to words.
+
+    Words find only passages in the keyword index, which a layer of very many documents may go without. A
+    search inside such documents that cannot go by embedding is an error, not an empty answer. A search of
+    everything covers the layers that have a keyword index.
     """
     if source_ids is not None:
         source_ids = tuple(source_ids)
         passages, embedded = db.count_passages(source_ids)
         if passages <= limit:
             return db.every_passage(source_ids), "every passage"
+        by_words = db.keyword_indexed(source_ids)
         if embedder is not None and embedded == passages and db.vector_model() == embedder.model:
             try:
                 return db.nearest_passages(embedder.embed([query])[0], source_ids=source_ids, limit=limit), "embedding"
             except RuntimeError:
-                pass
+                if not by_words:
+                    raise
+        elif not by_words:
+            raise ValueError(
+                f"these documents have {passages} passages and are not in the keyword index, so they are searched "
+                f"by embedding: " + ("set OPENAI_API_KEY" if embedder is None else
+                                     f"{passages - embedded} passages have no embedding of {embedder.model}"))
     return db.search_documents(query, source_ids=source_ids, limit=limit), "keyword"
 
 
