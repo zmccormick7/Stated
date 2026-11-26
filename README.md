@@ -71,7 +71,7 @@ with RecordStore("research.sqlite", as_of="2024-03-31") as db:
         print(record.as_of, record.text[:80])
 ```
 
-Document search and the model-written document summaries use OpenRouter; set `OPENROUTER_API_KEY` in the agent's environment to turn them on.
+Document search and the model-written document summaries use OpenRouter; set `OPENROUTER_API_KEY` in the agent's environment to turn them on. With `OPENAI_API_KEY` set, `stated chunk` also embeds each passage (OpenAI `text-embedding-3-small`) and stores the vector. Nothing reads the vectors yet: document search still finds passages by their words.
 
 ## How the graph is organised
 

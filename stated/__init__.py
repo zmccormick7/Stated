@@ -2,11 +2,13 @@ from .store import Citation, CitationPage, Connections, Contribution, DocumentCo
 from .formulas import ModelCheck, VariableCheck, evaluate
 from .layers import LayerAttachment, LayerExport
 from .context import ContextWriter, OpenRouterContextWriter, write_document_context
+from .embedding import Embedder, OpenAIEmbedder, embed_source
 from .reranking import OpenRouterReranker, Reranker, ScoredSegment
 from .rse import ExtractedSegment, extract_segments
 from .retrieval import RetrievalResult, retrieve
 
 __all__ = ["Citation", "CitationPage", "Connections", "Contribution", "DocumentContext", "Expansion", "Layer", "Link", "Merge", "Passage", "Reached", "Record", "RecordPage", "RecordStore", "RelationUsage", "SourceSegment",
            "ModelCheck", "VariableCheck", "evaluate", "LayerAttachment", "LayerExport", "ContextWriter", "OpenRouterContextWriter", "write_document_context",
+           "Embedder", "OpenAIEmbedder", "embed_source",
            "OpenRouterReranker", "Reranker", "ScoredSegment", "ExtractedSegment", "extract_segments",
            "RetrievalResult", "retrieve"]

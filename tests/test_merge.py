@@ -70,7 +70,7 @@ class MergeTests(unittest.TestCase):
                 db.merge(self.keep, "missing", author_id="review")
 
     def test_the_command(self):
-        env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1]), "OPENROUTER_API_KEY": ""}
+        env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1]), "OPENROUTER_API_KEY": "", "OPENAI_API_KEY": ""}
         result = subprocess.run([sys.executable, "-m", "stated", "--db", str(self.db_path), "merge", self.keep[:8],
                                  self.dup[:8], "--input", "-"], input=json.dumps({"author_id": "review"}), text=True,
                                 capture_output=True, env=env)
