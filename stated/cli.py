@@ -187,7 +187,9 @@ def _parser():
     ui.add_argument("--port", type=int, default=8765)
     ui.add_argument("--harness", default="claude-code", choices=["claude-code", "codex"],
                     help="The coding agent to install the bundled skills for (default: claude-code).")
-    ui.add_argument("--base", metavar="FILE", help="A published base layer file to attach, or to update to.")
+    ui.add_argument("--base", metavar="FILE", help="A published base layer file to start from. On first run the base of every filing becomes "
+                                                "the research database itself and is moved into place; a small layer is "
+                                                "attached, or updated to.")
     ui.add_argument("--contact", metavar="TEXT", help="Your name and email, kept beside the database and sent only to "
                                                       "SEC.gov, which requires one to fetch filings.")
     ui.add_argument("--no-open", dest="open_browser", action="store_false", help="Do not open the page in a browser.")
