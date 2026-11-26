@@ -107,6 +107,35 @@ class LayerWriterTests(unittest.TestCase):
             mine.attach_layer(self.path)  # Attaching again replaces passages the keyword index never held.
             self.assertEqual(mine.count_passages([REPORT, LETTER])[0], 3)
 
+    def init(self, *arguments):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+        import json
+        from stated.cli import main
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = main(["--db", str(self.path), "init", *arguments])
+        return code, json.loads(out.getvalue() or err.getvalue())
+
+    def test_a_published_file_becomes_a_workspace_built_on_its_layer(self):
+        self.write(keyword_index=False)
+        self.assertEqual(self.init("--layer", "base")[0], 1)  # The published layer has that name.
+        self.assertEqual(self.init(), (0, {"database": str(self.path.resolve()), "built_on": [{"layer": "base", "version": "2026.11"}]}))
+        self.assertEqual(self.init(), (0, {"database": str(self.path.resolve())}))  # Already a workspace: left as it is.
+        with RecordStore(self.path) as mine:
+            self.assertEqual([(layer.name, layer.writable, layer.keyword_index) for layer in mine.layers()],
+                             [("workspace", True, True), ("base", False, False)])
+            finding = mine.create("Finding", text="Sales rose.", author_id="agent", citations=[{"source_id": REPORT, "quote": "Net sales rose."}])
+            self.assertEqual((finding.layer, mine.read(REPORT).layer), ("workspace", "base"))
+            note = mine.ingest_source(description="My note", document_text="Costs fell at Acme.", author_id="agent")
+            mine.chunk_source(note.id)
+            mine.create_link(note.id, ACME, "about", author_id="agent")
+            self.assertEqual([s.source_id for s in mine.search_documents("costs")], [note.id])  # The workspace's own documents are found by words.
+            self.assertEqual(set(mine.source_ids_about(ACME)), {REPORT, LETTER, note.id})
+            self.assertEqual(mine.count_passages([REPORT, LETTER]), (3, 2))  # The base's passages and vectors are where they were.
+            with self.assertRaisesRegex(sqlite3.IntegrityError, "read-only layer"):
+                mine.update(ACME, text="Acme Corporation", author_id="agent")
+
     def test_what_cannot_be_written_is_refused_by_name(self):
         writer = LayerWriter(self.path, name="base", version="1", author_id="builder")
         writer.entity(ACME, "Acme Corp")

@@ -341,6 +341,23 @@ class RecordStore:
         return tuple(Layer(row["name"], row["version"], bool(row["writable"]), row["content_sha256"],
                            row["exported_at"], bool(row["keyword_index"])) for row in rows)
 
+    def start_own_layer(self, name: str = "workspace") -> bool:
+        """Give a published layer file a writable layer of its own, so that the file becomes a workspace
+        built on the layer it holds: the way to start from a layer too large to attach. Returns whether one
+        was added; a database that already has its own layer is left as it is.
+        """
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("layer must be a nonblank string")
+        with self._db:
+            self._db.execute("BEGIN IMMEDIATE")
+            if self._db.execute("SELECT 1 FROM layers WHERE writable = 1").fetchone():
+                return False
+            if self._db.execute("SELECT 1 FROM layers WHERE name = ?", (name,)).fetchone():
+                raise ValueError(f"this file's published layer is named {name!r}; "
+                                 "give the workspace's own layer another name with --layer")
+            self._db.execute("INSERT INTO layers (name, version, writable) VALUES (?, '', 1)", (name,))
+        return True
+
     def export_layer(self, path: str | Path, *, version: str) -> "LayerExport":
         """Write the workspace's own layer to a new database file as a sealed, published layer."""
         from .layers import export_layer

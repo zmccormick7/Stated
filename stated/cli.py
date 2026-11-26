@@ -47,7 +47,8 @@ def _parser():
         return sub
 
     record = "text, author_id, optional attributes"
-    init = command("init", None, "Create or open a research database.")
+    init = command("init", None, "Create or open a research database. Run on a published layer file, it makes "
+                   "that file a workspace built on the layer.")
     init.add_argument("--layer", default="workspace",
                       help="Name of the workspace's own layer when creating the database (default: workspace).")
     command("layers", "layers", "List the workspace's own layer and any attached layers.")
@@ -465,7 +466,8 @@ def main(argv=None):
         if options.keys() & payload.keys():
             raise ValueError("JSON input must not repeat arguments supplied by the command")
         out = options.pop("out", None)
-        with RecordStore(path, layer=options.pop("layer", "workspace"), as_of=as_of) as db:
+        own = options.pop("layer", "workspace")
+        with RecordStore(path, layer=own, as_of=as_of) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
             for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id", "keep_id", "duplicate_id",
                          "entity_id", "about"):
@@ -479,6 +481,8 @@ def main(argv=None):
                 full = options.pop("full", True)
                 result = (getattr(db, method)(**options, **payload) if method
                           else {"database": str(path.resolve())})
+                if method is None and db.start_own_layer(own):  # init on a published layer file.
+                    result["built_on"] = [{"layer": layer.name, "version": layer.version} for layer in db.layers()[1:]]
                 if not full:
                     result = _compact(db, method, result, options)
                 if method == "ingest_source":
