@@ -213,15 +213,18 @@ document: "10-K"
 accession: "0000320193-24-000123"
 filed: "2024-11-01"
 accepted: "2024-11-01T10:01:36.000Z"
+period: "2024-09-28"
+fiscal_year: 2024
+fiscal_period: "FY"
 source: "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm"
 parser: "0.3.4"
 ---</pre>
-  <p>The company name and tickers are the filer's on the filing day, never ones it took later: a filing Facebook made in 2019 says Facebook, not Meta.</p>
+  <p>The company name and tickers are the filer's on the filing day, never ones it took later: a filing Facebook made in 2019 says Facebook, not Meta. An 8-K has <code>items</code> in place of the fiscal lines, the numbers of the items it reports under.</p>
   <p>An address we do not hold answers 404. That means the filing is outside what is <a href="#covered">covered</a>, or newer than the set.</p>
 
   <h2 id="find">Find filings</h2>
   <h3>By company</h3>
-  <p><code>companies.json</code> lists every company with its SEC number (CIK) and its name and tickers as of its latest filing. <code>companies/&lt;CIK&gt;.json</code> lists one company's documents, oldest first, each with its form, the time it was accepted and its path.</p>
+  <p><code>companies.json</code> lists every company with its SEC number (CIK) and its name and tickers as of its latest filing. <code>companies/&lt;CIK&gt;.json</code> lists one company's documents, oldest first, each with its form, the time it was accepted, what it reports on and its path. That is enough to pick out a company's second-quarter report of a year, or its results announcements (8-Ks with item <code>2.02</code>), without opening a document.</p>
 <pre class="wrap">curl https://data.statedlabs.com/companies/0000320193.json</pre>
 <pre>{
  "cik": "0000320193",
@@ -236,6 +239,9 @@ parser: "0.3.4"
    "accession": "0000320193-24-000123",
    "filed": "2024-11-01",
    "accepted": "2024-11-01T10:01:36.000Z",
+   "period": "2024-09-28",
+   "fiscal_year": 2024,
+   "fiscal_period": "FY",
    "path": "edgar/data/320193/000032019324000123/aapl-20240928.htm.md",
    "source": "https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm"
   }
@@ -276,12 +282,19 @@ print(row["company"], row["accepted"], len(row["text"]))</pre>
         <tr><td><code>document</code></td><td>string</td><td>The document's type within the filing: the form itself, or <code>EX-99.1</code>, <code>EX-99.2</code> and so on.</td></tr>
         <tr><td><code>filed</code></td><td>date</td><td>The filing date the SEC gives.</td></tr>
         <tr><td><code>accepted</code></td><td>timestamp, UTC</td><td>When the SEC accepted the filing.</td></tr>
+        <tr><td><code>period</code></td><td>date</td><td>The period the filing reports on, as the filer gave it to the SEC: the last day of the fiscal year or quarter for a 10-K or 10-Q, the day of the earliest event for an 8-K. Empty for a proxy statement.</td></tr>
+        <tr><td><code>fiscal_year</code></td><td>integer</td><td>For a 10-K or 10-Q, the fiscal year it reports on, as the filer tagged it. The numbering is the filer's own: a year ending in January 2025 is 2024 to some companies and 2025 to others.</td></tr>
+        <tr><td><code>fiscal_period</code></td><td>string</td><td>For a 10-K or 10-Q, the part of that year: <code>FY</code>, <code>Q1</code>, <code>Q2</code> or <code>Q3</code>.</td></tr>
+        <tr><td><code>items</code></td><td>list of strings</td><td>For an 8-K and its exhibits, the numbers of the items it reports under: <code>2.02</code> is results of operations, <code>5.02</code> a change of directors or officers. Empty for other forms.</td></tr>
+        <tr><td><code>other_ciks</code></td><td>list of strings</td><td>The other companies in this set the same filing was made for, as when a parent and its subsidiary report in one filing. The filing has one row, and is in each company's list.</td></tr>
         <tr><td><code>source</code></td><td>string</td><td>The document's address on sec.gov.</td></tr>
         <tr><td><code>parser</code></td><td>string</td><td>The version of the parser that wrote the text.</td></tr>
         <tr><td><code>text</code></td><td>string</td><td>The document as Markdown. Not in <code>index.parquet</code>, which has <code>characters</code> and <code>file</code> in its place.</td></tr>
       </tbody>
     </table>
   </div>
+
+  <p><strong>Right or empty.</strong> Filers supply the period and fiscal labels themselves and sometimes get them wrong: the filing date given as the period, a quarter tagged as the one before. Each is kept only when something else bears it out. A report's period must match the last day its own figures are tagged for, its quarter must be the number of quarters since the company's last year end, and its year must follow from the year on the company's last annual report. Otherwise the field is empty, as the fiscal year and period are for about one report in twenty. <code>period</code> and <code>form</code> still say which report it is.</p>
 
   <h2 id="time">Point in time</h2>
   <p>Every document carries <code>accepted</code>, the moment the SEC took the filing and made it public, in UTC. Use it, not <code>filed</code>, to decide what was known when: a filing accepted after 5:30 pm in New York is given the next business day as its filing date, and a results press release accepted at 4:05 pm was public before the next day's open.</p>
