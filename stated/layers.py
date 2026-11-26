@@ -52,6 +52,36 @@ class _Snapshot:
         return digest.hexdigest()
 
 
+def digest(db: sqlite3.Connection, key: int) -> str:
+    """A layer's content hash, as `_Snapshot.digest` gives it, read a row at a time: for a layer too large
+    to hold in memory."""
+    found = sha256()
+    withheld = {row[0] for row in db.execute(
+        """SELECT r.id FROM records r WHERE r.layer_key = ? AND (json_type(r.attributes, '$.redistributable') = 'false'
+           OR r.record_key IN (SELECT source_key FROM withheld_sources))""", (key,))}
+    for query, hidden in (
+            ("""SELECT id, kind, text, attributes, author_id, created_by, updated_at, as_of FROM records
+                WHERE layer_key = ? ORDER BY record_key""", False),
+            ("""SELECT l.id, f.id, t.id, l.relation, l.explanation, l.author_id, l.created_by, l.updated_at, l.as_of
+                FROM links l JOIN records f ON f.record_key = l.from_key JOIN records t ON t.record_key = l.to_key
+                WHERE l.layer_key = ? ORDER BY l.link_key""", False),
+            ("""SELECT r.id, p.ordinal, p.start_byte, p.end_byte FROM passages p
+                JOIN records r ON r.record_key = p.source_key WHERE r.layer_key = ? ORDER BY r.id, p.ordinal""", True),
+            ("""SELECT r.id, c.title, c.summary, c.author_id, c.updated_at, c.provenance FROM document_context c
+                JOIN records r ON r.record_key = c.source_key WHERE r.layer_key = ? ORDER BY r.id""", True)):
+        for row in db.execute(query, (key,)):
+            if not (hidden and row[0] in withheld):
+                found.update(json.dumps(list(row), ensure_ascii=False).encode("utf-8") + b"\n")
+    for row in db.execute(
+            """SELECT r.id, s.text_sha256, json_type(r.attributes, '$.redistributable') = 'false'
+               FROM source_content s JOIN records r ON r.record_key = s.source_key WHERE r.layer_key = ?
+               UNION ALL
+               SELECT r.id, w.text_sha256, 1 FROM withheld_sources w JOIN records r ON r.record_key = w.source_key
+               WHERE r.layer_key = ? ORDER BY 1""", (key, key)):
+        found.update(json.dumps([row[0], row[1], bool(row[2])]).encode("utf-8") + b"\n")
+    return found.hexdigest()
+
+
 def _snapshot(db: sqlite3.Connection, key: int) -> _Snapshot:
     """Read one layer's rows in a consistent order, with Source text withheld where marked."""
     db.execute("BEGIN")
