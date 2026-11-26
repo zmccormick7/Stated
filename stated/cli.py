@@ -235,6 +235,7 @@ def _parser():
     chunk.add_argument("--max-chars", type=int, default=2000)
     documents = command("search-documents", "search_documents", "Find relevant source excerpts for a research question.", "query")
     documents.add_argument("--source-id", dest="source_ids", action="append")
+    documents.add_argument("--about", metavar="ID", help="Search every Source about this record, such as a company")
     documents.add_argument("--limit", dest="max_segments", type=int, default=argparse.SUPPRESS,
                            help="Maximum excerpts to return (default: 5)")
     documents.add_argument("--max-tokens", dest="max_total_tokens", type=int, default=argparse.SUPPRESS,
@@ -337,7 +338,10 @@ def _search_documents(db, options):
         raise RuntimeError("Document search requires tiktoken; install with: python -m pip install 'tiktoken>=0.12,<1'") from None
     encoding = tiktoken.get_encoding(os.environ.get("STATED_TOKEN_ENCODING", "cl100k_base"))
     reranker = OpenRouterReranker(os.environ.get("STATED_RERANKER_MODEL", "voyageai/rerank-2.5"))
-    result = retrieve(db, reranker=reranker,
+    # Without an OpenAI key, a search too large to read whole finds passages by their words.
+    embedder = (OpenAIEmbedder(os.environ.get("STATED_EMBEDDING_MODEL", "text-embedding-3-small"))
+                if os.environ.get("OPENAI_API_KEY", "").strip() else None)
+    result = retrieve(db, reranker=reranker, embedder=embedder,
                       count_tokens=lambda text: len(encoding.encode(text, disallowed_special=())), **options)
     return [{**asdict(excerpt.segment), "token_count": excerpt.token_count} for excerpt in result.excerpts]
 
@@ -464,7 +468,7 @@ def main(argv=None):
         with RecordStore(path, layer=options.pop("layer", "workspace"), as_of=as_of) as db:
             # Positional IDs may be unique prefixes of 8+ characters, like the short IDs in reports.
             for name in ("record_id", "source_id", "from_id", "to_id", "link_id", "model_id", "keep_id", "duplicate_id",
-                         "entity_id"):
+                         "entity_id", "about"):
                 if options.get(name) is not None:
                     options[name] = db.resolve_id(options[name], link=name == "link_id")
             if "seed_ids" in options:
