@@ -630,6 +630,12 @@ class RecordStore:
         from .layers import apply_changes
         return apply_changes(self, path, follows=follows)
 
+    def pull_layer(self, address: str | None = None) -> "LayerPull":
+        """Bring an attached layer to the latest version its publisher lists at `address` (default: the base
+        layer's), downloading and applying each change file since the version held."""
+        from .pull import BASE, pull
+        return pull(self, address or BASE)
+
     def seen_from(self, record_ids: Iterable[str]) -> dict[str, str | None]:
         """The date a read at a cutoff first sees each record, by full ID: a Source's publication date, a
         disclosed Finding's latest Source date, an Entity's empty string (always seen), otherwise its stamp;
