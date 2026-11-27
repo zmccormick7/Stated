@@ -9,7 +9,8 @@ CREATE TABLE layers (
     -- one: its passages are then found by their embeddings, inside named documents or one company's.
     keyword_index INTEGER NOT NULL DEFAULT 1 CHECK (keyword_index IN (0, 1)),
     -- The manifest of a published layer: set on the sealed layer in an exported file and kept when
-    -- that file is attached.
+    -- that file is attached. A layer brought forward by a change file then holds the hash of its
+    -- previous hash and the change file's, which names the same contents without reading them again.
     content_sha256 TEXT CHECK (content_sha256 IS NULL OR length(content_sha256) = 64),
     exported_at TEXT
 );
