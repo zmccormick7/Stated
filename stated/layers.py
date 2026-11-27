@@ -171,12 +171,8 @@ def _write_rows(db: sqlite3.Connection, key: int, snapshot: _Snapshot) -> None:
         (tuple(row)[:9] for row in snapshot.links))
 
 
-def attach_layer(store, path: str | Path) -> LayerAttachment:
-    """Attach a published file as a read-only layer, or bring an attached layer to the file's version.
-
-    Records keep their keys across versions, so the workspace's links and citations to them stay valid.
-    Records the new version no longer holds are removed unless the workspace still links to them.
-    """
+def _open_published(path: str | Path):
+    """A published layer file opened read-only, with its manifest row."""
     from .store import _SCHEMA_VERSION
 
     path = Path(path)
@@ -191,7 +187,20 @@ def attach_layer(store, path: str | Path) -> LayerAttachment:
             "SELECT layer_key, name, version, writable, content_sha256, keyword_index FROM layers").fetchall()
         if len(manifests) != 1 or manifests[0]["writable"] or not manifests[0]["content_sha256"]:
             raise ValueError(f"{path} is not a published layer file: it must hold exactly one sealed layer")
-        manifest = manifests[0]
+    except BaseException:
+        published.close()
+        raise
+    return published, manifests[0]
+
+
+def attach_layer(store, path: str | Path) -> LayerAttachment:
+    """Attach a published file as a read-only layer, or bring an attached layer to the file's version.
+
+    Records keep their keys across versions, so the workspace's links and citations to them stay valid.
+    Records the new version no longer holds are removed unless the workspace still links to them.
+    """
+    published, manifest = _open_published(path)
+    try:
         snapshot = _snapshot(published, manifest["layer_key"])
     finally:
         published.close()
@@ -315,8 +324,17 @@ def _apply(db: sqlite3.Connection, key: int, own_key: int, snapshot: _Snapshot):
     db.executemany(
         f"""INSERT INTO document_context (source_key, title, summary, author_id, updated_at, provenance)
             VALUES ({key_of}, ?, ?, ?, ?, ?)""", (tuple(row) for row in snapshot.contexts))
-    # Review: the workspace's own links whose endpoint in this layer changed or was retired, and records
-    # kept after removal.
+    review = _review(db, own_key, changed)
+    if kept:
+        review["removed_upstream_but_linked"] = sorted(kept)
+    return ({"added": len(incoming) - (len(current) - len(dropped)), "updated": len(changed), "removed": len(dropped) - len(kept),
+             "kept": len(kept)},
+            {"added": len([i for i in new_links if i not in old_links]), "updated": len(links_updated),
+             "removed": len([i for i in old_links if i not in new_links])}, review)
+
+
+def _review(db: sqlite3.Connection, own_key: int, changed: list[str]) -> dict[str, list[str]]:
+    """What the workspace's own layer should reassess: its links whose end in the layer changed or was retired."""
     review = {}
     if changed:
         linked = db.execute(
@@ -327,12 +345,122 @@ def _apply(db: sqlite3.Connection, key: int, own_key: int, snapshot: _Snapshot):
         for name, flag in (("retired_linked_records", 1), ("changed_linked_records", 0)):
             if ids := [row["id"] for row in linked if row["retired"] == flag]:
                 review[name] = ids
-    if kept:
-        review["removed_upstream_but_linked"] = sorted(kept)
-    return ({"added": len(incoming) - (len(current) - len(dropped)), "updated": len(changed), "removed": len(dropped) - len(kept),
-             "kept": len(kept)},
-            {"added": len([i for i in new_links if i not in old_links]), "updated": len(links_updated),
-             "removed": len([i for i in old_links if i not in new_links])}, review)
+    return review
+
+
+def apply_changes(store, path: str | Path, *, follows: str) -> LayerAttachment:
+    """Bring an attached layer forward by a change file, a document at a time.
+
+    A change file is a published layer file that holds only what is new or changed since the version it
+    `follows`, with any record its links need, such as a new document's company. Records the layer lacks
+    are added with their text, passages and embeddings. One it holds is rewritten only when its kind, text
+    or attributes differ, and its document text, which is fixed, is never replaced. Nothing is removed, and
+    nothing already held is read again, so a day's documents join a very large layer in seconds.
+    """
+    if not isinstance(follows, str) or not follows.strip():
+        raise ValueError("follows must be the version the change file was made to follow")
+    published, manifest = _open_published(path)
+    try:
+        if digest(published, manifest["layer_key"]) != manifest["content_sha256"]:
+            raise ValueError(f"{path} does not match its manifest hash; the file is altered or corrupt")
+        name, version = manifest["name"], manifest["version"]
+        db = store._db
+        with db:
+            db.execute("BEGIN IMMEDIATE")
+            own = db.execute("SELECT layer_key FROM layers WHERE writable = 1").fetchone()
+            layer = db.execute("SELECT layer_key, version, content_sha256 FROM layers WHERE name = ? AND writable = 0",
+                               (name,)).fetchone()
+            if own is None or layer is None:
+                raise ValueError(f"this workspace has no attached layer named {name!r} to bring forward")
+            if layer["version"] != follows:
+                raise ValueError(f"{path} follows version {follows} of {name}, and this workspace holds {layer['version']}")
+            key = layer["layer_key"]
+            space, theirs = (c.execute("SELECT model, dimensions FROM vector_space").fetchone() for c in (db, published))
+            if theirs is not None and space is None:
+                db.execute("INSERT INTO vector_space (space, model, dimensions) VALUES (1, ?, ?)", tuple(theirs))
+            elif theirs is not None and tuple(space) != tuple(theirs):
+                raise ValueError(f"{path} holds embeddings of {theirs['model']}, and this workspace holds {space['model']}")
+            db.execute("UPDATE layers SET writable = 0")  # The layer accepts writes only inside this transaction.
+            db.execute("UPDATE layers SET writable = 1 WHERE layer_key = ?", (key,))
+            try:
+                records, changed = _add_records(db, published, key, path)
+                links = _add_links(db, published, key)
+                chained = sha256(f"{layer['content_sha256']}\n{manifest['content_sha256']}".encode()).hexdigest()
+                db.execute("UPDATE layers SET version = ?, content_sha256 = ?, exported_at = ? WHERE layer_key = ?",
+                           (version, chained, datetime.now(UTC).isoformat(), key))
+            finally:
+                db.execute("UPDATE layers SET writable = 0")
+                db.execute("UPDATE layers SET writable = 1 WHERE layer_key = ?", (own["layer_key"],))
+            review = _review(db, own["layer_key"], changed)
+    finally:
+        published.close()
+    return LayerAttachment(name, version, chained, records, links, review)
+
+
+def _add_records(db: sqlite3.Connection, published: sqlite3.Connection, key: int, path) -> tuple[dict[str, int], list[str]]:
+    """Add the change file's records the layer lacks, each Source with its text, and rewrite those that differ."""
+    added, changed, touched = 0, [], []
+    for row in published.execute(
+            "SELECT record_key, id, kind, text, attributes, author_id, created_by, updated_at, as_of FROM records ORDER BY record_key"):
+        held = db.execute("SELECT record_key, layer_key, kind, text, attributes FROM records WHERE id = ?", (row["id"],)).fetchone()
+        text = published.execute("SELECT text_utf8, text_sha256 FROM source_content WHERE source_key = ?", (row["record_key"],)).fetchone()
+        if held is None:
+            mine = db.execute(
+                """INSERT INTO records (id, kind, text, attributes, author_id, created_by, updated_at, as_of, layer_key)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""", (*tuple(row)[1:9], key)).lastrowid
+            added += 1
+            if text is not None:
+                db.execute("INSERT INTO source_content (source_key, text_utf8, text_sha256) VALUES (?, ?, ?)", (mine, *text))
+            for withheld in published.execute("SELECT text_sha256 FROM withheld_sources WHERE source_key = ?", (row["record_key"],)):
+                db.execute("INSERT INTO withheld_sources (source_key, text_sha256) VALUES (?, ?)", (mine, withheld[0]))
+            for passage in published.execute(
+                    """SELECT p.ordinal, p.start_byte, p.end_byte, v.vector FROM passages p
+                       LEFT JOIN passage_vectors v ON v.passage_key = p.passage_key WHERE p.source_key = ? ORDER BY p.ordinal""",
+                    (row["record_key"],)):
+                passage_key = db.execute("INSERT INTO passages (source_key, ordinal, start_byte, end_byte) VALUES (?, ?, ?, ?)",
+                                         (mine, *tuple(passage)[:3])).lastrowid
+                if passage["vector"] is not None:
+                    db.execute("INSERT INTO passage_vectors (passage_key, vector) VALUES (?, ?)", (passage_key, passage["vector"]))
+            for context in published.execute(
+                    "SELECT title, summary, author_id, updated_at, provenance FROM document_context WHERE source_key = ?", (row["record_key"],)):
+                db.execute("""INSERT INTO document_context (source_key, title, summary, author_id, updated_at, provenance)
+                              VALUES (?, ?, ?, ?, ?, ?)""", (mine, *tuple(context)))
+        elif held["layer_key"] != key:
+            raise ValueError(f"record {row['id']} in {path} already exists in another layer of this workspace")
+        else:
+            mine = held["record_key"]
+            had = db.execute("SELECT text_sha256 FROM source_content WHERE source_key = ?", (mine,)).fetchone()
+            if text is not None and had is not None and had[0] != text["text_sha256"]:
+                raise ValueError(f"Source {row['id']} text differs from the attached copy; source text is fixed")
+            if tuple(held)[2:] == (row["kind"], row["text"], row["attributes"]):
+                continue  # Repeated for a link's sake, or unchanged: left as it is, stamps and all.
+            db.execute("""UPDATE records SET kind = ?, text = ?, attributes = ?, author_id = ?, created_by = ?, updated_at = ?,
+                          as_of = ? WHERE record_key = ?""", (*tuple(row)[2:9], mine))
+            changed.append(row["id"])
+        touched.append((mine,))
+    # A record written before the Source it cites has its citations indexed now that the text is here.
+    db.executemany("""UPDATE records SET attributes = attributes
+                      WHERE record_key = ? AND json_type(attributes, '$.citations') = 'array'""", touched)
+    return {"added": added, "updated": len(changed), "removed": 0, "kept": 0}, changed
+
+
+def _add_links(db: sqlite3.Connection, published: sqlite3.Connection, key: int) -> dict[str, int]:
+    added = updated = 0
+    for row in published.execute(
+            """SELECT l.id, f.id, t.id, l.relation, l.explanation, l.author_id, l.created_by, l.updated_at, l.as_of
+               FROM links l JOIN records f ON f.record_key = l.from_key JOIN records t ON t.record_key = l.to_key
+               ORDER BY l.link_key"""):
+        ends = [db.execute("SELECT record_key FROM records WHERE id = ?", (end,)).fetchone()[0] for end in row[1:3]]
+        held = db.execute("SELECT from_key, to_key, relation, explanation FROM links WHERE id = ?", (row[0],)).fetchone()
+        if held is None:
+            db.execute("""INSERT INTO links (id, from_key, to_key, relation, explanation, author_id, created_by,
+                          updated_at, as_of, layer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (row[0], *ends, *row[3:], key))
+            added += 1
+        elif tuple(held) != (*ends, row[3], row[4]):
+            db.execute("""UPDATE links SET from_key = ?, to_key = ?, relation = ?, explanation = ?, author_id = ?,
+                          created_by = ?, updated_at = ?, as_of = ? WHERE id = ?""", (*ends, *row[3:], row[0]))
+            updated += 1
+    return {"added": added, "updated": updated, "removed": 0}
 
 
 def _drop_text(db: sqlite3.Connection, source_key: int) -> None:

@@ -624,6 +624,12 @@ class RecordStore:
         from .layers import attach_layer
         return attach_layer(self, path)
 
+    def apply_layer_changes(self, path: str | Path, *, follows: str) -> "LayerAttachment":
+        """Bring an attached layer forward by a change file: a published layer file holding only what is new
+        since the version it `follows`. What the layer already holds is neither read again nor removed."""
+        from .layers import apply_changes
+        return apply_changes(self, path, follows=follows)
+
     def seen_from(self, record_ids: Iterable[str]) -> dict[str, str | None]:
         """The date a read at a cutoff first sees each record, by full ID: a Source's publication date, a
         disclosed Finding's latest Source date, an Entity's empty string (always seen), otherwise its stamp;
