@@ -31,7 +31,7 @@ stated ui --base base-2026.11.24.sqlite
 
 `zstd -d` checks the download as it unpacks it, and the `.zst` file can be deleted afterwards. The first run moves the unpacked file to `~/Stated/research.sqlite`, gives it a layer for your work and opens the Features view. Without the app, put the file where you want the database and run `stated --db FILE init`. Either way `stated layers` then lists your layer and the base with its version.
 
-Two limits for now. A research folder that already exists cannot be moved onto the base, so start a new one from it. And there is no update command yet: a research folder stays on the version it started from.
+Two limits for now. A research folder that already exists cannot be moved onto the base, so start a new one from it. And later versions are not published yet: `stated pull` will bring a research folder to the latest one, adding each day's new filings to the base in place, but until daily updates are published there is nothing for it to fetch.
 
 A search finds passages by meaning, which takes one call to embed the question with the model that embedded the base, before the reranker that every document search uses. The `OPENROUTER_API_KEY` that document search already needs covers both, so there is nothing more to set. If `OPENAI_API_KEY` is also set, the question is embedded at OpenAI directly; the vectors are the same either way. Embedding a question costs a small fraction of a cent.
 

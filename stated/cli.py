@@ -58,6 +58,10 @@ def _parser():
     export.add_argument("--version", required=True, help="Version label recorded in the file, such as 2026.09.30.")
     command("attach-layer", "attach_layer",
             "Attach a published layer file read-only, or update an attached layer to the file's version.", "path")
+    pull = command("pull", "pull_layer", "Bring the base layer to its latest published version: download what "
+                   "has been added since the version held and add it. Your own layer is not touched.")
+    pull.add_argument("--from", dest="address", metavar="ADDRESS",
+                      help="Where the layer's versions are listed (default: the base layer's address).")
     command("create", "create", "Create an Entity, Source, Finding, Model or Variable.",
             "kind", payload=record)
     command("get", "read", "Read a current record.", "record_id")
