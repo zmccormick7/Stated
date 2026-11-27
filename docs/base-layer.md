@@ -4,7 +4,7 @@ The base layer is a published, read-only graph of US public companies and their 
 
 It is a starting point. Every user gets the same file, and SEC filings are among the most widely read documents in the market, so a feature built only from the base layer is one anyone can build. An edge is more likely to come from what you add on top: your own documents, your own subjects and your own feature definitions.
 
-This guide covers what the base layer holds, how to start from it, how its contents behave at a past cutoff, what it leaves out, and how to bring your own data.
+This guide covers what the base layer holds, how to start from it and keep it current, how its contents behave at a past cutoff, what it leaves out, and how to bring your own data.
 
 ## What it holds
 
@@ -15,7 +15,7 @@ This guide covers what the base layer holds, how to start from it, how its conte
 | Filing labels | On each Source: the time the SEC accepted it (`published`), the company's name and tickers on the filing day, `form`, `document`, `accession`, `filed`, the `period` it reports on, a report's `fiscal_year` and `fiscal_period`, an 8-K's `items`, and its address on sec.gov (`url`). A label the filing's own data does not bear out is left empty, so one that is present can be relied on. |
 | Passages and embeddings | Every document split into passages of up to 2,000 characters, each with its embedding by OpenAI's `text-embedding-3-small`, so a search needs no indexing on your machine. |
 
-A version is named for the last filing day it holds: `2026.11.24` holds everything filed up to 24 November 2026.
+A version is named for a filing day. `2026.11.24`, the file to download, holds everything filed up to 24 November 2026. Each later version adds the filings published since the one before and is named for the last filing day that had ended when it was made. It can include filings the SEC accepted that evening, which the SEC dates the next business day.
 
 Nothing in it was written by an agent or a model. A script builds it from the dataset, and the same inputs give the same file. It holds no findings, summaries, feature definitions or feature values: those are yours to make.
 
@@ -31,9 +31,17 @@ stated ui --base base-2026.11.24.sqlite
 
 `zstd -d` checks the download as it unpacks it, and the `.zst` file can be deleted afterwards. The first run moves the unpacked file to `~/Stated/research.sqlite`, gives it a layer for your work and opens the Features view. Without the app, put the file where you want the database and run `stated --db FILE init`. Either way `stated layers` then lists your layer and the base with its version.
 
-Two limits for now. A research folder that already exists cannot be moved onto the base, so start a new one from it. And later versions are not published yet: `stated pull` will bring a research folder to the latest one, adding each day's new filings to the base in place, but until daily updates are published there is nothing for it to fetch.
+One limit for now: a research folder that already exists cannot be moved onto the base, so start a new one from it.
 
 A search finds passages by meaning, which takes one call to embed the question with the model that embedded the base, before the reranker that every document search uses. The `OPENROUTER_API_KEY` that document search already needs covers both, so there is nothing more to set. If `OPENAI_API_KEY` is also set, the question is embedded at OpenAI directly; the vectors are the same either way. Embedding a question costs a small fraction of a cent.
+
+## Keep it current
+
+```bash
+stated pull
+```
+
+A new version is published each day there are new filings. `stated pull` reads the list of versions at `https://data.statedlabs.com/base/`, downloads what has been added since the version you hold, usually a few megabytes for a day, and adds it to the base in place: the new filings with their passages and embeddings, and any new companies. It checks each download, removes nothing and leaves your own layer as it is. With nothing newer it changes nothing, so it can be run as often as you like. `stated layers` shows the version you hold.
 
 ## Find a company and its filings
 
