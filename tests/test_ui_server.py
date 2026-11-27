@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import threading
 import unittest
 
-from stated import RecordStore
+from stated import LayerWriter, RecordStore
 from stated.ui.server import make_server, prepare_workspace
 
 
@@ -100,7 +100,7 @@ class ServerTests(unittest.TestCase):
             self.assertTrue(db_path.is_file())
             self.assertEqual(len(notes), 2)
             self.assertIn("Created your research folder", notes[0])
-            self.assertIn("No base layer is attached yet", notes[1])
+            self.assertIn("No base layer yet", notes[1])
             db_path, notes = prepare_workspace(db_path, base=folder / "base.sqlite")
             self.assertIn("Attached the base layer, version 2026.10.01", notes[0])
             with RecordStore(db_path) as db:
@@ -112,6 +112,39 @@ class ServerTests(unittest.TestCase):
             db_path, notes = prepare_workspace(folder / "other" / "research.sqlite")
             self.assertIn("Attached the base layer", notes[1])
             self.assertEqual(prepare_workspace(db_path)[1], [])  # Nothing to do the second time.
+
+    def test_a_base_made_to_be_the_database_becomes_it(self):
+        with TemporaryDirectory() as directory:
+            folder = Path(directory)
+
+            def base(name):
+                writer = LayerWriter(folder / name, name="base", version="2026.11.24", author_id="builder", keyword_index=False)
+                writer.entity("11111111-1111-5111-8111-111111111111", "PowerFrame", {"cik": "0000000001"})
+                writer.seal()
+                return folder / name
+
+            db_path, notes = prepare_workspace(folder / "fund" / "research.sqlite", base=base("download.sqlite"))
+            self.assertFalse((folder / "download.sqlite").exists())  # Moved into place, not copied.
+            self.assertEqual(len(notes), 2)
+            self.assertIn("download.sqlite is now", notes[0])
+            self.assertIn("on the base layer, version 2026.11.24", notes[1])
+            with RecordStore(db_path) as db:
+                self.assertEqual([(l.name, l.version, l.writable) for l in db.layers()],
+                                 [("fund", "", True), ("base", "2026.11.24", False)])
+                self.assertEqual(db.create("Entity", text="Mine", author_id="a").layer, "fund")
+            self.assertEqual(prepare_workspace(db_path)[1], [])
+            # An existing research folder is not replaced, and the file is left where it was.
+            with self.assertRaisesRegex(ValueError, "already exists"):
+                prepare_workspace(db_path, base=base("again.sqlite"))
+            self.assertTrue((folder / "again.sqlite").is_file())
+            self.assertEqual(sorted(path.name for path in folder.glob("*.sqlite*")), ["again.sqlite"])  # Nothing left beside it.
+            # Put in place by hand, it is given the user's layer; left beside a database, it is not attached.
+            (folder / "byhand").mkdir()
+            shutil.move(base("third.sqlite"), folder / "byhand" / "research.sqlite")
+            self.assertIn("on the base layer", prepare_workspace(folder / "byhand" / "research.sqlite")[1][0])
+            (folder / "beside").mkdir()
+            shutil.move(base("fourth.sqlite"), folder / "beside" / "base.sqlite")
+            self.assertIn("No base layer yet", prepare_workspace(folder / "beside" / "research.sqlite")[1][1])
 
 
 

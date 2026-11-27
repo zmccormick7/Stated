@@ -1,50 +1,80 @@
 # The base layer
 
-The base layer is a published, read-only graph of US public companies and their SEC filings that you can attach to a research folder, so your agents start from documents and companies rather than an empty database. It is a starting point. Every user who attaches it gets the same file, and SEC filings are among the most widely read documents in the market, so a feature built only from the base layer is one anyone can build. An edge is more likely to come from what you add on top: your own documents, your own subjects and your own feature definitions.
+The base layer is a published, read-only graph of US public companies and their SEC filings, already split into passages and embedded, so your agents can search any covered company's filings as of any date from the first minute. It is the [Stated SEC filings dataset](https://statedlabs.com/filings/) as a graph file: the same companies, the same documents, the same text.
 
-This guide covers what the base layer holds, how its contents behave at a past cutoff, what it leaves out, and how to bring your own data.
+It is a starting point. Every user gets the same file, and SEC filings are among the most widely read documents in the market, so a feature built only from the base layer is one anyone can build. An edge is more likely to come from what you add on top: your own documents, your own subjects and your own feature definitions.
+
+This guide covers what the base layer holds, how to start from it, how its contents behave at a past cutoff, what it leaves out, and how to bring your own data.
 
 ## What it holds
 
 | Part | Contents |
 | --- | --- |
-| Companies | The 1,000 largest companies filing annual reports on Form 10-K with the SEC, ranked by the public float each reported on its 10-K cover in the year to September 2026, each with name, tickers, CIK, industry code and rank. A further 6,100 SEC filers appear with identity only, so that filings and findings can name them. |
-| Filings | Every 10-K, 10-Q and results release (the exhibit to an 8-K reporting Item 2.02, results of operations) those 1,000 companies filed between October 30, 2023 and October 29, 2026: about 2,950 annual reports, 8,950 quarterly reports and 12,300 results releases, or 24 per company. Each holds the document's full text, split into passages for search, with its filing date, acceptance time, period, accession number and a hash of the original file. |
-| Reported figures | Revenue, net income and total assets for each company from its latest 10-K's XBRL data. |
-| Coverage packs | For about 470 of the largest 476 companies, agent-written findings on the business, its segments, key figures, outlook, relationships with other companies, risks and open questions, each citing the filing it rests on: about 12,900 findings and 2,300 questions. |
-| Other research | About 270 documents agents fetched while researching AI infrastructure (transcripts, presentations, press releases and other filings), the 600 findings drawn from them, and six driver models. |
+| Companies | An Entity for every domestic SEC filer that has been in the Russell 1000 index at any time since 2016, with its CIK. |
+| Filings | A Source for every annual report (10-K), quarterly report (10-Q), proxy statement (DEF 14A) and current report (8-K, with each exhibit 99 filed with it, such as a results release) those companies have filed since 1 January 2016, whether or not the company was in the index that day. Each holds the document's full text as Markdown and is linked `about` its company, and about each other covered company a joint filing was made for. |
+| Filing labels | On each Source: the time the SEC accepted it (`published`), the company's name and tickers on the filing day, `form`, `document`, `accession`, `filed`, the `period` it reports on, a report's `fiscal_year` and `fiscal_period`, an 8-K's `items`, and its address on sec.gov (`url`). A label the filing's own data does not bear out is left empty, so one that is present can be relied on. |
+| Passages and embeddings | Every document split into passages of up to 2,000 characters, each with its embedding by OpenAI's `text-embedding-3-small`, so a search needs no indexing on your machine. |
 
-It holds no feature definitions or feature values. Features are yours to define and run.
+A version is named for the last filing day it holds: `2026.11.24` holds everything filed up to 24 November 2026.
+
+Nothing in it was written by an agent or a model. A script builds it from the dataset, and the same inputs give the same file. It holds no findings, summaries, feature definitions or feature values: those are yours to make.
+
+## Start from it
+
+The base is too large to copy into another database, so it becomes your research database, and your own work goes in a layer beside it in the same file. The download is about 11 GB and opens out to about 34 GB.
+
+```bash
+zstd -d base-2026.11.24.sqlite.zst
+stated ui --base base-2026.11.24.sqlite
+```
+
+The first run moves the file to `~/Stated/research.sqlite`, gives it a layer for your work and opens the Features view. Without the app, put the file where you want the database and run `stated --db FILE init`. Either way `stated layers` then lists your layer and the base with its version.
+
+Two limits for now. A research folder that already exists cannot be moved onto the base, so start a new one from it. And there is no update command yet: a research folder stays on the version it started from.
+
+A search finds passages by meaning, which takes one call to embed the question with the model that embedded the base, before the reranker that every document search uses. The `OPENROUTER_API_KEY` that document search already needs covers both, so there is nothing more to set. If `OPENAI_API_KEY` is also set, the question is embedded at OpenAI directly; the vectors are the same either way. Embedding a question costs a small fraction of a cent.
+
+## Find a company and its filings
+
+```bash
+stated list --kind Entity --where 'cik="0000320193"'
+stated --as-of 2020-06-30 sources ENTITY_ID
+stated --as-of 2020-06-30 search-documents "share repurchase authorization" --about ENTITY_ID
+```
+
+- **Find a company by its CIK**, the SEC's number for a filer, which never changes. The dataset's [company list](https://data.statedlabs.com/companies.json) gives each company's CIK with its latest name and tickers. `stated search NAME` also works, on names as they were filed: a company's Entity is named as on its earliest filing here, and each filing's description carries the name of its day.
+- **`sources ENTITY_ID`** lists the company's filings. Each is described in a line, such as `Apple Inc. 10-K filed 2019-10-31, fiscal 2019 FY, for the period ended 2019-09-28`, so a session can pick the report it wants without opening one.
+- **`search-documents QUESTION --about ENTITY_ID`** searches every filing of one company, and `--source-id SOURCE_ID` searches inside named documents. A search that names neither covers only documents in a keyword index, which the base does not have: it finds your own documents and nothing in the base.
 
 ## At a past cutoff
 
-A session opened at a cutoff sees a Source only once it was published, so the filings work for point-in-time features as they stand. Each carries the date it became public and is linked `about` the company that filed it, with the link dated to the filing, so a session at any date finds exactly the company's filings published by then. Model-written document summaries are hidden at a cutoff, since they were written later.
+A session opened at a cutoff sees a filing from the day the SEC accepted it, and its link to its company from the same day, so `sources` and `search-documents` at any date return exactly what had been filed by then.
 
-The coverage packs were written in October 2026 to describe each company as it was then, and they are not built for features. Their figures cite filings and become visible on those filings' dates, but the choice of what to record was made with everything known in October 2026, and their links and questions are dated October 2026, so at an earlier cutoff a session sees pack figures without the companies they are about. Use packs as context for questions about the present. Have a feature's own sessions read the filings.
-
-Three years of filings is a short history: a quarterly feature gets about 12 readings per company, and a session at a cutoff before October 30, 2023 finds no filings at all.
+- **A cutoff is a whole day, in UTC.** A session at a date sees everything accepted up to the end of that day in UTC, which is 7 or 8 in the evening in New York. That includes filings made after the US market closed, as most results releases are. Treat a value at a date as known before the next day's open, not at that day's close. Each Source keeps the exact acceptance time in `published`.
+- **No record carries a later name.** A company's Entity keeps the name on its earliest filing here, however it was renamed since, and each filing carries the name and tickers of its day. Tickers change and are reused; match companies on CIK.
+- **The list of companies is not point in time.** Entities are reference data, seen at every date, and the companies were chosen by index membership at any time since 2016. A company that was acquired in 2018 is here for the years it filed, which a survivorship-free backtest needs. But a company is also here for the years before it entered the index, and the base does not say who was a member when. Choose each run's subjects from your own universe as of each date.
 
 ## What it does not provide
 
 - **An edge by itself.** Everything in the base layer is public, the same for every user, and drawn from documents that many data vendors already parse.
 - **Market data.** No prices, returns, volumes, corporate actions or index membership. `stated feature-table` writes one row per subject and day, ready to join to market data from your own provider.
-- **A fundamentals history.** Three reported figures per company, from one year. For financial statement history, use XBRL data or a fundamentals vendor.
-- **A survivorship-free universe.** The companies were chosen by their size in 2026. Companies that were acquired, delisted, went bankrupt or shrank out of the top 1,000 before then are missing, and companies that grew into it are present for years when they were smaller. A backtest needs a universe defined as of each date, which you supply as the subjects of a run.
-- **Other issuers.** No foreign companies that report on Form 20-F, no private companies, and no subjects other than companies, such as markets, products or deals.
-- **Other documents.** No earnings call transcripts beyond a handful, news, sell-side research, proxy statements, 8-Ks other than results releases (deals, leadership changes, material agreements), insider trades, institutional holdings, registration statements, SEC comment letters, regulatory dockets or industry data.
-- **Human review.** Filing text is exact and its hash can be checked against the original, but every finding was written by an agent or, for the reported figures, a script, and nobody has reviewed them.
+- **Figures as data.** Financial statements are in the filings as Markdown tables, for an agent to read. There are no reported figures as values; for a fundamentals history, use XBRL data or a fundamentals vendor, loaded with `stated ingest-table`.
+- **Other issuers.** No companies that file only foreign forms (20-F, 40-F, 6-K), no private companies, and no subjects other than companies, such as markets, products or deals.
+- **Other documents.** No amended filings, exhibits other than exhibit 99, registration statements, insider trades, institutional holdings, earnings call transcripts, news or research. Images and charts in a filing are left out, as are exhibits filed as scans.
+- **Anything read for you.** No summaries, findings or models. The filings' text is the filers' own words and figures, and what they mean for a feature is for your sessions to work out.
 
-Known gaps: five companies (IBM, Wells Fargo, Progressive, U.S. Bancorp and BNY) put their financial statements in an exhibit to the 10-K that was not captured; about 150 filings were left out because the 8-K had no results exhibit, the text was too short to be the document, or it repeated another filing word for word; three companies filed no results releases in the window.
+The dataset's [known limits](https://statedlabs.com/filings/) apply to the text and the labels here as they do there.
 
 ## Bring your own data
 
 What a model can learn from depends on what its features can see. The usual sources of an edge are documents other users lack (licensed transcripts and news, broker research, expert-call notes, industry publications, regulatory filings outside the SEC), subjects the base layer does not cover (private companies, products, markets, deals), and feature definitions that ask what others have not thought to ask.
 
-Your documents and records go in your own layer, on top of the base. To make a document usable at past cutoffs:
+Your documents and records go in your own layer, beside the base. To make a document usable at past cutoffs:
 
 1. **Ingest it with the date it became public** as `published`, not the date you obtained it. A Source without a date is never seen at any cutoff.
-2. **Link it `about` each subject, at that date as the cutoff**, so a session sees the link exactly when it sees the document. Find a company's Entity with `stated search`, or create an Entity for a new subject.
-3. **Mark licensed text `"redistributable": false`**, so that if you ever publish your layer, its text, passages and summaries are withheld.
+2. **Split it with `OPENROUTER_API_KEY` or `OPENAI_API_KEY` set**, so its passages are embedded by the same model as the base's and one search of a company covers its filings and your documents together.
+3. **Link it `about` each subject, at that date as the cutoff**, so a session sees the link exactly when it sees the document. Find a company's Entity by its CIK, or create an Entity for a new subject.
+4. **Mark licensed text `"redistributable": false`**, so that if you ever publish your layer, its text, passages and summaries are withheld.
 
 ```bash
 stated ingest acme-q2-2025-call.txt --input - <<'JSON'
@@ -56,6 +86,4 @@ stated chunk SOURCE_ID
 echo '{"author_id": "researcher"}' | stated --as-of 2025-07-24 link SOURCE_ID ENTITY_ID about --input -
 ```
 
-A document about several subjects gets one `about` link to each. Load many documents with a short script over the [Python API](python-api.md): `ingest_source`, `chunk_source`, then `create_link` from a `RecordStore` opened with `as_of` set to the publication date.
-
-Attach the base layer with `stated attach-layer FILE`, or start the app from it with `stated ui --base FILE`. A later version replaces the attached one in place: records keep their identity, so your links to them stay valid, and `attach-layer` lists what your layer should reassess.
+A document about several subjects gets one `about` link to each. Load many documents with a short script over the [Python API](python-api.md): `ingest_source`, `chunk_source`, `embed_source`, then `create_link` from a `RecordStore` opened with `as_of` set to the publication date.

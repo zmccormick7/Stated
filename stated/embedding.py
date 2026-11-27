@@ -50,6 +50,8 @@ class Embedder(ABC):
 class OpenAIEmbedder(Embedder):
     """OpenAI's embedding models, which shorten a vector to the length asked for."""
 
+    provider, key_name, url, prefix = "OpenAI", "OPENAI_API_KEY", "https://api.openai.com/v1/embeddings", ""
+
     def __init__(self, model: str = "text-embedding-3-small", *, api_key: str | None = None,
                  timeout: float = 60, batch_size: int = 96):
         if not isinstance(model, str) or not model.strip():
@@ -58,9 +60,9 @@ class OpenAIEmbedder(Embedder):
             raise ValueError("timeout must be finite and positive")
         if type(batch_size) is not int or batch_size < 1:
             raise ValueError("batch_size must be a positive integer")
-        key = os.environ.get("OPENAI_API_KEY") if api_key is None else api_key
+        key = os.environ.get(self.key_name) if api_key is None else api_key
         if not isinstance(key, str) or not key.strip():
-            raise ValueError("Set OPENAI_API_KEY or supply api_key")
+            raise ValueError(f"Set {self.key_name} or supply api_key")
         self.model, self.timeout, self.batch_size = model, timeout, batch_size
         self._api_key = key
 
@@ -68,8 +70,8 @@ class OpenAIEmbedder(Embedder):
         vectors = []
         for start in range(0, len(texts), self.batch_size):
             some = texts[start:start + self.batch_size]
-            request = Request("https://api.openai.com/v1/embeddings",
-                              json.dumps({"model": self.model, "input": some, "dimensions": DIMENSIONS}).encode(),
+            request = Request(self.url,
+                              json.dumps({"model": self.prefix + self.model, "input": some, "dimensions": DIMENSIONS}).encode(),
                               headers={"Authorization": "Bearer " + self._api_key, "Content-Type": "application/json"})
             try:
                 with urlopen(request, timeout=self.timeout) as response:
@@ -78,12 +80,26 @@ class OpenAIEmbedder(Embedder):
                 vectors += [found[index] for index in range(len(some))]
             except HTTPError as error:
                 error.close()
-                raise RuntimeError(f"OpenAI HTTP {error.code}") from None
+                raise RuntimeError(f"{self.provider} HTTP {error.code}") from None
             except (URLError, OSError):
-                raise RuntimeError("OpenAI connection failed or timed out") from None
+                raise RuntimeError(f"{self.provider} connection failed or timed out") from None
             except (KeyError, TypeError, ValueError, UnicodeError):
-                raise ValueError("OpenAI returned an incomplete or malformed embedding response") from None
+                raise ValueError(f"{self.provider} returned an incomplete or malformed embedding response") from None
         return vectors
+
+
+class OpenRouterEmbedder(OpenAIEmbedder):
+    """The same OpenAI models, asked through OpenRouter: the same vectors, under the same model name, on that key."""
+
+    provider, key_name, url, prefix = "OpenRouter", "OPENROUTER_API_KEY", "https://openrouter.ai/api/v1/embeddings", "openai/"
+
+
+def embedder_from_environment() -> Embedder | None:
+    """The embedder the environment's keys allow: OpenAI itself when its key is set, else OpenAI's model through OpenRouter."""
+    for kind in (OpenAIEmbedder, OpenRouterEmbedder):
+        if os.environ.get(kind.key_name, "").strip():
+            return kind(os.environ.get("STATED_EMBEDDING_MODEL", "text-embedding-3-small"))
+    return None
 
 
 def embed_source(db: RecordStore, source_id: str, *, embedder: Embedder) -> int:

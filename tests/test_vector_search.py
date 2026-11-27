@@ -110,7 +110,7 @@ class VectorSearchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source_ids or about, not both"):
             retrieve(self.db, "question", about=self.company.id, source_ids=[self.report.id], reranker=Needles(), count_tokens=len)
 
-    def test_the_command_line_searches_one_company_by_embedding_when_a_key_is_set(self):
+    def test_the_command_line_searches_one_company_by_embedding_on_either_key(self):
         self.add("annex", range(40), "2024-07-01")  # 72 passages in all: more than the 50 a search reads whole.
         self.db.close()
         with RecordStore(self.path) as db:  # As OpenAI's model would have written them.
@@ -118,22 +118,26 @@ class VectorSearchTests(unittest.TestCase):
         asked, scored = [], []
 
         def openai(request, timeout):
-            asked.append(json.loads(request.data)["input"])
+            asked.append((request.full_url, json.loads(request.data)["input"]))
             return BytesIO(json.dumps({"data": [{"index": 0, "embedding": vector(0.3)}]}).encode())
 
         def rerank(reranker, endpoint, payload):
             scored.extend(json.loads(document)["passage"] for document in payload["documents"])
             return {"results": [{"index": n, "relevance_score": 0.9} for n in range(len(payload["documents"]))]}
 
-        out, tokens = StringIO(), SimpleNamespace(get_encoding=lambda name: SimpleNamespace(encode=lambda text, **kwargs: text.encode()))
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "secret", "OPENROUTER_API_KEY": "test-only"}), patch.dict(sys.modules, {"tiktoken": tokens}), \
-                patch("stated.embedding.urlopen", side_effect=openai), patch.object(OpenRouterReranker, "_post", new=rerank), \
-                redirect_stdout(out), redirect_stderr(StringIO()):
-            code = main(["--db", str(self.path), "search-documents", "which passage", "--about", self.company.id[:8], "--limit", "1"])
-        self.assertEqual((code, asked), (0, [["which passage"]]))
-        self.assertEqual(len(scored), 50)  # The nearest 50 of the 72 went to the reranker: the highest marks, none of the lowest.
-        self.assertTrue({"annex 39\n", "report 29\n", "letter 25\n"} <= set(scored) and not {"annex 5\n", "report 0\n", "letter 3\n"} & set(scored))
-        self.assertEqual(len(json.loads(out.getvalue())["excerpts"]), 1)
+        tokens = SimpleNamespace(get_encoding=lambda name: SimpleNamespace(encode=lambda text, **kwargs: text.encode()))
+        # With OpenAI's key the question is embedded there; with the reranker's key alone, by the same model through OpenRouter.
+        for key, address in (("secret", "https://api.openai.com/v1/embeddings"), ("", "https://openrouter.ai/api/v1/embeddings")):
+            asked.clear(), scored.clear()
+            out = StringIO()
+            with self.subTest(openai_key=key), patch.dict(os.environ, {"OPENAI_API_KEY": key, "OPENROUTER_API_KEY": "test-only"}), \
+                    patch.dict(sys.modules, {"tiktoken": tokens}), patch("stated.embedding.urlopen", side_effect=openai), \
+                    patch.object(OpenRouterReranker, "_post", new=rerank), redirect_stdout(out), redirect_stderr(StringIO()):
+                code = main(["--db", str(self.path), "search-documents", "which passage", "--about", self.company.id[:8], "--limit", "1"])
+                self.assertEqual((code, asked), (0, [(address, ["which passage"])]))
+                self.assertEqual(len(scored), 50)  # The nearest 50 of the 72 went to the reranker: the highest marks, none of the lowest.
+                self.assertTrue({"annex 39\n", "report 29\n", "letter 25\n"} <= set(scored) and not {"annex 5\n", "report 0\n", "letter 3\n"} & set(scored))
+                self.assertEqual(len(json.loads(out.getvalue())["excerpts"]), 1)
 
 
 if __name__ == "__main__":

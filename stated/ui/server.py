@@ -1,12 +1,15 @@
 """A local HTTP server for the Features view: feature definitions, their values and the evidence behind them,
 read-only."""
 
+from contextlib import closing
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from dataclasses import asdict
 import json
 from pathlib import Path
+import shutil
+import sqlite3
 import threading
 import webbrowser
 from urllib.parse import unquote, urlparse
@@ -155,29 +158,51 @@ def make_server(db_path, *, host="127.0.0.1", port=0) -> ThreadingHTTPServer:
 DEFAULT_WORKSPACE = Path.home() / "Stated"
 
 
+def _is_the_database(path: Path) -> bool:
+    """Whether a published layer file is one made to be the research database itself: a layer of very many
+    documents, which has no keyword index and is too large to copy into another database."""
+    try:  # Read as it lies, taking no lock and leaving no files beside it.
+        with closing(sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)) as db:
+            return [tuple(row) for row in db.execute("SELECT writable, keyword_index FROM layers")] == [(0, 0)]
+    except sqlite3.Error:
+        return False
+
+
 def prepare_workspace(db_path: Path | None, *, base: Path | None = None) -> tuple[Path, list[str]]:
-    """The database the UI will use, created on first run, with the base layer attached when a file is
-    given or found beside it. Returns the path and lines describing what happened."""
+    """The database the UI will use, set up on first run. A base file made to be the database itself becomes
+    it, and is given a layer for the user's own work; a smaller one, given or found beside the database, is
+    attached. Returns the path and lines describing what happened."""
     notes = []
     if db_path is None:
         db_path = Path("research.sqlite") if Path("research.sqlite").is_file() else DEFAULT_WORKSPACE / "research.sqlite"
     db_path = Path(db_path).resolve()
+    if base is not None and _is_the_database(base):
+        if db_path.is_file():
+            raise ValueError(f"{base} is made to be the research database itself, and {db_path} already exists. Moving "
+                             "your own layer into a base is not supported yet: start a new research folder from it by "
+                             "naming a database that does not exist with --db")
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(base, db_path)  # Moved, not copied: the file is tens of gigabytes.
+        notes.append(f"Created your research folder at {db_path.parent}: {Path(base).resolve()} is now {db_path}")
+        base = None
     if not db_path.is_file():
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with RecordStore(db_path, layer="fund"):
             pass
         notes.append(f"Created your research folder at {db_path.parent}")
     with RecordStore(db_path) as db:
+        if db.start_own_layer("fund"):  # A published layer file put in place as the database.
+            notes.append("Your work goes in a layer of its own, on the "
+                         + " and ".join(f"{l.name} layer, version {l.version}" for l in db.layers() if not l.writable))
         attached = [l for l in db.layers() if not l.writable]
         found = db_path.with_name("base.sqlite")
-        if base is None and not attached and found.is_file():
+        if base is None and not attached and found.is_file() and not _is_the_database(found):
             base = found
         if base is not None:
             result = db.attach_layer(base)
             notes.append(f"Attached the {result.name} layer, version {result.version}, from {Path(base).resolve()}")
         elif not attached:
-            notes.append("No base layer is attached yet: run with --base FILE once, or put the file beside the database "
-                         "as base.sqlite")
+            notes.append("No base layer yet: run once with --base FILE")
     return db_path, notes
 
 

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from stated import Embedder, OpenAIEmbedder, RecordStore, embed_source
+from stated import Embedder, OpenAIEmbedder, OpenRouterEmbedder, RecordStore, embed_source
 from stated.cli import main
 from stated.embedding import DIMENSIONS, pack
 
@@ -71,6 +71,20 @@ class EmbedderTests(unittest.TestCase):
                          [("text-embedding-3-small", DIMENSIONS, 2), ("text-embedding-3-small", DIMENSIONS, 1)])
         self.assertEqual(call.call_args_list[0].args[0].get_header("Authorization"), "Bearer secret")
 
+    def test_openrouter_is_asked_for_the_same_model_under_its_name_there(self):
+        with patch("stated.embedding.urlopen", side_effect=lambda request, timeout: reply(json.loads(request.data)["input"])) as call:
+            embedder = OpenRouterEmbedder(api_key="secret")
+            self.assertEqual([vector[0] for vector in embedder.embed(["a" * 10])], [40])
+        sent = call.call_args.args[0]
+        self.assertEqual((sent.full_url, sent.get_header("Authorization")), ("https://openrouter.ai/api/v1/embeddings", "Bearer secret"))
+        self.assertEqual((json.loads(sent.data)["model"], json.loads(sent.data)["dimensions"]), ("openai/text-embedding-3-small", DIMENSIONS))
+        self.assertEqual(embedder.model, OpenAIEmbedder(api_key="secret").model)  # One space: either may search what the other embedded.
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "", "OPENAI_API_KEY": "secret"}), self.assertRaisesRegex(ValueError, "OPENROUTER_API_KEY"):
+            OpenRouterEmbedder()
+        failure = HTTPError("https://openrouter.ai/api/v1/embeddings", 402, "secret", {}, BytesIO())
+        with patch("stated.embedding.urlopen", side_effect=failure), self.assertRaisesRegex(RuntimeError, "^OpenRouter HTTP 402$"):
+            embedder.embed(["text"])
+
     def test_a_key_is_needed_and_a_failed_call_does_not_repeat_it(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": ""}), self.assertRaises(ValueError):
             OpenAIEmbedder()
@@ -128,9 +142,9 @@ class StoredVectorTests(unittest.TestCase):
             self.db.set_passage_vectors(other.id, [b"\x01" * 256], model="lengths")
         self.assertEqual(self.vectors(other.id), [])
 
-    def chunk(self, key):
+    def chunk(self, key, openrouter=""):
         out, err = StringIO(), StringIO()
-        with patch.dict(os.environ, {"OPENAI_API_KEY": key}), redirect_stdout(out), redirect_stderr(err):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": key, "OPENROUTER_API_KEY": openrouter}), redirect_stdout(out), redirect_stderr(err):
             code = main(["--db", str(self.path), "chunk", self.source.id, "--max-chars", "24"])
         return code, json.loads(out.getvalue()), err.getvalue()
 
@@ -142,6 +156,16 @@ class StoredVectorTests(unittest.TestCase):
             self.assertEqual(self.chunk(""), (0, 3, ""))  # No key: chunked, nothing asked, and the old vectors went with the old passages.
         call.assert_not_called()
         self.assertEqual(self.vectors(), [])
+
+    def test_chunking_embeds_through_openrouter_when_that_is_the_only_key(self):
+        answer = lambda request, timeout: reply(json.loads(request.data)["input"])
+        with patch("stated.embedding.urlopen", side_effect=answer) as call:
+            self.assertEqual(self.chunk("", openrouter="secret")[:2], (0, 3))
+            self.assertEqual(self.chunk("secret", openrouter="secret")[:2], (0, 3))  # With both keys, OpenAI itself is asked.
+        self.assertEqual([request.args[0].full_url for request in call.call_args_list],
+                         ["https://openrouter.ai/api/v1/embeddings", "https://api.openai.com/v1/embeddings"])
+        self.assertEqual([vector[0] for vector in self.vectors()], [72, 72, 84])
+        self.assertEqual(self.db._db.execute("SELECT model FROM vector_space").fetchone()[0], "text-embedding-3-small")
 
     def test_a_failed_embedding_call_leaves_the_source_chunked_and_warns(self):
         failure = HTTPError("https://api.openai.com/v1/embeddings", 500, "down", {}, BytesIO())

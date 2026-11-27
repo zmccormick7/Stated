@@ -11,7 +11,7 @@ import sys
 from .context import OpenRouterContextWriter, write_document_context
 from .fetch import contact, fetch_page, pdf_text
 from .store import RecordStore
-from .embedding import OpenAIEmbedder, embed_source
+from .embedding import embed_source, embedder_from_environment
 from .reranking import OpenRouterReranker
 from .retrieval import retrieve
 
@@ -187,7 +187,9 @@ def _parser():
     ui.add_argument("--port", type=int, default=8765)
     ui.add_argument("--harness", default="claude-code", choices=["claude-code", "codex"],
                     help="The coding agent to install the bundled skills for (default: claude-code).")
-    ui.add_argument("--base", metavar="FILE", help="A published base layer file to attach, or to update to.")
+    ui.add_argument("--base", metavar="FILE", help="A published base layer file to start from. On first run the base of every filing becomes "
+                                                "the research database itself and is moved into place; a small layer is "
+                                                "attached, or updated to.")
     ui.add_argument("--contact", metavar="TEXT", help="Your name and email, kept beside the database and sent only to "
                                                       "SEC.gov, which requires one to fetch filings.")
     ui.add_argument("--no-open", dest="open_browser", action="store_false", help="Do not open the page in a browser.")
@@ -232,7 +234,7 @@ def _parser():
     cited.add_argument("--end-byte", type=int)
     cited.add_argument("--limit", type=int, default=100)
     chunk = command("chunk", "chunk_source", "Replace passages and return their count; enables document search. "
-                    "With OPENAI_API_KEY set, each passage is also embedded.", "source_id")
+                    "With OPENAI_API_KEY or OPENROUTER_API_KEY set, each passage is also embedded.", "source_id")
     chunk.add_argument("--max-chars", type=int, default=2000)
     documents = command("search-documents", "search_documents", "Find relevant source excerpts for a research question.", "query")
     documents.add_argument("--source-id", dest="source_ids", action="append")
@@ -319,14 +321,13 @@ def _add_document_context(db, source, author_id):
 
 
 def _embed_passages(db, source_id):
-    """Embed a newly chunked Source's passages when OpenAI is configured.
+    """Embed a newly chunked Source's passages when OpenAI or OpenRouter is configured.
 
     The passages are already committed, so a failed call only warns; the Source stays searchable by its words.
     """
-    if not os.environ.get("OPENAI_API_KEY", "").strip():
-        return
     try:
-        embed_source(db, source_id, embedder=OpenAIEmbedder(os.environ.get("STATED_EMBEDDING_MODEL", "text-embedding-3-small")))
+        if embedder := embedder_from_environment():
+            embed_source(db, source_id, embedder=embedder)
     except (ValueError, RuntimeError) as error:
         print(json.dumps({"warning": f"Source {source_id} was chunked without passage embeddings: {error}"}),
               file=sys.stderr)
@@ -339,10 +340,7 @@ def _search_documents(db, options):
         raise RuntimeError("Document search requires tiktoken; install with: python -m pip install 'tiktoken>=0.12,<1'") from None
     encoding = tiktoken.get_encoding(os.environ.get("STATED_TOKEN_ENCODING", "cl100k_base"))
     reranker = OpenRouterReranker(os.environ.get("STATED_RERANKER_MODEL", "voyageai/rerank-2.5"))
-    # Without an OpenAI key, a search too large to read whole finds passages by their words.
-    embedder = (OpenAIEmbedder(os.environ.get("STATED_EMBEDDING_MODEL", "text-embedding-3-small"))
-                if os.environ.get("OPENAI_API_KEY", "").strip() else None)
-    result = retrieve(db, reranker=reranker, embedder=embedder,
+    result = retrieve(db, reranker=reranker, embedder=embedder_from_environment(),  # OpenAI's key if set, else the reranker's.
                       count_tokens=lambda text: len(encoding.encode(text, disallowed_special=())), **options)
     return [{**asdict(excerpt.segment), "token_count": excerpt.token_count} for excerpt in result.excerpts]
 
