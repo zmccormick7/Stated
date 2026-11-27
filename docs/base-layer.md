@@ -24,11 +24,12 @@ Nothing in it was written by an agent or a model. A script builds it from the da
 The base is too large to copy into another database, so it becomes your research database, and your own work goes in a layer beside it in the same file. The download is about 11 GB and opens out to about 34 GB.
 
 ```bash
+curl -O https://data.statedlabs.com/base/base-2026.11.24.sqlite.zst
 zstd -d base-2026.11.24.sqlite.zst
 stated ui --base base-2026.11.24.sqlite
 ```
 
-The first run moves the file to `~/Stated/research.sqlite`, gives it a layer for your work and opens the Features view. Without the app, put the file where you want the database and run `stated --db FILE init`. Either way `stated layers` then lists your layer and the base with its version.
+`zstd -d` checks the download as it unpacks it, and the `.zst` file can be deleted afterwards. The first run moves the unpacked file to `~/Stated/research.sqlite`, gives it a layer for your work and opens the Features view. Without the app, put the file where you want the database and run `stated --db FILE init`. Either way `stated layers` then lists your layer and the base with its version.
 
 Two limits for now. A research folder that already exists cannot be moved onto the base, so start a new one from it. And there is no update command yet: a research folder stays on the version it started from.
 
