@@ -32,7 +32,7 @@ The first run moves the file to `~/Stated/research.sqlite`, gives it a layer for
 
 Two limits for now. A research folder that already exists cannot be moved onto the base, so start a new one from it. And there is no update command yet: a research folder stays on the version it started from.
 
-A search finds passages by meaning, which takes one call to OpenAI to embed the question, before the reranker that every document search uses. Set `OPENAI_API_KEY` beside `OPENROUTER_API_KEY` in the environment your agents run in; embedding a question costs a small fraction of a cent. Without the key, everything else works (listing a company's filings, reading their text, searching inside a document of 50 passages or fewer), and a larger search stops with an error that says so.
+A search finds passages by meaning, which takes one call to embed the question with the model that embedded the base, before the reranker that every document search uses. The `OPENROUTER_API_KEY` that document search already needs covers both, so there is nothing more to set. If `OPENAI_API_KEY` is also set, the question is embedded at OpenAI directly; the vectors are the same either way. Embedding a question costs a small fraction of a cent.
 
 ## Find a company and its filings
 
@@ -72,7 +72,7 @@ What a model can learn from depends on what its features can see. The usual sour
 Your documents and records go in your own layer, beside the base. To make a document usable at past cutoffs:
 
 1. **Ingest it with the date it became public** as `published`, not the date you obtained it. A Source without a date is never seen at any cutoff.
-2. **Split it with `OPENAI_API_KEY` set**, so its passages are embedded by the same model as the base's and one search of a company covers its filings and your documents together.
+2. **Split it with `OPENROUTER_API_KEY` or `OPENAI_API_KEY` set**, so its passages are embedded by the same model as the base's and one search of a company covers its filings and your documents together.
 3. **Link it `about` each subject, at that date as the cutoff**, so a session sees the link exactly when it sees the document. Find a company's Entity by its CIK, or create an Entity for a new subject.
 4. **Mark licensed text `"redistributable": false`**, so that if you ever publish your layer, its text, passages and summaries are withheld.
 

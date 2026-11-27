@@ -45,7 +45,7 @@ def candidates(db: RecordStore, query: str, *, source_ids: Iterable[str] | None 
         elif not by_words:
             raise ValueError(
                 f"these documents have {passages} passages and are not in the keyword index, so they are searched "
-                f"by embedding: " + ("set OPENAI_API_KEY" if embedder is None else
+                f"by embedding: " + ("set OPENAI_API_KEY or OPENROUTER_API_KEY" if embedder is None else
                                      f"{passages - embedded} passages have no embedding of {embedder.model}"))
     return db.search_documents(query, source_ids=source_ids, limit=limit), "keyword"
 

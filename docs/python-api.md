@@ -307,7 +307,9 @@ with RecordStore("research.sqlite") as db:
 
 `read_document_context(source_id)` returns the current context, or `None` for an ingested Source without context. Missing IDs and records without ingested text raise `KeyError`. Non-string titles/summaries or invalid provenance raise `ValueError`; blank titles/authors violate SQL constraints and raise `sqlite3.IntegrityError`.
 
-Search returns context as a separate field, captured with the matching index entries. A concurrent edit cannot replace it midway through a result. Header-only queries can match every passage in a document; the header provides document context and is not a quotation from the returned passage. Section summaries and embeddings remain future increments.
+Search returns context as a separate field, captured with the matching index entries. A concurrent edit cannot replace it midway through a result. Header-only queries can match every passage in a document; the header provides document context and is not a quotation from the returned passage. Section summaries remain a future increment.
+
+`embed_source(db, source_id, embedder=...)` embeds each of a Source's passages and stores the vectors, which a search inside named documents or about one record uses when there are more than 50 passages. `OpenAIEmbedder()` asks OpenAI with `OPENAI_API_KEY`; `OpenRouterEmbedder()` asks for the same model through OpenRouter with `OPENROUTER_API_KEY`. Both give the same vectors under the same model name, `text-embedding-3-small`, so either can search what the other embedded. For another provider, subclass `Embedder` and implement `_embed(texts)`; a graph holds vectors of one model.
 
 ## Rerank document evidence
 
